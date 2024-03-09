@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 wgui = { path = "../../wgui"}
 tokio = { version = "1", features = ["full"] }
+simple_logger = "4"
+log = "0.4"

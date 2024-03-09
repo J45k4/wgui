@@ -1,4 +1,7 @@
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio::sync::RwLock;
 
 use crate::gui::Item;
 
@@ -36,7 +39,7 @@ pub struct InputQuery {
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum ClientEvent { 
-    Disconnected,
+    Disconnected { id: usize},
     Connected { id: usize },
     PathChanged(PathChanged),
     Input(InputQuery)
@@ -112,3 +115,13 @@ pub enum ClientAction {
     ReplaceState(ReplaceState),
     SetQuery(SetQuery),
 }
+
+pub enum ServerEvent {
+    Connected { ch: mpsc::UnboundedSender<ClientEvent> },
+}
+
+pub enum Command {
+    Render(Item),
+}
+
+pub type Clients = Arc<RwLock<HashMap<usize, mpsc::UnboundedSender<Command>>>>;

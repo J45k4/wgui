@@ -22,7 +22,11 @@ export const connectWebsocket = (args: {
     })
 
     const createConnection = () => {
-        ws = new WebSocket("ws://localhost:33445/ui")
+        const href = window.location.href
+        const url = new URL(href)
+        const wsProtocol = url.protocol === "https:" ? "wss" : "ws"
+        const wsUrl = `${wsProtocol}://${url.host}/ws`
+        ws = new WebSocket(wsUrl)
 
         ws.onmessage = (e) => {
             const data = e.data.toString()

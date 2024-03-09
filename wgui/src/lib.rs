@@ -1,94 +1,39 @@
 use gui::Item;
-use http_body_util::Full;
-use hyper::body::Bytes;
-use hyper::server::conn::http1;
-use hyper::service::service_fn;
-use hyper::Request;
-use hyper::Response;
-use hyper_util::rt::TokioIo;
-use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+use tokio::sync::RwLock;
 use types::ClientEvent;
-use ui_client::create_ui_client;
-use std::net::SocketAddr;
-use std::sync::atomic::AtomicU64;
+use types::Clients;
+use types::Command;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 pub mod gui;
 mod edit_distance;
 pub mod types;
 mod ui_client;
 mod diff;
-
-pub const CLIENT_ID: AtomicU64 = AtomicU64::new(0);
-
-pub fn serve_index() -> Response<Full<Bytes>>  {
-    let str = format!(r#"
-<html>
-    <head>
-        <title>Your app</title>
-    </head>
-    <body>
-        <script src="/index.js"></script>
-    </body>
-</html>"#, );
-
-    Response::new(Full::new(Bytes::from(str)))
-}
-
-const index_js_bytes: &[u8] = include_bytes!("../../dist/index.js");
-
-struct Ctx {
-
-}
-
-async fn handle_req(mut req: Request<hyper::body::Incoming>) -> Result<Response<Full<Bytes>>, hyper::Error> {
-    if hyper_tungstenite::is_upgrade_request(&req) {
-        if req.uri().path() == "/ws" {
-            let (response, websocket) = hyper_tungstenite::upgrade(&mut req, None).unwrap();
-            let id = CLIENT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as usize;
-            create_ui_client(id, websocket);
-            return Ok(response);
-        }
-    }
-
-    match req.uri().path() {
-        "/index.js" => {
-            Ok(Response::new(Full::new(Bytes::from(index_js_bytes))))
-        },
-        _ => {
-            Ok(serve_index())
-        }
-    }
-}
-
-async fn server() {
-    let addr = SocketAddr::from(([0, 0, 0, 0], 4477));
-    let listener = TcpListener::bind(addr).await.unwrap();
-
-    loop {
-        let (socket, _) = listener.accept().await.unwrap();
-        let io = TokioIo::new(socket);
-        tokio::spawn(async move {
-            if let Err(err) = http1::Builder::new()
-                .serve_connection(io, service_fn(handle_req))
-                .await {
-
-                log::error!("server error: {:?}", err);
-            }
-        });
-    }
-}
+mod server;
 
 pub struct Wgui {
-    pub events_rx: mpsc::UnboundedReceiver<ClientEvent>
+    pub events_rx: mpsc::UnboundedReceiver<ClientEvent>,
+    clients: Clients
 }
 
 impl Wgui {
     pub fn new() -> Self {
         let (events_tx, events_rx) = mpsc::unbounded_channel();
+        let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
+
+        {
+            let clients = clients.clone();
+            tokio::spawn(async move {
+                server::server(events_tx, clients).await;
+            });
+        }
 
         Self {
-            events_rx
+            events_rx,
+            clients
         }
     }
 
@@ -96,7 +41,16 @@ impl Wgui {
         self.events_rx.recv().await
     }
 
-    pub fn render(&self, client_id: usize, item: Item) {
+    pub async fn render(&self, client_id: usize, item: Item) {
         println!("render {:?}", item);
+        let clients = self.clients.read().await;
+        let sender = match clients.get(&client_id) {
+            Some(sender) => sender,
+            None => {
+                println!("client not found");
+                return;
+            }
+        };
+        sender.send(Command::Render(item)).unwrap();
     }
 }
