@@ -1,3 +1,3 @@
 # wgui
 
-Ever wondered that you want to make web gui rust and server-side virtual dom... probably not but here it is.
+Ever wondered that you would like to make web gui with rust and server-side virtual dom... probably not but here it is.
