@@ -14,29 +14,46 @@ mod ui_client;
 mod diff;
 mod server;
 
-pub struct Wgui {
-    pub events_rx: mpsc::UnboundedReceiver<ClientEvent>,
-    clients: Clients
+pub struct WguiBuilder {
+    port: u16
 }
 
-impl Wgui {
+impl WguiBuilder {
     pub fn new() -> Self {
+        Self {
+            port: 4477
+        }
+    }
+
+    pub fn port(mut self, port: u16) -> Self {
+        self.port = port;
+        self
+    }
+
+    pub fn build(self) -> Wgui {
         let (events_tx, events_rx) = mpsc::unbounded_channel();
         let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
 
         {
             let clients = clients.clone();
             tokio::spawn(async move {
-                server::server(events_tx, clients).await;
+                server::server(self.port, events_tx, clients).await;
             });
         }
 
-        Self {
+        Wgui {
             events_rx,
             clients
         }
     }
+}
 
+pub struct Wgui {
+    events_rx: mpsc::UnboundedReceiver<ClientEvent>,
+    clients: Clients
+}
+
+impl Wgui {
     pub async fn next(&mut self) -> Option<ClientEvent> {
         self.events_rx.recv().await
     }

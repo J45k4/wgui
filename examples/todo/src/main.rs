@@ -1,6 +1,4 @@
 use std::collections::HashSet;
-use std::default;
-use std::os::macos::raw::stat;
 use std::vec;
 
 use log::Level;
@@ -12,6 +10,7 @@ use wgui::gui::View;
 use wgui::gui::H1;
 use wgui::types::ClientEvent;
 use wgui::Wgui;
+use wgui::WguiBuilder;
 
 struct TodoItems {
     name: String,
@@ -82,7 +81,7 @@ async fn main() {
 
     let mut client_ids = HashSet::new();
 
-    let mut wgui = Wgui::new();
+    let mut wgui = WguiBuilder::new().build();
     while let Some(event) = wgui.next().await {
         log::info!("{:?}", event);
 

@@ -71,8 +71,8 @@ async fn handle_req(mut req: Request<hyper::body::Incoming>, ctx: Ctx) -> Result
     }
 }
 
-pub async fn server(event_tx: mpsc::UnboundedSender<ClientEvent>, clients: Clients) {
-    let addr = SocketAddr::from(([0, 0, 0, 0], 4477));
+pub async fn server(port: u16, event_tx: mpsc::UnboundedSender<ClientEvent>, clients: Clients) {
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = TcpListener::bind(addr).await.unwrap();
 
     loop {
