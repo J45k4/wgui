@@ -42,7 +42,7 @@ impl Wgui {
     }
 
     pub async fn render(&self, client_id: usize, item: Item) {
-        println!("render {:?}", item);
+        log::info!("render {:?}", item);
         let clients = self.clients.read().await;
         let sender = match clients.get(&client_id) {
             Some(sender) => sender,

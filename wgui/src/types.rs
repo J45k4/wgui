@@ -42,7 +42,9 @@ pub enum ClientEvent {
     Disconnected { id: usize},
     Connected { id: usize },
     PathChanged(PathChanged),
-    Input(InputQuery)
+    Input(InputQuery),
+    OnClick(OnClick),
+    OnTextChanged(OnTextChanged),
 }
 
 pub type ItemPath = Vec<usize>;
@@ -118,8 +120,10 @@ pub enum ClientAction {
 
 pub enum ServerEvent {
     Connected { ch: mpsc::UnboundedSender<ClientEvent> },
+    ClientEvent { id: usize, event: ClientEvent }
 }
 
+#[derive(Debug, Clone)]
 pub enum Command {
     Render(Item),
 }

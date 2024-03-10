@@ -17,7 +17,7 @@ use crate::types::Clients;
 use crate::types::Command;
 use crate::ui_client::UiWsWorker;
 
-pub const CLIENT_ID: AtomicU64 = AtomicU64::new(1);
+static CLIENT_ID: AtomicU64 = AtomicU64::new(1);
 
 pub fn serve_index() -> Response<Full<Bytes>>  {
     let str = format!(r#"
@@ -44,14 +44,12 @@ async fn handle_req(mut req: Request<hyper::body::Incoming>, ctx: Ctx) -> Result
     log::info!("{} {}", req.method(), req.uri().path());
 
     if req.uri().path() == "/ws" && hyper_tungstenite::is_upgrade_request(&req) {
-        log::info!("upgrade to websocket");
         let (response, websocket) = hyper_tungstenite::upgrade(&mut req, None).unwrap();
-        log::info!("websocket upgraded");
-        let id = CLIENT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as usize;
-
-        log::info!("websocket worker created");
+        let id = CLIENT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as usize;
+        log::info!("websocket worker created {}", id);
         tokio::spawn(async move {
             let ws = websocket.await.unwrap();
+            log::info!("websocket connected");
             let worker = UiWsWorker::new(
                 id, 
                 ws, 
@@ -93,6 +91,7 @@ pub async fn server(event_tx: mpsc::UnboundedSender<ClientEvent>, clients: Clien
 
             if let Err(err) = http1::Builder::new()
                 .serve_connection(io, service)
+                .with_upgrades()
                 .await {
 
                 log::error!("server error: {:?}", err);

@@ -1,3 +1,5 @@
+use std::default;
+
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,7 +62,7 @@ pub struct TextInput {
     pub flex: Option<Flex>,
 }
 
-#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Checkbox {
     pub id: String,
     pub name: String,
@@ -75,9 +77,18 @@ pub struct Video {
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+pub struct H1 {
+    pub text: String
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum Item {
+    H1(H1),
     View(View),
+    Div {
+        body: Vec<Item>
+    },
     Text(Text),
     Button(Button),
     TextInput(TextInput),

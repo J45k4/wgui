@@ -64,12 +64,18 @@ export type Checkbox = {
     checked: boolean
 }
 
+export type H1 = {
+    type: "h1"
+    text: string
+}
+
 export type Item = View | 
     Text | 
     Button | 
     TextInput | 
     Table | 
-    Checkbox
+    Checkbox |
+    H1
 
 export type Replace = {
     type: "replace"

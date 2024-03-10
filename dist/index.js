@@ -281,6 +281,7 @@ var renderItem = (item, ctx, old) => {
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
       checkbox.checked = item.checked;
+      checkbox.name = item.name;
       checkbox.onclick = () => {
         ctx.sender.send({
           type: "onClick",
@@ -290,6 +291,17 @@ var renderItem = (item, ctx, old) => {
         ctx.sender.sendNow();
       };
       return checkbox;
+    }
+    case "h1": {
+      const logger6 = outerLogger.child(`h1:${item.text}`);
+      logger6.info("render h1");
+      if (old instanceof HTMLHeadingElement) {
+        old.innerText = item.text;
+        return;
+      }
+      const h1 = document.createElement("h1");
+      h1.innerText = item.text;
+      return h1;
     }
     default:
       return document.createTextNode("Unknown item type");
@@ -368,6 +380,9 @@ var connectWebsocket = (args) => {
       setTimeout(() => {
         createConnection();
       }, 1000);
+    };
+    ws.onerror = (e) => {
+      logger9.error("error", e);
     };
   };
   createConnection();

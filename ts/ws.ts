@@ -51,6 +51,10 @@ export const connectWebsocket = (args: {
                 createConnection()
             }, 1000)
         }
+
+        ws.onerror = (e) => {
+            logger.error("error", e)
+        }
     }
 
     createConnection()

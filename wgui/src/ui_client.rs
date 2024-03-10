@@ -7,10 +7,11 @@ use hyper_util::rt::TokioIo;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use futures_util::StreamExt;
 use futures_util::SinkExt;
-use crate::{diff::diff, types::{Clients, Command}};
+use crate::{diff::diff, types::{ClientAction, Clients, Command, Replace}};
 use super::{types::ClientEvent, gui::Item};
 
 pub struct UiWsWorker {
+    id: usize,
     ws: WebSocketStream<TokioIo<Upgraded>>,
     event_tx: mpsc::UnboundedSender<ClientEvent>,
     cmd_recv: mpsc::UnboundedReceiver<Command>,
@@ -24,12 +25,12 @@ impl UiWsWorker {
         event_tx: mpsc::UnboundedSender<ClientEvent>,
         clients: Clients
     ) -> Self {
-        log::info!("new client: {}", id);
-
+        log::info!("[{}] connection started", id);
         let (cmd_sender, cmd_recv) = mpsc::unbounded_channel();
         clients.write().await.insert(id, cmd_sender);
         event_tx.send(ClientEvent::Connected { id }).unwrap();
         Self {
+            id,
             ws,
             cmd_recv: cmd_recv,
             event_tx,
@@ -79,17 +80,15 @@ impl UiWsWorker {
     }
 
     async fn handle_command(&mut self, cmd: Command) -> anyhow::Result<()> {
+        log::info!("handling command: {:?}", cmd);
         match cmd {
             Command::Render(root) => {
-                log::info!("rendering root: {:?}", root);
-
                 let changes = match &self.last_root {
                     Some(last_root) => {
                         let changes = diff(&last_root, &root);
                         changes
                     },
-                    // None => vec![ClientAction::Replace(Replace { path: vec![], item: root.clone() })]
-                    None => vec![]
+                    None => vec![ClientAction::Replace(Replace { path: vec![], item: root.clone() })]
                 };
 
                 if changes.len() == 0 {
@@ -132,7 +131,6 @@ impl UiWsWorker {
     }
 
     pub async fn run(mut self) {
-        log::info!("Ws connection started");
         loop {
             tokio::select! {
                 msg = self.ws.next() => {
@@ -179,29 +177,8 @@ impl UiWsWorker {
             };
         }
 
-        log::info!("Ws connection closed");
+        log::info!("[{}] connection closed", self.id);
+        self.clients.write().await.remove(&self.id);
+        self.event_tx.send(ClientEvent::Disconnected { id: self.id }).unwrap();
     }
 }
-
-
-// pub fn create_ui_client(id: usize, websocket: HyperWebsocket) -> Client {
-//     let (event_sender, event_receiver) = mpsc::unbounded_channel();
-//     let (cmd_sender, cmd_receiver) = mpsc::unbounded_channel();
-
-//     tokio::spawn(async move {
-//         let ws = websocket.await.unwrap();
-
-//         UiWsWorker { 
-//             ws: ws,
-//             cmd_recv: cmd_receiver,
-//             event_sender: event_sender,
-//             last_root: None
-//         }.run().await;
-//     });
-
-//     Client {
-//         id: id,
-//         cmd_sender: cmd_sender,
-//         event_receiver: event_receiver
-//     }
-// }
