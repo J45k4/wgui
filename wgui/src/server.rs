@@ -10,11 +10,9 @@ use hyper::Response;
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use tokio::sync::RwLock;
 
 use crate::types::ClientEvent;
 use crate::types::Clients;
-use crate::types::Command;
 use crate::ui_client::UiWsWorker;
 
 static CLIENT_ID: AtomicU64 = AtomicU64::new(1);
@@ -71,31 +69,57 @@ async fn handle_req(mut req: Request<hyper::body::Incoming>, ctx: Ctx) -> Result
     }
 }
 
-pub async fn server(port: u16, event_tx: mpsc::UnboundedSender<ClientEvent>, clients: Clients) {
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    let listener = TcpListener::bind(addr).await.unwrap();
+pub struct Server {
+    listener: TcpListener,
+    event_tx: mpsc::UnboundedSender<ClientEvent>,
+    clients: Clients
+}
 
-    loop {
-        let (socket, _) = listener.accept().await.unwrap();
-        let io = TokioIo::new(socket);
-        let event_tx = event_tx.clone();
-        let clients = clients.clone();
-        tokio::spawn(async move {
-            let service = service_fn(move |req| {
-                // async move { Ok::<_, Error>(Response::new(Body::from(format!("Request #{}", value)))) }
-                handle_req(req, Ctx { 
-                    event_tx: event_tx.clone(),
-                    clients: clients.clone()
-                })
-            });
+impl Server {
+    pub async fn new(addr: SocketAddr, event_tx: mpsc::UnboundedSender<ClientEvent>, clients: Clients) -> Self {
+        let listener = TcpListener::bind(addr).await.unwrap();
 
-            if let Err(err) = http1::Builder::new()
-                .serve_connection(io, service)
-                .with_upgrades()
-                .await {
+        Self {
+            listener,
+            event_tx,
+            clients
+        }
+    }
 
-                log::error!("server error: {:?}", err);
+    pub async fn run(mut self) {
+        loop {
+            tokio::select! {
+
+                res = self.listener.accept() => {
+                    match res {
+                        Ok((socket, addr)) => {
+                            log::info!("accepted connection from {}", addr);
+                            let io = TokioIo::new(socket);
+                            let event_tx = self.event_tx.clone();
+                            let clients = self.clients.clone();
+                            tokio::spawn(async move {
+                                let service = service_fn(move |req| {
+                                    handle_req(req, Ctx { 
+                                        event_tx: event_tx.clone(),
+                                        clients: clients.clone()
+                                    })
+                                });
+
+                                if let Err(err) = http1::Builder::new()
+                                    .serve_connection(io, service)
+                                    .with_upgrades()
+                                    .await {
+
+                                    log::error!("server error: {:?}", err);
+                                }
+                            });
+                        },
+                        Err(err) => {
+                            log::error!("accept error: {:?}", err);
+                        }
+                    }
+                } 
             }
-        });
+        }
     }
 }
