@@ -42,14 +42,8 @@ fn render(state: &TodoState) -> Item {
                         body: state.items.iter().enumerate().map(|(i, item)| {
                             Item::View(View {
                                 body: vec![
-                                    Item::Text(Text {
-                                        text: item.name.clone()
-                                    }),
-                                    Item::Checkbox(wgui::gui::Checkbox {
-                                        id: format!("todo_checkbox_{}", i),
-                                        checked: item.completed,
-                                        ..Default::default()
-                                    })
+									text(&item.name).into(),
+									checkbox().id(&format!("todo_checkbox_{}", i)).checked(item.completed).into(),
                                 ],
                                 ..Default::default()
                             })
