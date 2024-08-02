@@ -91,6 +91,18 @@ impl Into<Item> for View {
 	}
 }
 
+impl View {
+	pub fn add<T: Into<Item>>(mut self, item: T) -> Self {
+		self.body.push(item.into());
+		self
+	}
+
+	pub fn add_many<T: Into<Item>>(mut self, items: Vec<T>) -> Self {
+		self.body.extend(items.into_iter().map(|item| item.into()));
+		self
+	}
+}
+
 pub fn view() -> View {
 	View {
 		flex: None,
