@@ -94,6 +94,10 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 				div.style.gap = item.spacing + "px"
 			}
 
+			if (item.border != null) {
+				div.style.border = item.border
+			}
+
             div.style.overflow = "auto"
             
             if (item.flex) {
