@@ -108,7 +108,7 @@ var getPathItem = (path, element) => {
 // ts/render.ts
 var outerLogger = createLogger("render");
 var renderItem = (item, ctx, old) => {
-  outerLogger.info("renderItem", item, old);
+  outerLogger.debug("renderItem", item, old);
   switch (item.type) {
     case "text": {
       if (old instanceof HTMLSpanElement) {
@@ -120,7 +120,7 @@ var renderItem = (item, ctx, old) => {
       return span;
     }
     case "view": {
-      outerLogger.info("render view");
+      outerLogger.debug("render view");
       let div = old;
       if (old instanceof HTMLDivElement) {
         div.innerHTML = "";
@@ -142,7 +142,7 @@ var renderItem = (item, ctx, old) => {
         div.style.height = item.height + "px";
       }
       if (item.margin != null) {
-        outerLogger.info("setMargin", item.margin + "px");
+        outerLogger.debug("setMargin", item.margin + "px");
         div.style.margin = item.margin + "px";
       }
       if (item.marginTop != null) {
@@ -176,7 +176,7 @@ var renderItem = (item, ctx, old) => {
       if (item.flex) {
         div.style.display = "flex";
         const flex = item.flex;
-        div.style.flexDirection = flex.direction;
+        div.style.flexDirection = flex.flexDirection;
         if (flex.grow) {
           div.style.flexGrow = flex.grow.toString();
         }
@@ -185,7 +185,7 @@ var renderItem = (item, ctx, old) => {
     }
     case "button": {
       const logger6 = outerLogger.child(`button:${item.name}:${item.id}`);
-      logger6.info("render button");
+      logger6.debug("render button");
       if (old instanceof HTMLButtonElement) {
         old.textContent = item.title;
         return;
@@ -195,13 +195,13 @@ var renderItem = (item, ctx, old) => {
       if (item.flex != null) {
         button.style.display = "flex";
         const flex = item.flex;
-        button.style.flexDirection = flex.direction;
+        button.style.flexDirection = flex.flexDirection;
         if (flex.grow) {
           button.style.flexGrow = flex.grow.toString();
         }
       }
       button.onclick = () => {
-        logger6.info("button clicked");
+        logger6.debug("button clicked");
         ctx.sender.send({
           type: "onClick",
           id: item.id,
@@ -213,7 +213,7 @@ var renderItem = (item, ctx, old) => {
     }
     case "textInput": {
       const logger6 = outerLogger.child(`textInput:${item.name}:${item.id}`);
-      logger6.info(`render textInput`, item);
+      logger6.debug(`render textInput`, item);
       let registered = false;
       if (old instanceof HTMLInputElement) {
         if (!registered || !ctx.debouncer.valueChanged) {
@@ -227,17 +227,17 @@ var renderItem = (item, ctx, old) => {
       if (item.flex != null) {
         input.style.display = "flex";
         const flex = item.flex;
-        input.style.flexDirection = flex.direction;
+        input.style.flexDirection = flex.flexDirection;
         if (flex.grow) {
           input.style.flexGrow = flex.grow.toString();
         }
       }
       input.oninput = (e) => {
-        logger6.info(`oninput ${input.value}`);
+        logger6.debug(`oninput ${input.value}`);
         ctx.debouncer.change(e.target.value);
       };
       input.onkeydown = (e) => {
-        logger6.info(`keydown: ${e.key}`);
+        logger6.debug(`keydown: ${e.key}`);
         if (e.key === "Enter") {
           ctx.debouncer.trigger();
           ctx.sender.send({
@@ -250,9 +250,9 @@ var renderItem = (item, ctx, old) => {
         }
       };
       input.onfocus = () => {
-        logger6.info("focus");
+        logger6.debug("focus");
         ctx.debouncer.register((v) => {
-          logger6.info(`changed to ${v}`);
+          logger6.debug(`changed to ${v}`);
           ctx.sender.send({
             type: "onTextChanged",
             id: item.id,
@@ -264,7 +264,7 @@ var renderItem = (item, ctx, old) => {
         registered = true;
       };
       input.onblur = () => {
-        logger6.info("blur");
+        logger6.debug("blur");
         ctx.debouncer.trigger();
         ctx.debouncer.unregister();
         registered = false;
@@ -273,7 +273,7 @@ var renderItem = (item, ctx, old) => {
     }
     case "checkbox": {
       const logger6 = outerLogger.child(`checkbox:${item.name}:${item.id}`);
-      logger6.info("render checkbox");
+      logger6.debug("render checkbox");
       if (old instanceof HTMLInputElement) {
         old.checked = item.checked;
         return;
@@ -294,7 +294,7 @@ var renderItem = (item, ctx, old) => {
     }
     case "h1": {
       const logger6 = outerLogger.child(`h1:${item.text}`);
-      logger6.info("render h1");
+      logger6.debug("render h1");
       if (old instanceof HTMLHeadingElement) {
         old.innerText = item.text;
         return;
@@ -409,12 +409,11 @@ window.onload = () => {
   res.style.display = "flex";
   res.style.flexDirection = "row";
   const content = document.createElement("div");
-  content.style.border = "1px solid black";
   content.style.flexGrow = "1";
   res.appendChild(content);
   const root = document.createElement("div");
   content.appendChild(root);
-  logger11.info("root", res);
+  logger11.debug("root", res);
   const debouncer2 = new Deboncer;
   const {
     sender

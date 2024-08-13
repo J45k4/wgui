@@ -20,7 +20,6 @@ window.onload = () => {
     res.style.flexDirection = "row"
 
     const content = document.createElement("div")
-    content.style.border = "1px solid black"
     content.style.flexGrow = "1"
 
     res.appendChild(content)
@@ -28,7 +27,7 @@ window.onload = () => {
     const root = document.createElement("div")
     content.appendChild(root)
 
-    logger.info("root", res)
+    logger.debug("root", res)
 
     const debouncer = new Deboncer()
 

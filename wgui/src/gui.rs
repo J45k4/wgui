@@ -83,6 +83,7 @@ pub struct View {
     pub body: Vec<Item>,
 	pub margin: Margin,
 	pub padding: Padding,
+	pub spacing: u32
 }
 
 impl Into<Item> for View {
@@ -101,16 +102,44 @@ impl View {
 		self.body.extend(items.into_iter().map(|item| item.into()));
 		self
 	}
+
+	pub fn spacing(mut self, spacing: u32) -> Self {
+		self.spacing = spacing;
+		self
+	}
 }
 
-pub fn view() -> View {
+pub fn view(body: Vec<Item>) -> View {
 	View {
 		flex: None,
 		height: None,
 		width: None,
-		body: vec![],
+		body,
 		margin: Margin::None,
-		padding: Padding::None
+		padding: Padding::None,
+		spacing: 0
+	}
+}
+
+pub fn vstack(body: Vec<Item>) -> View {
+	View {
+		body,
+		flex: Some(Flex {
+			direction: FlexDirection::Column,
+			grow: None
+		}),
+		..Default::default()
+	}
+}
+
+pub fn hstack(body: Vec<Item>) -> View {
+	View {
+		body,
+		flex: Some(Flex {
+			direction: FlexDirection::Row,
+			grow: None
+		}),
+		..Default::default()
 	}
 }
 
@@ -120,6 +149,29 @@ pub struct Button {
     pub name: Option<String>,
     pub title: String,
     pub flex: Option<Flex>
+}
+
+impl Button {
+	pub fn id(mut self, id: &str) -> Self {
+		self.id = Some(id.to_string());
+		self
+	}
+
+	pub fn name(mut self, name: &str) -> Self {
+		self.name = Some(name.to_string());
+		self
+	}
+
+	pub fn title(mut self, title: &str) -> Self {
+		self.title = title.to_string();
+		self
+	}
+
+	pub fn flex(mut self, flex: Flex) -> Self {
+		self.flex = Some(flex);
+		self
+	
+	}
 }
 
 impl Into<Item> for Button {
@@ -148,10 +200,10 @@ impl Into<Item> for Text {
 	}
 }
 
-pub fn text(text: &str) -> Text {
-	Text {
+pub fn text(text: &str) -> Item {
+	Item::Text(Text {
 		text: text.to_string()
-	}
+	})
 }
 
 #[derive(Debug, PartialEq, Default, Clone, serde::Serialize, serde::Deserialize)]
@@ -161,6 +213,34 @@ pub struct TextInput {
     pub placeholder: String,
     pub value: String,
     pub flex: Option<Flex>,
+}
+
+impl TextInput {
+	pub fn id(mut self, id: &str) -> Self {
+		self.id = id.to_string();
+		self
+	}
+
+	pub fn name(mut self, name: &str) -> Self {
+		self.name = name.to_string();
+		self
+	}
+
+	pub fn placeholder(mut self, placeholder: &str) -> Self {
+		self.placeholder = placeholder.to_string();
+		self
+	}
+
+	pub fn value(mut self, value: &str) -> Self {
+		self.value = value.to_string();
+		self
+	}
+
+	pub fn flex(mut self, flex: Flex) -> Self {
+		self.flex = Some(flex);
+		self
+	}
+
 }
 
 impl Into<Item> for TextInput {
@@ -230,6 +310,12 @@ pub struct Video {
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct H1 {
     pub text: String
+}
+
+pub fn h1(text: &str) -> Item {
+	Item::H1(H1 {
+		text: text.to_string()
+	})
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]

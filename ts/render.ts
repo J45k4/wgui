@@ -4,7 +4,7 @@ import { Context, Item } from "./types.ts";
 const outerLogger = createLogger("render")
 
 export const renderItem = (item: Item, ctx: Context, old?: Element) => {
-    outerLogger.info("renderItem", item, old)
+    outerLogger.debug("renderItem", item, old)
 
     switch (item.type) {
         case "text": {
@@ -20,7 +20,7 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
             return span
         }
         case "view": {
-            outerLogger.info("render view")
+            outerLogger.debug("render view")
 
             let div: HTMLDivElement = old as HTMLDivElement
 
@@ -49,7 +49,7 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
             }
 
             if (item.margin != null) {
-                outerLogger.info("setMargin", item.margin + "px")
+                outerLogger.debug("setMargin", item.margin + "px")
 
                 div.style.margin = item.margin + "px"
             }
@@ -97,7 +97,7 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 
                 const flex = item.flex
 
-                div.style.flexDirection = flex.direction
+                div.style.flexDirection = flex.flexDirection
                 
                 if (flex.grow) {
                     div.style.flexGrow = flex.grow.toString()
@@ -109,7 +109,7 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
         case "button": {
             const logger = outerLogger.child(`button:${item.name}:${item.id}`)
 
-            logger.info("render button")
+            logger.debug("render button")
 
             if (old instanceof HTMLButtonElement) {
                 old.textContent = item.title
@@ -125,7 +125,7 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 
                 const flex = item.flex
 
-                button.style.flexDirection = flex.direction
+                button.style.flexDirection = flex.flexDirection
                 
                 if (flex.grow) {
                     button.style.flexGrow = flex.grow.toString()
@@ -134,7 +134,7 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 
 
             button.onclick = () => {
-                logger.info("button clicked")
+                logger.debug("button clicked")
 
                 ctx.sender.send({
                     type: "onClick",
@@ -150,7 +150,7 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
         case "textInput": {
             const logger = outerLogger.child(`textInput:${item.name}:${item.id}`)
 
-            logger.info(`render textInput`, item)
+            logger.debug(`render textInput`, item)
 
             let registered = false
 
@@ -171,7 +171,7 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 
                 const flex = item.flex
 
-                input.style.flexDirection = flex.direction
+                input.style.flexDirection = flex.flexDirection
                 
                 if (flex.grow) {
                     input.style.flexGrow = flex.grow.toString()
@@ -180,13 +180,13 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 
 
             input.oninput = (e: any) => {
-                logger.info(`oninput ${input.value}`)
+                logger.debug(`oninput ${input.value}`)
 
                 ctx.debouncer.change(e.target.value)
             }
             
             input.onkeydown = (e) => {
-                logger.info(`keydown: ${e.key}`)
+                logger.debug(`keydown: ${e.key}`)
 
                 if (e.key === "Enter") {
                     ctx.debouncer.trigger()
@@ -203,10 +203,10 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
             }
 
             input.onfocus = () => {
-                logger.info("focus")
+                logger.debug("focus")
 
                 ctx.debouncer.register(v => {
-                    logger.info(`changed to ${v}`)
+                    logger.debug(`changed to ${v}`)
 
                     ctx.sender.send({
                         type: "onTextChanged",
@@ -222,7 +222,7 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
             }
 
             input.onblur = () => {
-                logger.info("blur")
+                logger.debug("blur")
 
                 ctx.debouncer.trigger()
                 ctx.debouncer.unregister()
@@ -235,7 +235,7 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
         case "checkbox": {
             const logger = outerLogger.child(`checkbox:${item.name}:${item.id}`)
 
-            logger.info("render checkbox")
+            logger.debug("render checkbox")
 
             if (old instanceof HTMLInputElement) {
                 old.checked = item.checked
@@ -263,7 +263,7 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
         case "h1": {
             const logger = outerLogger.child(`h1:${item.text}`)
 
-            logger.info("render h1")
+            logger.debug("render h1")
 
             if (old instanceof HTMLHeadingElement) {
                 old.innerText = item.text

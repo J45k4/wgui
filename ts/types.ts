@@ -13,7 +13,7 @@ export enum FlexDirection {
 
 export type Flex = {
     grow: number
-    direction: FlexDirection
+    flexDirection: FlexDirection
 }
 
 export type View = {

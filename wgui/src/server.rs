@@ -22,6 +22,7 @@ pub fn serve_index() -> Response<Full<Bytes>>  {
 <html>
     <head>
         <title>Your app</title>
+		<link rel="stylesheet" href="/index.css"></link>
     </head>
     <body>
         <script src="/index.js"></script>
@@ -32,6 +33,7 @@ pub fn serve_index() -> Response<Full<Bytes>>  {
 }
 
 const INDEX_JS_BYTES: &[u8] = include_bytes!("../../dist/index.js");
+const CSS_JS_BYTES: &[u8] = include_bytes!("../../dist/index.css");
 
 struct Ctx {
     event_tx: mpsc::UnboundedSender<ClientEvent>,
@@ -60,9 +62,8 @@ async fn handle_req(mut req: Request<hyper::body::Incoming>, ctx: Ctx) -> Result
     }
 
     match req.uri().path() {
-        "/index.js" => {
-            Ok(Response::new(Full::new(Bytes::from(INDEX_JS_BYTES))))
-        },
+        "/index.js" => Ok(Response::new(Full::new(Bytes::from(INDEX_JS_BYTES)))),
+		"/index.css" => Ok(Response::new(Full::new(Bytes::from(CSS_JS_BYTES)))),
         _ => {
             Ok(serve_index())
         }
