@@ -46,10 +46,10 @@ async fn handle_req(mut req: Request<hyper::body::Incoming>, ctx: Ctx) -> Result
     if req.uri().path() == "/ws" && hyper_tungstenite::is_upgrade_request(&req) {
         let (response, websocket) = hyper_tungstenite::upgrade(&mut req, None).unwrap();
         let id = CLIENT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as usize;
-        log::info!("websocket worker created {}", id);
+        log::debug!("websocket worker created {}", id);
         tokio::spawn(async move {
             let ws = websocket.await.unwrap();
-            log::info!("websocket connected");
+            log::debug!("websocket connected");
             let worker = UiWsWorker::new(
                 id, 
                 ws, 

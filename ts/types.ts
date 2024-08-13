@@ -31,6 +31,7 @@ export type View = {
     paddingBottom?: number
     paddingLeft?: number
     padding?: number
+	spacing?: number
     body: Item[]
 }
 

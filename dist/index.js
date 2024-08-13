@@ -172,6 +172,9 @@ var renderItem = (item, ctx, old) => {
       if (item.padding != null) {
         div.style.padding = item.padding + "px";
       }
+      if (item.spacing != null) {
+        div.style.gap = item.spacing + "px";
+      }
       div.style.overflow = "auto";
       if (item.flex) {
         div.style.display = "flex";

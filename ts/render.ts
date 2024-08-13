@@ -90,6 +90,10 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
                 div.style.padding = item.padding + "px"
             }
 
+			if (item.spacing != null) {
+				div.style.gap = item.spacing + "px"
+			}
+
             div.style.overflow = "auto"
             
             if (item.flex) {

@@ -17,53 +17,13 @@ struct TodoState {
 }
 
 fn render(state: &TodoState) -> Item {
-    // Item::View(View {
-    //     body: vec![
-    //         Item::H1(H1{ text: "Todo List".to_string()}),
-    //         Item::View(View { 
-    //             body: vec![
-    //                 Item::View(View { 
-    //                     body: vec![
-    //                         Item::TextInput(TextInput {
-    //                             placeholder: "What needs to be done?".to_string(),
-    //                             name: "new_todo_name".to_string(),
-    //                             value: state.new_todo_name.clone(),
-    //                             ..Default::default()
-    //                         }),
-    //                         Item::Button(Button {
-    //                             title: "Add".to_string(),
-    //                             id: Some("add_todo_button".to_string()),
-    //                             ..Default::default()
-    //                         })
-    //                     ],
-    //                     ..Default::default()
-    //                 }),
-    //                 Item::View(View {
-    //                     body: state.items.iter().enumerate().map(|(i, item)| {
-    //                         Item::View(View {
-    //                             body: vec![
-	// 								text(&item.name).into(),
-	// 								checkbox().id(&format!("todo_checkbox_{}", i)).checked(item.completed).into(),
-    //                             ],
-    //                             ..Default::default()
-    //                         })
-    //                     }).collect(),
-    //                     ..Default::default()
-    //                 })
-    //             ],
-    //             ..Default::default()
-    //         })
-    //     ],
-    //     ..Default::default()
-    // })
-
 	vstack(vec![
 		text("Todo List"),
 		vstack(vec![
 			hstack(vec![
 				text_input().placeholder("What needs to be done?").name("new_todo_name").value(&state.new_todo_name).into(),
 				button("Add").id("add_todo_button").into()
-			]).into(),
+			]).spacing(3).into(),
 			vstack(
 				state.items.iter().enumerate().map(|(i, item)| {
 					hstack(vec![
@@ -71,26 +31,9 @@ fn render(state: &TodoState) -> Item {
 						checkbox().id(&format!("todo_checkbox_{}", i)).checked(item.completed).into()
 					]).into()
 				}).collect()
-			).into()
+			).spacing(5).into()
 		]).into()
-	]).into()	
-
-	// view()
-	// 	.add(h1("Todo List"))
-	// 	.add(view().add_many(vec![
-	// 		view().add_many(vec![
-	// 			text_input().placeholder("What needs to be done?").name("new_todo_name").value(&state.new_todo_name).into(),
-	// 			button("Add").id("add_todo_button").into()
-	// 		]).into(),
-	// 		view().add_many(
-	// 			state.items.iter().enumerate().map(|(i, item)| {
-	// 				view().add_many(vec![
-	// 					text(&item.name).into(),
-	// 					checkbox().id(&format!("todo_checkbox_{}", i)).checked(item.completed).into()
-	// 				]).into()
-	// 			}).collect()
-	// 		).into()
-	// 	])).into()
+	]).into()
 }
 
 #[tokio::main]

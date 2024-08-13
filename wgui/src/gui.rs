@@ -83,7 +83,7 @@ pub struct View {
     pub body: Vec<Item>,
 	pub margin: Margin,
 	pub padding: Padding,
-	pub spacing: u32
+	pub spacing: Option<u32>
 }
 
 impl Into<Item> for View {
@@ -104,7 +104,7 @@ impl View {
 	}
 
 	pub fn spacing(mut self, spacing: u32) -> Self {
-		self.spacing = spacing;
+		self.spacing = Some(spacing);
 		self
 	}
 }
@@ -117,7 +117,7 @@ pub fn view(body: Vec<Item>) -> View {
 		body,
 		margin: Margin::None,
 		padding: Padding::None,
-		spacing: 0
+		spacing: None
 	}
 }
 
