@@ -80,7 +80,7 @@ impl UiWsWorker {
     }
 
     async fn handle_command(&mut self, cmd: Command) -> anyhow::Result<()> {
-        log::info!("handling command: {:?}", cmd);
+        log::debug!("handling command: {:?}", cmd);
         match cmd {
             Command::Render(root) => {
                 let changes = match &self.last_root {
