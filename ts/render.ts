@@ -120,6 +120,18 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
                 }
             }
 
+			if (item.id) {
+				div.onclick = () => {
+					ctx.sender.send({
+						type: "onClick",
+						id: item.id as string,
+						name: item.id as string,
+					})
+
+					ctx.sender.sendNow()
+				}
+			}
+
             return div
         }
         case "button": {

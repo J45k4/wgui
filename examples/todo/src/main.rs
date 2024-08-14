@@ -23,7 +23,7 @@ fn render(state: &TodoState) -> Item {
 			hstack(vec![
 				text_input().placeholder("What needs to be done?").name("new_todo_name").value(&state.new_todo_name).into(),
 				button("Add").id("add_todo_button").into()
-			]).spacing(3).into(),
+			]).spacing(3).id("add_todo").into(),
 			vstack(
 				state.items.iter().enumerate().map(|(i, item)| {
 					hstack(vec![
@@ -83,6 +83,10 @@ async fn main() {
                         let inx = id.split("_").last().unwrap().parse::<usize>().unwrap();
                         state.items[inx].completed = !state.items[inx].completed;
                     }
+
+					if id == "add_todo" {
+						log::info!("add_todo clicked");
+					}
                 }
             },
             ClientEvent::OnTextChanged(t) => {

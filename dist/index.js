@@ -194,6 +194,16 @@ var renderItem = (item, ctx, old) => {
           div.style.flexGrow = flex.grow.toString();
         }
       }
+      if (item.id) {
+        div.onclick = () => {
+          ctx.sender.send({
+            type: "onClick",
+            id: item.id,
+            name: item.id
+          });
+          ctx.sender.sendNow();
+        };
+      }
       return div;
     }
     case "button": {

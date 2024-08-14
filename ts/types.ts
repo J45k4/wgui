@@ -18,6 +18,7 @@ export type Flex = {
 
 export type View = {
     type: "view"
+	id?: string
     flex?: Flex
     height: number
     width: number

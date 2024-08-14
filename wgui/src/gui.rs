@@ -77,6 +77,7 @@ pub struct VStack {
 #[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct View {
+	pub id: Option<String>,
     pub flex: Option<Flex>,
     pub height: Option<u32>,
     pub width: Option<u32>,
@@ -95,6 +96,11 @@ impl Into<Item> for View {
 }
 
 impl View {
+	pub fn id(mut self, id: &str) -> Self {
+		self.id = Some(id.to_string());
+		self
+	}
+
 	pub fn add<T: Into<Item>>(mut self, item: T) -> Self {
 		self.body.push(item.into());
 		self
