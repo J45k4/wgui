@@ -97,7 +97,7 @@ impl UiWsWorker {
 
                 self.last_root = Some(root);
             
-                log::info!("sending changes: {:?}", changes);
+                log::debug!("sending changes: {:?}", changes);
             
                 let str = serde_json::to_string(&changes).unwrap();
             
