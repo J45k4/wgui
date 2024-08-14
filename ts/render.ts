@@ -102,6 +102,10 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 				div.style.border = item.border
 			}
 
+			// if (item.wrap) {
+			// 	div.style.flexWrap = "wrap"
+			// }
+
             div.style.overflow = "auto"
             
             if (item.flex) {
@@ -289,10 +293,10 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 
             return h1
         }
-		case "title": {
-			document.title = item.title
-			return undefined
-		}
+		// case "title": {
+		// 	document.title = item.title
+		// 	return undefined
+		// }
         default:
             return document.createTextNode("Unknown item type")
     }

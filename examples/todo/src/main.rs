@@ -18,7 +18,6 @@ struct TodoState {
 
 fn render(state: &TodoState) -> Item {
 	vstack(vec![
-		title("Todo List").into(),
 		text("Todo List"),
 		vstack(vec![
 			hstack(vec![

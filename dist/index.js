@@ -313,10 +313,6 @@ var renderItem = (item, ctx, old) => {
       h1.innerText = item.text;
       return h1;
     }
-    case "title": {
-      document.title = item.title;
-      return;
-    }
     default:
       return document.createTextNode("Unknown item type");
   }

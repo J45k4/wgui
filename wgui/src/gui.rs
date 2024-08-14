@@ -84,7 +84,8 @@ pub struct View {
 	pub margin: Option<u32>,
 	pub padding: Option<u32>,
 	pub spacing: Option<u32>,
-	pub border: Option<String>
+	pub border: Option<String>,
+	pub wrap: Option<bool>
 }
 
 impl Into<Item> for View {
@@ -121,6 +122,11 @@ impl View {
 
 	pub fn margin(mut self, margin: u32) -> Self {
 		self.margin = Some(margin);
+		self
+	}
+
+	pub fn wrap(mut self, wrap: bool) -> Self {
+		self.wrap = Some(wrap);
 		self
 	}
 }
