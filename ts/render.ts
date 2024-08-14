@@ -102,9 +102,9 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 				div.style.border = item.border
 			}
 
-			// if (item.wrap) {
-			// 	div.style.flexWrap = "wrap"
-			// }
+			if (item.wrap) {
+				div.style.flexWrap = "wrap"
+			}
 
             div.style.overflow = "auto"
             

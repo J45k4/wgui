@@ -182,6 +182,9 @@ var renderItem = (item, ctx, old) => {
       if (item.border != null) {
         div.style.border = item.border;
       }
+      if (item.wrap) {
+        div.style.flexWrap = "wrap";
+      }
       div.style.overflow = "auto";
       if (item.flex) {
         div.style.display = "flex";
