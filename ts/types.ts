@@ -71,13 +71,19 @@ export type H1 = {
     text: string
 }
 
+export type Title = {
+	type: "title"
+	title: string
+}
+
 export type Item = View | 
     Text | 
     Button | 
     TextInput | 
     Table | 
     Checkbox |
-    H1
+    H1 |
+	Title
 
 export type Replace = {
     type: "replace"

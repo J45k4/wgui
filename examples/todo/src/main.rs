@@ -18,6 +18,7 @@ struct TodoState {
 
 fn render(state: &TodoState) -> Item {
 	vstack(vec![
+		title("Todo List").into(),
 		text("Todo List"),
 		vstack(vec![
 			hstack(vec![
@@ -29,7 +30,7 @@ fn render(state: &TodoState) -> Item {
 					hstack(vec![
 						text(&item.name).into(),
 						checkbox().id(&format!("todo_checkbox_{}", i)).checked(item.completed).into()
-					]).into()
+					]).border("1px solid #5f99f5").padding(10).margin(5).into()
 				}).collect()
 			).spacing(5).into()
 		]).into()

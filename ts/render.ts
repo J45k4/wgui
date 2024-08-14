@@ -29,14 +29,18 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 
                 for (let i = 0; i < item.body.length; i++) {
                     const el = renderItem(item.body[i], ctx)
-                    div.appendChild(el as any)
+					if (el) {
+                    	div.appendChild(el as any)
+					}
                 }
             } else {
                 div = document.createElement("div")
 
                 for (const i of item.body) {
                     const el = renderItem(i, ctx)
-                    div.appendChild(el as any)
+                    if (el) {
+						div.appendChild(el as any)
+					}
                 }
             }          
 
@@ -285,6 +289,10 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 
             return h1
         }
+		case "title": {
+			document.title = item.title
+			return undefined
+		}
         default:
             return document.createTextNode("Unknown item type")
     }

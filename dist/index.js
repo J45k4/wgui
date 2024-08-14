@@ -126,13 +126,17 @@ var renderItem = (item, ctx, old) => {
         div.innerHTML = "";
         for (let i = 0;i < item.body.length; i++) {
           const el = renderItem(item.body[i], ctx);
-          div.appendChild(el);
+          if (el) {
+            div.appendChild(el);
+          }
         }
       } else {
         div = document.createElement("div");
         for (const i of item.body) {
           const el = renderItem(i, ctx);
-          div.appendChild(el);
+          if (el) {
+            div.appendChild(el);
+          }
         }
       }
       if (item.width != null) {
@@ -308,6 +312,10 @@ var renderItem = (item, ctx, old) => {
       const h1 = document.createElement("h1");
       h1.innerText = item.text;
       return h1;
+    }
+    case "title": {
+      document.title = item.title;
+      return;
     }
     default:
       return document.createTextNode("Unknown item type");

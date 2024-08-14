@@ -17,21 +17,7 @@ use crate::ui_client::UiWsWorker;
 
 static CLIENT_ID: AtomicU64 = AtomicU64::new(1);
 
-pub fn serve_index() -> Response<Full<Bytes>>  {
-    let str = format!(r#"
-<html>
-    <head>
-        <title>Your app</title>
-		<link rel="stylesheet" href="/index.css"></link>
-    </head>
-    <body>
-        <script src="/index.js"></script>
-    </body>
-</html>"#, );
-
-    Response::new(Full::new(Bytes::from(str)))
-}
-
+const INDEX_HTML_BYTES: &[u8] = include_bytes!("../../dist/index.html");
 const INDEX_JS_BYTES: &[u8] = include_bytes!("../../dist/index.js");
 const CSS_JS_BYTES: &[u8] = include_bytes!("../../dist/index.css");
 
@@ -64,9 +50,7 @@ async fn handle_req(mut req: Request<hyper::body::Incoming>, ctx: Ctx) -> Result
     match req.uri().path() {
         "/index.js" => Ok(Response::new(Full::new(Bytes::from(INDEX_JS_BYTES)))),
 		"/index.css" => Ok(Response::new(Full::new(Bytes::from(CSS_JS_BYTES)))),
-        _ => {
-            Ok(serve_index())
-        }
+        _ => Ok(Response::new(Full::new(Bytes::from(INDEX_HTML_BYTES))))
     }
 }
 
@@ -90,7 +74,6 @@ impl Server {
     pub async fn run(mut self) {
         loop {
             tokio::select! {
-
                 res = self.listener.accept() => {
                     match res {
                         Ok((socket, addr)) => {

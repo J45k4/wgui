@@ -115,7 +115,7 @@ pub enum ClientAction {
     RemoveInx(RemoveInx),
     PushState(PushState),
     ReplaceState(ReplaceState),
-    SetQuery(SetQuery),
+    SetQuery(SetQuery)
 }
 
 pub enum ServerEvent {

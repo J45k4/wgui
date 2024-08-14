@@ -42,12 +42,12 @@ impl Default for Margin {
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Padding {
-	All(f32),
+	All(u32),
 	Individual {
-		top: f32,
-		right: f32,
-		bottom: f32,
-		left: f32
+		top: u32,
+		right: u32,
+		bottom: u32,
+		left: u32
 	},
 	None
 }
@@ -81,8 +81,8 @@ pub struct View {
     pub height: Option<u32>,
     pub width: Option<u32>,
     pub body: Vec<Item>,
-	pub margin: Margin,
-	pub padding: Padding,
+	pub margin: Option<u32>,
+	pub padding: Option<u32>,
 	pub spacing: Option<u32>,
 	pub border: Option<String>
 }
@@ -113,18 +113,22 @@ impl View {
 		self.border = Some(border.to_string());
 		self
 	}
+	
+	pub fn padding(mut self, padding: u32) -> Self {
+		self.padding = Some(padding);
+		self
+	}
+
+	pub fn margin(mut self, margin: u32) -> Self {
+		self.margin = Some(margin);
+		self
+	}
 }
 
 pub fn view(body: Vec<Item>) -> View {
 	View {
-		flex: None,
-		height: None,
-		width: None,
 		body,
-		margin: Margin::None,
-		padding: Padding::None,
-		spacing: None,
-		border: None
+		..Default::default()
 	}
 }
 
@@ -325,6 +329,12 @@ pub fn h1(text: &str) -> Item {
 	})
 }
 
+pub fn title(text: &str) -> Item {
+	Item::Title {
+		title: text.to_string()
+	}
+}
+
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum Item {
@@ -333,5 +343,6 @@ pub enum Item {
     Text(Text),
     Button(Button),
     TextInput(TextInput),
-    Checkbox(Checkbox)
+    Checkbox(Checkbox),
+	Title { title: String }
 }
