@@ -1,0 +1,1 @@
+bun build ./ts/app.ts --watch --outfile ./dist/index.js
