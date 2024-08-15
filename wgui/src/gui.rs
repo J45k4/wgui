@@ -86,7 +86,8 @@ pub struct View {
 	pub padding: Option<u32>,
 	pub spacing: Option<u32>,
 	pub border: Option<String>,
-	pub wrap: Option<bool>
+	pub wrap: Option<bool>,
+	pub background_color: Option<String>
 }
 
 impl Into<Item> for View {
@@ -133,6 +134,11 @@ impl View {
 
 	pub fn wrap(mut self, wrap: bool) -> Self {
 		self.wrap = Some(wrap);
+		self
+	}
+
+	pub fn background_color(mut self, color: &str) -> Self {
+		self.background_color = Some(color.to_string());
 		self
 	}
 }

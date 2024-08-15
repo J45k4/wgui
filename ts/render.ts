@@ -106,6 +106,10 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 				div.style.flexWrap = "wrap"
 			}
 
+			if (item.backgroundColor) {
+				div.style.backgroundColor = item.backgroundColor
+			}
+
             div.style.overflow = "auto"
             
             if (item.flex) {

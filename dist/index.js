@@ -185,6 +185,9 @@ var renderItem = (item, ctx, old) => {
       if (item.wrap) {
         div.style.flexWrap = "wrap";
       }
+      if (item.backgroundColor) {
+        div.style.backgroundColor = item.backgroundColor;
+      }
       div.style.overflow = "auto";
       if (item.flex) {
         div.style.display = "flex";
