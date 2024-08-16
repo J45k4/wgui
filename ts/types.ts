@@ -35,6 +35,7 @@ export type View = {
 	spacing?: number
 	border?: string
 	backgroundColor?: string
+	cursor?: string
 	wrap?: boolean
     body: Item[]
 }

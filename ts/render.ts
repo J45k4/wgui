@@ -110,6 +110,10 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 				div.style.backgroundColor = item.backgroundColor
 			}
 
+			if (item.cursor) {
+				div.style.cursor = item.cursor
+			}
+
             div.style.overflow = "auto"
             
             if (item.flex) {

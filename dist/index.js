@@ -167,6 +167,9 @@ var renderItem = (item, ctx, old) => {
       if (item.backgroundColor) {
         div.style.backgroundColor = item.backgroundColor;
       }
+      if (item.cursor) {
+        div.style.cursor = item.cursor;
+      }
       div.style.overflow = "auto";
       if (item.flex) {
         div.style.display = "flex";

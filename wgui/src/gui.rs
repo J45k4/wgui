@@ -87,7 +87,8 @@ pub struct View {
 	pub spacing: Option<u32>,
 	pub border: Option<String>,
 	pub wrap: Option<bool>,
-	pub background_color: Option<String>
+	pub background_color: Option<String>,
+	pub cursor: Option<String>
 }
 
 impl Into<Item> for View {
@@ -139,6 +140,11 @@ impl View {
 
 	pub fn background_color(mut self, color: &str) -> Self {
 		self.background_color = Some(color.to_string());
+		self
+	}
+
+	pub fn cursor(mut self, cursor: &str) -> Self {
+		self.cursor = Some(cursor.to_string());
 		self
 	}
 }
