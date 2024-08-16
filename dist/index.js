@@ -1,34 +1,27 @@
 // ts/logger.ts
-var LogLevel;
-(function(LogLevel2) {
-  LogLevel2[LogLevel2["Debug"] = 1] = "Debug";
-  LogLevel2[LogLevel2["Info"] = 2] = "Info";
-  LogLevel2[LogLevel2["Warn"] = 3] = "Warn";
-  LogLevel2[LogLevel2["Error"] = 4] = "Error";
-})(LogLevel || (LogLevel = {}));
-var loglevel = LogLevel.Info;
+var loglevel = 2 /* Info */;
 var createLogger = (name) => {
   return {
     info: (...data) => {
-      if (loglevel < LogLevel.Info) {
+      if (loglevel < 2 /* Info */) {
         return;
       }
       console.log(`[${name}]`, ...data);
     },
     error: (...data) => {
-      if (loglevel < LogLevel.Error) {
+      if (loglevel < 4 /* Error */) {
         return;
       }
       console.error(`[${name}]`, ...data);
     },
     warn: (...data) => {
-      if (loglevel < LogLevel.Warn) {
+      if (loglevel < 3 /* Warn */) {
         return;
       }
       console.warn(`[${name}]`, ...data);
     },
     debug: (...data) => {
-      if (loglevel < LogLevel.Debug) {
+      if (loglevel < 1 /* Debug */) {
         return;
       }
       console.debug(`[${name}]`, ...data);
@@ -48,37 +41,29 @@ class Deboncer {
   valueChanged = false;
   cb = null;
   change(text) {
-    logger2.info("change", text);
     this.valueChanged = true;
     this.value = text;
     clearTimeout(this.timeout);
     this.timeout = setTimeout(() => {
-      logger2.info("timeout");
       this.trigger();
     }, 500);
   }
   unregister() {
-    logger2.info("unregister");
     this.cb = null;
   }
   register(cb) {
-    logger2.info("register");
     this.cb = cb;
   }
   trigger() {
-    logger2.info("trigger", this.value, this.valueChanged);
     if (this.timeout) {
       clearTimeout(this.timeout);
       this.timeout = null;
-      logger2.info("timeout cleared");
     }
     if (!this.valueChanged) {
-      logger2.info("value is not changed");
       return;
     }
     this.valueChanged = false;
     if (this.cb) {
-      logger2.info("debouncer is triggered with", this.value);
       this.cb(this.value);
     }
     this.value = "";
@@ -88,20 +73,14 @@ class Deboncer {
 // ts/path.ts
 var logger4 = createLogger("path");
 var getPathItem = (path, element) => {
-  logger4.info(`getPathItem`, { path, element });
   const p = path[0];
-  logger4.info(`first path item: ${p}`);
   if (p == null) {
-    logger4.info("returning element", element);
     return element;
   }
   const child = element.children[p];
-  logger4.info("child", child);
   if (!child) {
-    logger4.info(`child not found with path ${p}`);
     return;
   }
-  logger4.info(`child found: ${p}`);
   return getPathItem(path.slice(1), child);
 };
 
@@ -187,6 +166,12 @@ var renderItem = (item, ctx, old) => {
       }
       if (item.backgroundColor) {
         div.style.backgroundColor = item.backgroundColor;
+      }
+      if (item.cursor) {
+        div.style.cursor = item.cursor;
+      }
+      if (item.maxWidth) {
+        div.style.maxWidth = item.maxWidth + "px";
       }
       div.style.overflow = "auto";
       if (item.flex) {
@@ -345,30 +330,24 @@ class MessageSender {
     this.sender = send;
   }
   send(msg) {
-    logger7.info("send", msg);
     this.queue.push(msg);
     this.sendNext();
   }
   sendNext() {
-    logger7.info("sendNext");
     if (this.timeout) {
       logger7.info("timeout already exist");
       return;
     }
     this.timeout = setTimeout(() => {
-      logger7.info("timeout");
       this.sendNow();
     }, 500);
   }
   sendNow() {
-    logger7.info("sendNow");
     clearInterval(this.timeout);
     this.timeout = 0;
     if (this.queue.length === 0) {
-      logger7.info("queue is empty");
       return;
     }
-    logger7.info("sendingNow", this.queue);
     this.sender(this.queue);
     this.queue = [];
   }
@@ -392,17 +371,13 @@ var connectWebsocket = (args) => {
     ws = new WebSocket(wsUrl);
     ws.onmessage = (e) => {
       const data = e.data.toString();
-      logger9.info("rawdata", data);
       const messages = JSON.parse(data);
-      logger9.info("received", messages);
       args.onMessage(sender, messages);
     };
     ws.onopen = () => {
-      logger9.info("connected");
       args.onOpen(sender);
     };
     ws.onclose = () => {
-      logger9.info("disconnected");
       setTimeout(() => {
         createConnection();
       }, 1000);
@@ -439,19 +414,16 @@ window.onload = () => {
   res.appendChild(content);
   const root = document.createElement("div");
   content.appendChild(root);
-  logger11.debug("root", res);
   const debouncer2 = new Deboncer;
   const {
     sender
   } = connectWebsocket({
     onMessage: (sender2, msgs) => {
-      logger11.info("root", root);
       const ctx = {
         sender: sender2,
         debouncer: debouncer2
       };
       for (const message of msgs) {
-        logger11.info("process", message);
         if (message.type === "pushState") {
           history.pushState({}, "", message.url);
           sender2.send({
@@ -478,41 +450,34 @@ window.onload = () => {
           continue;
         }
         const element = getPathItem(message.path, root);
-        logger11.info("element", element);
         if (!element) {
-          logger11.info(`cannot find element with path ${message.path}`);
           continue;
         }
         if (message.type === "replace") {
-          logger11.info("replace", message);
           const newEl = renderItem(message.item, ctx, element);
           if (newEl) {
             element.replaceWith(newEl);
           }
         }
         if (message.type === "replaceAt") {
-          logger11.info("replaceAt", message);
           const newEl = renderItem(message.item, ctx);
           if (newEl) {
             element.children.item(message.inx)?.replaceWith(newEl);
           }
         }
         if (message.type === "addFront") {
-          logger11.info("addFront", message);
           const newEl = renderItem(message.item, ctx);
           if (newEl) {
             element.prepend(newEl);
           }
         }
         if (message.type === "addBack") {
-          logger11.info("addBack", message);
           const newEl = renderItem(message.item, ctx);
           if (newEl) {
             element.appendChild(newEl);
           }
         }
         if (message.type === "insertAt") {
-          logger11.info("insertAt", message);
           const newEl = renderItem(message.item, ctx);
           if (newEl) {
             const child = element.children.item(message.inx);
@@ -522,11 +487,16 @@ window.onload = () => {
         if (message.type === "removeInx") {
           element.children.item(message.inx)?.remove();
         }
+        if (message.type === "setProp") {
+          element.setAttribute(message.prop, message.value);
+        }
+        if (message.type === "setStyle") {
+          element.style[message.prop] = message.value;
+        }
       }
     },
     onOpen: (sender2) => {
       const params = new URLSearchParams(location.href);
-      logger11.info("onOpen", params);
       const query = {};
       params.forEach((value, key) => {
         query[key] = value;
@@ -541,7 +511,6 @@ window.onload = () => {
   });
   window.addEventListener("popstate", (evet) => {
     const params = new URLSearchParams(location.href);
-    logger11.info("url changed", location.href);
     const query = {};
     params.forEach((value, key) => {
       query[key] = value;

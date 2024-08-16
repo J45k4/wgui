@@ -7,6 +7,7 @@ use crate::types::InsertAt;
 use crate::types::ItemPath;
 use crate::types::RemoveInx;
 use crate::types::Replace;
+use crate::types::Value;
 
 fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: ItemPath) {
     log::trace!("{:?} inner_dif", path);
@@ -14,6 +15,37 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
     match (old, new) {
         (Item::View(old), Item::View(new)) => {
             log::trace!("{:?} inner_diff calculating view minumum edits", path);
+
+			// if old != new {
+			// 	println!("{:?} old and new are different", path);
+			// 	if old.background_color != new.background_color {
+			// 		println!("{:?} background color is different", path);
+			// 	}
+
+			// }
+
+			if old.spacing != new.spacing {
+				changes.push(ClientAction::SetStyle { 
+					path: path.clone(), 
+					prop: "gap".to_string(), 
+					value: new.spacing.unwrap_or_default().to_string()
+				})
+			}
+			if old.border != new.border {
+				println!("{:?} border is different", path);
+				changes.push(ClientAction::SetStyle {
+					path: path.clone(),
+					prop: "border".to_string(),
+					value: new.border.clone().unwrap_or_default().to_string()
+				})
+			}
+			if old.background_color != new.background_color {
+				changes.push(ClientAction::SetStyle {
+					path: path.clone(),
+					prop: "background-color".to_string(),
+					value: new.background_color.clone().unwrap_or_default().to_string()
+				})
+			}
 
             let edits = get_minimum_edits(&old.body, &new.body);
 
@@ -102,4 +134,18 @@ pub fn diff(old: &Item, new: &Item) -> Vec<ClientAction> {
     inner_diff(&mut changes, old, new, path);
     log::debug!("diff changes: {:?}", changes);
     changes
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::gui::view;
+
+	#[test]
+	fn test_view_metadata_diff() {
+		let old = view();
+		let new = view().spacing(10);
+
+		let changes = super::diff(&old.into(), &new.into());
+		println!("{:?}", changes);
+	}
 }

@@ -26,25 +26,18 @@ window.onload = () => {
 
     const root = document.createElement("div")
     content.appendChild(root)
-
-    logger.debug("root", res)
-
     const debouncer = new Deboncer()
 
     const {
         sender
     } = connectWebsocket({
         onMessage:  (sender, msgs: SrvMessage[]) => { 
-            logger.info("root", root)
-
             const ctx: Context = {
                 sender,
                 debouncer
             }
             
             for (const message of msgs) {
-                logger.info("process", message)
-
                 if (message.type === "pushState") {
                     history.pushState({}, "", message.url)
 
@@ -82,15 +75,11 @@ window.onload = () => {
     
                 const element = getPathItem(message.path, root)
     
-                logger.info("element", element)
-    
                 if (!element) {
-                    logger.info(`cannot find element with path ${message.path}`)
                     continue
                 }
     
                 if (message.type === "replace") {
-                    logger.info("replace", message)
                     const newEl = renderItem(message.item, ctx, element)
                 
                     if (newEl) {
@@ -99,7 +88,6 @@ window.onload = () => {
                 }
                 
                 if (message.type === "replaceAt") {
-                    logger.info("replaceAt", message)
                     const newEl = renderItem(message.item, ctx)
     
                     if (newEl) {
@@ -108,7 +96,6 @@ window.onload = () => {
                 }
                 
                 if (message.type === "addFront") {
-                    logger.info("addFront", message)
                     const newEl = renderItem(message.item, ctx)
     
                     if (newEl) {
@@ -117,7 +104,6 @@ window.onload = () => {
                 }
                 
                 if (message.type === "addBack") {
-                    logger.info("addBack", message)
                     const newEl = renderItem(message.item, ctx)
     
                     if (newEl) {
@@ -126,7 +112,6 @@ window.onload = () => {
                 }
 
                 if (message.type === "insertAt") {
-                    logger.info("insertAt", message)
                     const newEl = renderItem(message.item, ctx)
     
                     if (newEl) {
@@ -139,19 +124,22 @@ window.onload = () => {
                 if (message.type === "removeInx") {
                     element.children.item(message.inx)?.remove()
                 }
+
+				if (message.type === "setProp") {
+					element.setAttribute(message.prop, message.value)
+				}
+
+				if (message.type === "setStyle") {
+					(element as any).style[message.prop] = message.value
+				}
             }
         },
         onOpen: (sender) => {
             const params = new URLSearchParams(location.href)
-
-            logger.info("onOpen", params)
-
             const query: { [key: string]: string } = {}
-
             params.forEach((value, key) => {
                 query[key] = value
             })
-
             sender.send({
                 type: "pathChanged",
                 path: location.pathname,
@@ -164,15 +152,10 @@ window.onload = () => {
 
     window.addEventListener("popstate", (evet) => {
         const params = new URLSearchParams(location.href)
-
-        logger.info("url changed", location.href)
-
         const query: { [key: string]: string } = {}
-
         params.forEach((value, key) => {
             query[key] = value
         })
-
         sender.send({
             type: "pathChanged",
             path: location.pathname,
