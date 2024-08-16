@@ -37,6 +37,7 @@ export type View = {
 	backgroundColor?: string
 	cursor?: string
 	wrap?: boolean
+	maxWidth?: number
     body: Item[]
 }
 

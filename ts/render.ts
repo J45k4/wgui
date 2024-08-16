@@ -114,6 +114,10 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 				div.style.cursor = item.cursor
 			}
 
+			if (item.maxWidth) {
+				div.style.maxWidth = item.maxWidth + "px"
+			}
+
             div.style.overflow = "auto"
             
             if (item.flex) {

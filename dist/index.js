@@ -170,6 +170,9 @@ var renderItem = (item, ctx, old) => {
       if (item.cursor) {
         div.style.cursor = item.cursor;
       }
+      if (item.maxWidth) {
+        div.style.maxWidth = item.maxWidth + "px";
+      }
       div.style.overflow = "auto";
       if (item.flex) {
         div.style.display = "flex";

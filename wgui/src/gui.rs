@@ -88,7 +88,8 @@ pub struct View {
 	pub border: Option<String>,
 	pub wrap: Option<bool>,
 	pub background_color: Option<String>,
-	pub cursor: Option<String>
+	pub cursor: Option<String>,
+	pub max_width: Option<u32>
 }
 
 impl Into<Item> for View {
@@ -145,6 +146,11 @@ impl View {
 
 	pub fn cursor(mut self, cursor: &str) -> Self {
 		self.cursor = Some(cursor.to_string());
+		self
+	}
+
+	pub fn max_width(mut self, max_width: u32) -> Self {
+		self.max_width = Some(max_width);
 		self
 	}
 }
