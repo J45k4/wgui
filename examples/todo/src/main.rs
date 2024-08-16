@@ -16,6 +16,14 @@ struct TodoState {
     items: Vec<TodoItems>,
 }
 
+fn get_color(completed: bool) -> String {
+	if completed {
+		"#d3d3d3".to_string()
+	} else {
+		"#ffffff".to_string()
+	}
+}
+
 fn render(state: &TodoState) -> Item {
 	vstack(vec![
 		text("Todo List"),
@@ -29,7 +37,12 @@ fn render(state: &TodoState) -> Item {
 					hstack(vec![
 						text(&item.name).into(),
 						checkbox().id(&format!("todo_checkbox_{}", i)).checked(item.completed).into()
-					]).border("1px solid #5f99f5").padding(10).margin(5).into()
+					])
+					.border(&format!("1px solid {}", get_color(item.completed)))
+					.background_color(&get_color(item.completed))
+					.padding(10)
+					.margin(5)
+					.into()
 				}).collect()
 			).spacing(5).into()
 		]).into()

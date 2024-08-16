@@ -30,23 +30,15 @@ export const connectWebsocket = (args: {
 
         ws.onmessage = (e) => {
             const data = e.data.toString()
-    
-            logger.info("rawdata", data)
             const messages = JSON.parse(data) as SrvMessage[]
-            logger.info("received", messages)
-    
             args.onMessage(sender, messages)
         }
     
         ws.onopen = () => {
-            logger.info("connected")
-
             args.onOpen(sender)
         }
     
         ws.onclose = () => {
-            logger.info("disconnected")
-    
             setTimeout(() => {
                 createConnection()
             }, 1000)

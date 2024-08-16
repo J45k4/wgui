@@ -143,6 +143,20 @@ export type SetQuery = {
     }
 }
 
+export type SetProp = {
+	type: "setProp"
+	path: number[]
+	prop: string
+	value: string
+}
+
+export type SetStyle = {
+	type: "setStyle"
+	path: number[]
+	prop: string
+	value: string
+}
+
 export type SrvMessage = Replace |
     ReplaceAt |
     AddBack | 
@@ -151,8 +165,9 @@ export type SrvMessage = Replace |
     RemoveInx |
     PushState |
     ReplaceState |
-    SetQuery
-
+    SetQuery |
+	SetProp |
+	SetStyle
 
 export type OnClick = {
     type: "onClick"

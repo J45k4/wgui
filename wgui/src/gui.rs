@@ -143,9 +143,8 @@ impl View {
 	}
 }
 
-pub fn view(body: Vec<Item>) -> View {
+pub fn view() -> View {
 	View {
-		body,
 		..Default::default()
 	}
 }

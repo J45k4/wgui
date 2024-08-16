@@ -105,6 +105,12 @@ pub struct SetQuery {
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+pub enum Value {
+	String(String),
+	Number(u32)
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum ClientAction {
     Replace(Replace),
@@ -115,7 +121,17 @@ pub enum ClientAction {
     RemoveInx(RemoveInx),
     PushState(PushState),
     ReplaceState(ReplaceState),
-    SetQuery(SetQuery)
+    SetQuery(SetQuery),
+	SetProp {
+		path: ItemPath,
+		prop: String,
+		value: String
+	},
+	SetStyle {
+		path: ItemPath,
+		prop: String,
+		value: String
+	}
 }
 
 pub enum ServerEvent {
