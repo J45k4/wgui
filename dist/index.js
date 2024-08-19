@@ -1,27 +1,34 @@
 // ts/logger.ts
-var loglevel = 2 /* Info */;
+var LogLevel;
+(function(LogLevel2) {
+  LogLevel2[LogLevel2["Debug"] = 1] = "Debug";
+  LogLevel2[LogLevel2["Info"] = 2] = "Info";
+  LogLevel2[LogLevel2["Warn"] = 3] = "Warn";
+  LogLevel2[LogLevel2["Error"] = 4] = "Error";
+})(LogLevel || (LogLevel = {}));
+var loglevel = LogLevel.Info;
 var createLogger = (name) => {
   return {
     info: (...data) => {
-      if (loglevel < 2 /* Info */) {
+      if (loglevel < LogLevel.Info) {
         return;
       }
       console.log(`[${name}]`, ...data);
     },
     error: (...data) => {
-      if (loglevel < 4 /* Error */) {
+      if (loglevel < LogLevel.Error) {
         return;
       }
       console.error(`[${name}]`, ...data);
     },
     warn: (...data) => {
-      if (loglevel < 3 /* Warn */) {
+      if (loglevel < LogLevel.Warn) {
         return;
       }
       console.warn(`[${name}]`, ...data);
     },
     debug: (...data) => {
-      if (loglevel < 1 /* Debug */) {
+      if (loglevel < LogLevel.Debug) {
         return;
       }
       console.debug(`[${name}]`, ...data);
@@ -97,6 +104,37 @@ var renderItem = (item, ctx, old) => {
       const span = document.createElement("span");
       span.innerText = item.text;
       return span;
+    }
+    case "slider": {
+      if (old instanceof HTMLInputElement) {
+        old.min = item.min.toString();
+        old.max = item.max.toString();
+        old.type = "range";
+        old.value = item.value.toString();
+        old.step = item.step.toString();
+        old.style.width = item.width + "px";
+        old.style.height = item.height + "px";
+        return;
+      }
+      const slider = document.createElement("input");
+      slider.min = item.min.toString();
+      slider.max = item.max.toString();
+      slider.type = "range";
+      slider.value = item.value.toString();
+      slider.step = item.step.toString();
+      slider.style.width = item.width + "px";
+      slider.style.height = item.height + "px";
+      slider.oninput = (e) => {
+        if (item.id) {
+          ctx.sender.send({
+            type: "onSliderChange",
+            id: item.id,
+            value: parseInt(e.target.value, 10)
+          });
+          ctx.sender.sendNow();
+        }
+      };
+      return slider;
     }
     case "view": {
       outerLogger.debug("render view");

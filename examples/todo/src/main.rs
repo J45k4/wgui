@@ -13,6 +13,7 @@ struct TodoItems {
 
 struct TodoState {
     new_todo_name: String,
+	slider_value: i32,
     items: Vec<TodoItems>,
 }
 
@@ -32,6 +33,12 @@ fn render(state: &TodoState) -> Item {
 				text_input().placeholder("What needs to be done?").name("new_todo_name").value(&state.new_todo_name).into(),
 				button("Add").id("add_todo_button").into()
 			]).spacing(3).id("add_todo").into(),
+			slider()
+			.id("slider")
+			.min(0).max(100)
+			.value(state.slider_value)
+			.width(100)
+			.into(),
 			vstack(
 				state.items.iter().enumerate().map(|(i, item)| {
 					hstack(vec![
@@ -55,6 +62,7 @@ async fn main() {
 
     let mut state = TodoState {
         new_todo_name: "".to_string(),
+		slider_value: 0,
         items: vec![]
     };
 
@@ -103,7 +111,6 @@ async fn main() {
                 }
             },
             ClientEvent::OnTextChanged(t) => {
-                // log::info!("OnTextChanged {:?}", t);
                 if let Some(name) = t.name {
                     if name == "new_todo_name" {
                         log::info!("new_todo_name {:?}", t.value);
@@ -111,6 +118,11 @@ async fn main() {
                     }
                 }
             }
+			ClientEvent::OnSliderChange(s) => {
+				if s.id == "slider" {
+					state.slider_value = s.value;
+				}
+			}
             _ => {}
         }
 

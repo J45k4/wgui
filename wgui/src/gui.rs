@@ -375,6 +375,72 @@ pub fn title(text: &str) -> Item {
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Slider {
+	id: Option<String>,
+	min: i32,
+	max: i32,
+	value: i32,
+	step: i32,
+	width: Option<u32>,
+	height: Option<u32>
+}
+
+impl Slider {
+	pub fn id(mut self, id: &str) -> Self {
+		self.id = Some(id.to_string());
+		self
+	}
+
+	pub fn min(mut self, min: i32) -> Self {
+		self.min = min;
+		self
+	}
+
+	pub fn max(mut self, max: i32) -> Self {
+		self.max = max;
+		self
+	}
+
+	pub fn value(mut self, value: i32) -> Self {
+		self.value = value;
+		self
+	}
+
+	pub fn step(mut self, step: i32) -> Self {
+		self.step = step;
+		self
+	}
+
+	pub fn width(mut self, width: u32) -> Self {
+		self.width = Some(width);
+		self
+	}
+
+	pub fn height(mut self, height: u32) -> Self {
+		self.height = Some(height);
+		self
+	}
+}
+
+pub fn slider() -> Slider {
+	Slider {
+		id: None,
+		min: 0,
+		max: 0,
+		value: 0,
+		step: 1,
+		width: None,
+		height: None
+	}
+}
+
+impl Into<Item> for Slider {
+	fn into(self) -> Item {
+		Item::Slider(self)
+	}
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum Item {
     H1(H1),
@@ -383,5 +449,6 @@ pub enum Item {
     Button(Button),
     TextInput(TextInput),
     Checkbox(Checkbox),
-	Title { title: String }
+	Title { title: String },
+	Slider(Slider)
 }

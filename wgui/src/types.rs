@@ -37,6 +37,12 @@ pub struct InputQuery {
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+pub struct OnSliderChange {
+	pub id: String,
+	pub value: i32
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum ClientEvent { 
     Disconnected { id: usize},
@@ -45,6 +51,7 @@ pub enum ClientEvent {
     Input(InputQuery),
     OnClick(OnClick),
     OnTextChanged(OnTextChanged),
+	OnSliderChange(OnSliderChange),
 }
 
 pub type ItemPath = Vec<usize>;
