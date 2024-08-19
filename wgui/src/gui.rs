@@ -153,6 +153,16 @@ impl View {
 		self.max_width = Some(max_width);
 		self
 	}
+
+	pub fn width(mut self, width: u32) -> Self {
+		self.width = Some(width);
+		self
+	}
+
+	pub fn height(mut self, height: u32) -> Self {
+		self.height = Some(height);
+		self
+	}
 }
 
 pub fn view() -> View {
