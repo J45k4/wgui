@@ -236,10 +236,12 @@ var renderItem = (item, ctx, old) => {
       const logger6 = outerLogger.child(`button:${item.name}:${item.id}`);
       logger6.debug("render button");
       if (old instanceof HTMLButtonElement) {
+        old.id = item.id;
         old.textContent = item.title;
         return;
       }
       const button = document.createElement("button");
+      button.id = item.id;
       button.innerText = item.title;
       if (item.flex != null) {
         button.style.display = "flex";
@@ -250,10 +252,9 @@ var renderItem = (item, ctx, old) => {
         }
       }
       button.onclick = () => {
-        logger6.debug("button clicked");
         ctx.sender.send({
           type: "onClick",
-          id: item.id,
+          id: button.id,
           name: item.name
         });
         ctx.sender.sendNow();

@@ -188,12 +188,13 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
             logger.debug("render button")
 
             if (old instanceof HTMLButtonElement) {
+				old.id = item.id
                 old.textContent = item.title
-
                 return
             }
 
             const button = document.createElement("button")
+			button.id = item.id
             button.innerText = item.title
 
             if (item.flex != null) {
@@ -208,16 +209,12 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
                 }
             }
 
-
             button.onclick = () => {
-                logger.debug("button clicked")
-
                 ctx.sender.send({
                     type: "onClick",
-                    id: item.id,
+                    id: button.id,
                     name: item.name,
                 })
-
                 ctx.sender.sendNow()
             }
 
