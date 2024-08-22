@@ -27,6 +27,7 @@ fn render(state: &State) -> Item {
 		.add_option("Option 1", "option1")
 		.add_option("Option 2", "option2")
 		.add_option("Option 3", "option3")
+		.width(100)
 		.into(),
 		slider()
 		.id("slider")

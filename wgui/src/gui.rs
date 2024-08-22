@@ -385,6 +385,8 @@ pub struct Select {
 	id: String,
 	value: Option<String>,
 	options: Vec<SelectOption>,
+	width: Option<u32>,
+	height: Option<u32>
 }
 
 impl Into<Item> for Select {
@@ -397,7 +399,9 @@ pub fn select() -> Select {
 	Select {
 		id: "".to_string(),
 		value: None,
-		options: vec![]
+		options: vec![],
+		width: None,
+		height: None
 	}
 }
 
@@ -409,6 +413,16 @@ impl Select {
 
 	pub fn value(mut self, value: &str) -> Self {
 		self.value = Some(value.to_string());
+		self
+	}
+
+	pub fn width(mut self, width: u32) -> Self {
+		self.width = Some(width);
+		self
+	}
+
+	pub fn height(mut self, height: u32) -> Self {
+		self.height = Some(height);
 		self
 	}
 

@@ -96,6 +96,8 @@ export type Select = {
 	type: "select"
 	id: string
 	value: string
+	width: number
+	height: number
 	options: {
 		value: string
 		name: string

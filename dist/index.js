@@ -353,6 +353,12 @@ var renderItem = (item, ctx, old) => {
         if (old.value !== item.value) {
           old.value = item.value;
         }
+        if (old.style.width !== item.width + "px") {
+          old.style.width = item.width + "px";
+        }
+        if (old.style.height !== item.height + "px") {
+          old.style.height = item.height + "px";
+        }
         const existingOptions = Array.from(old.options);
         const newOptions = item.options.map((option) => option.value);
         if (existingOptions.length !== item.options.length || !existingOptions.every((opt, index) => opt.value === newOptions[index])) {
@@ -375,6 +381,8 @@ var renderItem = (item, ctx, old) => {
         select.add(opt);
       }
       select.value = item.value;
+      select.style.width = item.width + "px";
+      select.style.height = item.height + "px";
       select.onchange = () => {
         ctx.sender.send({
           type: "onSelect",

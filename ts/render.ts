@@ -356,9 +356,14 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 			logger.debug("render select")
 		
 			if (old instanceof HTMLSelectElement) {
-				// Update only the properties that have changed
 				if (old.value !== item.value) {
 					old.value = item.value
+				}
+				if (old.style.width !== item.width + "px") {
+					old.style.width = item.width + "px"
+				}
+				if (old.style.height !== item.height + "px") {
+					old.style.height = item.height + "px"
 				}
 		
 				const existingOptions = Array.from(old.options)
@@ -393,6 +398,8 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 		
 			// Set the value of the new select element
 			select.value = item.value
+			select.style.width = item.width + "px"
+			select.style.height = item.height + "px"
 		
 			select.onchange = () => {
 				ctx.sender.send({
