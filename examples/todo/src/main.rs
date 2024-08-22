@@ -33,12 +33,6 @@ fn render(state: &TodoState) -> Item {
 				text_input().placeholder("What needs to be done?").name("new_todo_name").value(&state.new_todo_name).into(),
 				button("Add").id("add_todo_button").into()
 			]).spacing(3).id("add_todo").into(),
-			slider()
-			.id("slider")
-			.min(0).max(100)
-			.value(state.slider_value)
-			.width(100)
-			.into(),
 			vstack(
 				state.items.iter().enumerate().map(|(i, item)| {
 					hstack(vec![

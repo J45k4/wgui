@@ -1,34 +1,27 @@
 // ts/logger.ts
-var LogLevel;
-(function(LogLevel2) {
-  LogLevel2[LogLevel2["Debug"] = 1] = "Debug";
-  LogLevel2[LogLevel2["Info"] = 2] = "Info";
-  LogLevel2[LogLevel2["Warn"] = 3] = "Warn";
-  LogLevel2[LogLevel2["Error"] = 4] = "Error";
-})(LogLevel || (LogLevel = {}));
-var loglevel = LogLevel.Info;
+var loglevel = 2 /* Info */;
 var createLogger = (name) => {
   return {
     info: (...data) => {
-      if (loglevel < LogLevel.Info) {
+      if (loglevel < 2 /* Info */) {
         return;
       }
       console.log(`[${name}]`, ...data);
     },
     error: (...data) => {
-      if (loglevel < LogLevel.Error) {
+      if (loglevel < 4 /* Error */) {
         return;
       }
       console.error(`[${name}]`, ...data);
     },
     warn: (...data) => {
-      if (loglevel < LogLevel.Warn) {
+      if (loglevel < 3 /* Warn */) {
         return;
       }
       console.warn(`[${name}]`, ...data);
     },
     debug: (...data) => {
-      if (loglevel < LogLevel.Debug) {
+      if (loglevel < 1 /* Debug */) {
         return;
       }
       console.debug(`[${name}]`, ...data);
@@ -352,6 +345,45 @@ var renderItem = (item, ctx, old) => {
       const h1 = document.createElement("h1");
       h1.innerText = item.text;
       return h1;
+    }
+    case "select": {
+      const logger6 = outerLogger.child(`select:${item.id}`);
+      logger6.debug("render select");
+      if (old instanceof HTMLSelectElement) {
+        if (old.value !== item.value) {
+          old.value = item.value;
+        }
+        const existingOptions = Array.from(old.options);
+        const newOptions = item.options.map((option) => option.value);
+        if (existingOptions.length !== item.options.length || !existingOptions.every((opt, index) => opt.value === newOptions[index])) {
+          old.innerHTML = "";
+          for (const option of item.options) {
+            const opt = document.createElement("option");
+            opt.value = option.value;
+            opt.text = option.name;
+            old.add(opt);
+          }
+        }
+        return;
+      }
+      console.log("creating new select");
+      const select = document.createElement("select");
+      for (const option of item.options) {
+        const opt = document.createElement("option");
+        opt.value = option.value;
+        opt.text = option.name;
+        select.add(opt);
+      }
+      select.value = item.value;
+      select.onchange = () => {
+        ctx.sender.send({
+          type: "onSelect",
+          id: item.id,
+          value: select.value
+        });
+        ctx.sender.sendNow();
+      };
+      return select;
     }
     default:
       return document.createTextNode("Unknown item type");

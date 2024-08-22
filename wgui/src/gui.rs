@@ -375,6 +375,53 @@ pub fn title(text: &str) -> Item {
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SelectOption {
+	value: String,
+	name: String
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Select {
+	id: String,
+	value: Option<String>,
+	options: Vec<SelectOption>,
+}
+
+impl Into<Item> for Select {
+	fn into(self) -> Item {
+		Item::Select(self)
+	}
+}
+
+pub fn select() -> Select {
+	Select {
+		id: "".to_string(),
+		value: None,
+		options: vec![]
+	}
+}
+
+impl Select {
+	pub fn id(mut self, id: &str) -> Self {
+		self.id = id.to_string();
+		self
+	}
+
+	pub fn value(mut self, value: &str) -> Self {
+		self.value = Some(value.to_string());
+		self
+	}
+
+	pub fn add_option(mut self, value: &str, name: &str) -> Self {
+		self.options.push(SelectOption {
+			value: value.to_string(),
+			name: name.to_string()
+		});
+		self
+	}
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Slider {
 	id: Option<String>,
 	min: i32,
@@ -450,5 +497,6 @@ pub enum Item {
     TextInput(TextInput),
     Checkbox(Checkbox),
 	Title { title: String },
-	Slider(Slider)
+	Slider(Slider),
+	Select(Select)
 }

@@ -92,6 +92,16 @@ export type Slider = {
 	height: number
 }
 
+export type Select = {
+	type: "select"
+	id: string
+	value: string
+	options: {
+		value: string
+		name: string
+	}[]
+}
+
 export type Item = View | 
     Text | 
     Button | 
@@ -100,7 +110,8 @@ export type Item = View |
     Checkbox |
     H1 |
 	Title |
-	Slider
+	Slider |
+	Select
 
 export type Replace = {
     type: "replace"
@@ -217,11 +228,18 @@ export type OnSliderChange = {
 	value: number
 }
 
+export type OnSelect = {
+	type: "onSelect"
+	id: string
+	value: string
+}
+
 export type MessageToSrv = OnClick | 
     OnTextChange | 
     OnKeyDown | 
     PathChanged |
-	OnSliderChange
+	OnSliderChange |
+	OnSelect
 
 export type MessagesToSrv = MessageToSrv[]
 

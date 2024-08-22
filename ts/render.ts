@@ -350,6 +350,62 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 
             return h1
         }
+		case "select": {
+			const logger = outerLogger.child(`select:${item.id}`)
+		
+			logger.debug("render select")
+		
+			if (old instanceof HTMLSelectElement) {
+				// Update only the properties that have changed
+				if (old.value !== item.value) {
+					old.value = item.value
+				}
+		
+				const existingOptions = Array.from(old.options)
+				const newOptions = item.options.map(option => option.value)
+		
+				// Update the options only if they differ
+				if (existingOptions.length !== item.options.length ||
+					!existingOptions.every((opt, index) => opt.value === newOptions[index])) {
+		
+					old.innerHTML = ""
+					for (const option of item.options) {
+						const opt = document.createElement("option")
+						opt.value = option.value
+						opt.text = option.name
+						old.add(opt)
+					}
+				}
+		
+				return
+			}
+		
+			console.log("creating new select")
+		
+			const select = document.createElement("select")
+		
+			for (const option of item.options) {
+				const opt = document.createElement("option")
+				opt.value = option.value
+				opt.text = option.name
+				select.add(opt)
+			}
+		
+			// Set the value of the new select element
+			select.value = item.value
+		
+			select.onchange = () => {
+				ctx.sender.send({
+					type: "onSelect",
+					id: item.id,
+					value: select.value,
+				})
+		
+				ctx.sender.sendNow()
+			}
+		
+			return select
+		}
 		// case "title": {
 		// 	document.title = item.title
 		// 	return undefined
