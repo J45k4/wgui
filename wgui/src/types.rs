@@ -145,6 +145,10 @@ pub enum ClientAction {
 		path: ItemPath,
 		prop: String,
 		value: String
+	},
+	SetID {
+		path: ItemPath,
+		id: u32
 	}
 }
 

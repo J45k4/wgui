@@ -26,28 +26,27 @@ fn get_color(completed: bool) -> String {
 }
 
 fn render(state: &TodoState) -> Item {
-	vstack(vec![
+	vstack([
 		text("Todo List"),
-		vstack(vec![
-			hstack(vec![
-				text_input().placeholder("What needs to be done?").name("new_todo_name").value(&state.new_todo_name).into(),
-				button("Add").id("add_todo_button").into()
-			]).spacing(3).id("add_todo").into(),
+		vstack([
+			hstack([
+				text_input().placeholder("What needs to be done?").name("new_todo_name").value(&state.new_todo_name),
+				button("Add").id("add_todo_button")
+			]).spacing(3).id("add_todo"),
 			vstack(
 				state.items.iter().enumerate().map(|(i, item)| {
-					hstack(vec![
-						text(&item.name).into(),
-						checkbox().id(&format!("todo_checkbox_{}", i)).checked(item.completed).into()
+					hstack(&[
+						text(&item.name),
+						checkbox().id(&format!("todo_checkbox_{}", i)).checked(item.completed)
 					])
 					.border(&format!("1px solid {}", get_color(item.completed)))
 					.background_color(&get_color(item.completed))
 					.padding(10)
 					.margin(5)
-					.into()
-				}).collect()
-			).spacing(5).into()
-		]).into()
-	]).into()
+				})
+			).spacing(5)
+		])
+	])
 }
 
 #[tokio::main]
