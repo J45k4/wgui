@@ -132,6 +132,15 @@ window.onload = () => {
 				if (message.type === "setStyle") {
 					(element as any).style[message.prop] = message.value
 				}
+
+				if (message.type === "setId") {
+					element.id = message.id
+				}
+
+				if (message.type === "setSpacing") {
+					let e = element as HTMLDivElement
+					e.style.gap = message.value + "px"
+				}
             }
         },
         onOpen: (sender) => {

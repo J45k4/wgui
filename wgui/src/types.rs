@@ -149,6 +149,10 @@ pub enum ClientAction {
 	SetID {
 		path: ItemPath,
 		id: u32
+	},
+	SetSpacing {
+		path: ItemPath,
+		spacing: u32
 	}
 }
 

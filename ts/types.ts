@@ -184,6 +184,18 @@ export type SetStyle = {
 	value: string
 }
 
+export type SetID = {
+	type: "setId"
+	id: string
+	path: number[]
+}
+
+export type SetSpacing = {
+	type: "setSpacing"
+	path: number[]
+	spacing: number
+}
+
 export type SrvMessage = Replace |
     ReplaceAt |
     AddBack | 
@@ -194,7 +206,9 @@ export type SrvMessage = Replace |
     ReplaceState |
     SetQuery |
 	SetProp |
-	SetStyle
+	SetStyle |
+	SetID |
+	SetSpacing
 
 export type OnClick = {
     type: "onClick"

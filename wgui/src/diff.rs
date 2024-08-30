@@ -20,9 +20,14 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 		return;
 	}
 
-	match (old.payload, new.payload) {
+	match (&old.payload, &new.payload) {
 		(ItemPayload::Layout(old), ItemPayload::Layout(new)) => {
 			log::trace!("{:?} layout", path);
+
+			if old.spacing != new.spacing {
+				println!("{:?} spacing is different", path);
+				changes.push(ClientAction::SetSpacing { path: path.clone(), spacing: new.spacing });
+			}
 
 			let edits = get_minimum_edits(&old.body, &new.body);
 			for edit in edits {
@@ -82,7 +87,20 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 				}
 			}
 		},
-		_ => {}
+		_ => {
+			if old != new {
+                log::trace!("{:?} old and new are different", path);
+
+                changes.push(
+                    ClientAction::Replace(
+                        Replace {
+                            path: path.clone(),
+                            item: new.clone()
+                        }
+                    )
+                );
+            }
+		}
 	}
 
 	if old.id != new.id {
@@ -110,43 +128,43 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 
 
 
-    match (old, new) {
-        (Item::View(old), Item::View(new)) => {
-            log::trace!("{:?} inner_diff calculating view minumum edits", path);
+    // match (old, new) {
+    //     (Item::View(old), Item::View(new)) => {
+    //         log::trace!("{:?} inner_diff calculating view minumum edits", path);
 
-			// if old != new {
-			// 	println!("{:?} old and new are different", path);
-			// 	if old.background_color != new.background_color {
-			// 		println!("{:?} background color is different", path);
-			// 	}
+	// 		// if old != new {
+	// 		// 	println!("{:?} old and new are different", path);
+	// 		// 	if old.background_color != new.background_color {
+	// 		// 		println!("{:?} background color is different", path);
+	// 		// 	}
 
-			// }
+	// 		// }
 
-			if old.spacing != new.spacing {
-				changes.push(ClientAction::SetStyle { 
-					path: path.clone(), 
-					prop: "gap".to_string(), 
-					value: new.spacing.unwrap_or_default().to_string()
-				})
-			}
-        }
-        _ => {
-            log::trace!("{:?} comparing old and new", path);
+	// 		if old.spacing != new.spacing {
+	// 			changes.push(ClientAction::SetStyle { 
+	// 				path: path.clone(), 
+	// 				prop: "gap".to_string(), 
+	// 				value: new.spacing.unwrap_or_default().to_string()
+	// 			})
+	// 		}
+    //     }
+    //     _ => {
+    //         log::trace!("{:?} comparing old and new", path);
 
-            if old != new {
-                log::trace!("{:?} old and new are different", path);
+    //         if old != new {
+    //             log::trace!("{:?} old and new are different", path);
 
-                changes.push(
-                    ClientAction::Replace(
-                        Replace {
-                            path: path.clone(),
-                            item: new.clone()
-                        }
-                    )
-                );
-            }
-        }
-    }
+    //             changes.push(
+    //                 ClientAction::Replace(
+    //                     Replace {
+    //                         path: path.clone(),
+    //                         item: new.clone()
+    //                     }
+    //                 )
+    //             );
+    //         }
+    //     }
+    // }
 }
 
 pub fn diff(old: &Item, new: &Item) -> Vec<ClientAction> {
@@ -162,12 +180,13 @@ pub fn diff(old: &Item, new: &Item) -> Vec<ClientAction> {
 
 #[cfg(test)]
 mod tests {
-    use crate::gui::view;
+    use crate::gui::hstack;
+    use super::*;
 
 	#[test]
 	fn test_view_metadata_diff() {
-		let old = view();
-		let new = view().spacing(10);
+		let old = hstack([]);
+		let new = hstack([]).spacing(10);
 
 		let changes = super::diff(&old.into(), &new.into());
 		println!("{:?}", changes);
