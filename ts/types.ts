@@ -3,7 +3,8 @@ import { MessageSender } from "./message_sender.ts";
 
 export type Text = {
     type: "text"
-    text: string
+    value: string
+	placeholder?: string
 }
 
 export enum FlexDirection {
@@ -16,8 +17,8 @@ export type Flex = {
     flexDirection: FlexDirection
 }
 
-export type View = {
-    type: "view"
+export type Layout = {
+    type: "layout"
 	id?: string
     flex?: Flex
     height: number
@@ -43,19 +44,14 @@ export type View = {
 
 export type Button = {
     type: "button"
-    id: string
-    name: string
     title: string
-    flex?: Flex
 }
 
 export type TextInput = {
     type: "textInput"
     id: string
-    name: string
     placeholder: string
     value: string
-    flex?: Flex
 }
 
 export type Table = {
@@ -66,14 +62,7 @@ export type Table = {
 
 export type Checkbox = {
     type: "checkbox"
-    id: string
-    name: string
     checked: boolean
-}
-
-export type H1 = {
-    type: "h1"
-    text: string
 }
 
 export type Title = {
@@ -83,37 +72,44 @@ export type Title = {
 
 export type Slider = {
 	type: "slider"
-	id: string
 	min: number
 	max: number
 	value: number
 	step: number
-	width: number
-	height: number
 }
 
 export type Select = {
 	type: "select"
-	id: string
-	value: string
-	width: number
-	height: number
 	options: {
 		value: string
 		name: string
 	}[]
 }
 
-export type Item = View | 
-    Text | 
-    Button | 
-    TextInput | 
-    Table | 
-    Checkbox |
-    H1 |
-	Title |
+export type None = {
+	type: "none"
+}
+
+type ItemPayload = Text |
+	TextInput | 
+	Table | 
+	Select | 
+	Checkbox | 
 	Slider |
-	Select
+	Layout |
+	Button |
+	None 
+
+export type Item = {
+	id: number
+	inx?: number
+	typ: number
+	height: number
+	width: number
+	maxHeight: number
+	maxWidth: number
+	payload: ItemPayload
+}
 
 export type Replace = {
     type: "replace"
@@ -173,27 +169,10 @@ export type SetQuery = {
 export type SetProp = {
 	type: "setProp"
 	path: number[]
-	prop: string
-	value: string
-}
-
-export type SetStyle = {
-	type: "setStyle"
-	path: number[]
-	prop: string
-	value: string
-}
-
-export type SetID = {
-	type: "setId"
-	id: string
-	path: number[]
-}
-
-export type SetSpacing = {
-	type: "setSpacing"
-	path: number[]
-	spacing: number
+	sets: {
+		prop: string
+		value: string
+	}[]
 }
 
 export type SrvMessage = Replace |
@@ -205,21 +184,18 @@ export type SrvMessage = Replace |
     PushState |
     ReplaceState |
     SetQuery |
-	SetProp |
-	SetStyle |
-	SetID |
-	SetSpacing
+	SetProp
 
 export type OnClick = {
     type: "onClick"
-    id: string
-    name: string
+    id: number
+	inx?: number
 }
 
 export type OnTextChange = {
     type: "onTextChanged"
-    id: string
-    name: string
+    id: number
+	inx?: number
     value: string
 }
 

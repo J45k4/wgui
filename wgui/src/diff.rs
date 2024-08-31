@@ -6,8 +6,11 @@ use crate::types::AddFront;
 use crate::types::ClientAction;
 use crate::types::InsertAt;
 use crate::types::ItemPath;
+use crate::types::PropKey;
 use crate::types::RemoveInx;
 use crate::types::Replace;
+use crate::types::SetProp;
+use crate::types::Value;
 
 fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: ItemPath) {
     log::trace!("{:?} inner_dif", path);
@@ -20,13 +23,18 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 		return;
 	}
 
+	let mut sets: Vec<SetProp> = Vec::new();
+
 	match (&old.payload, &new.payload) {
 		(ItemPayload::Layout(old), ItemPayload::Layout(new)) => {
 			log::trace!("{:?} layout", path);
 
 			if old.spacing != new.spacing {
 				println!("{:?} spacing is different", path);
-				changes.push(ClientAction::SetSpacing { path: path.clone(), spacing: new.spacing });
+				sets.push(SetProp {
+					key: PropKey::Spacing,
+					value: Value::Number(new.spacing)
+				})
 			}
 
 			let edits = get_minimum_edits(&old.body, &new.body);
@@ -104,26 +112,36 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 	}
 
 	if old.id != new.id {
-		changes.push(ClientAction::SetID {
-			id: new.id,
-			path: path.clone()
-		});
+		sets.push(SetProp {
+			key: PropKey::ID,
+			value: Value::Number(new.id)
+		})
 	}
 
 	if old.border != new.border {
 		println!("{:?} border is different", path);
-		changes.push(ClientAction::SetStyle {
-			path: path.clone(),
-			prop: "border".to_string(),
-			value: new.border.to_string()
-		})
+		sets.push(SetProp {
+			key: PropKey::Border,
+			value: Value::String(new.border.clone())
+		});
 	}
 	if old.background_color != new.background_color {
-		changes.push(ClientAction::SetStyle {
+		// changes.push(ClientAction::SetStyle {
+		// 	path: path.clone(),
+		// 	prop: "background-color".to_string(),
+		// 	value: new.background_color.to_string()
+		// })
+		sets.push(SetProp {
+			key: PropKey::BackgroundColor,
+			value: Value::String(new.background_color.clone())
+		});
+	}
+
+	if sets.len() > 0 {
+		changes.push(ClientAction::SetProp {
 			path: path.clone(),
-			prop: "background-color".to_string(),
-			value: new.background_color.to_string()
-		})
+			sets
+		});
 	}
 
 

@@ -87,315 +87,176 @@ var getPathItem = (path, element) => {
 // ts/render.ts
 var outerLogger = createLogger("render");
 var renderItem = (item, ctx, old) => {
-  outerLogger.debug("renderItem", item, old);
-  switch (item.type) {
-    case "text": {
-      if (old instanceof HTMLSpanElement) {
-        old.innerHTML = item.text;
-        return;
-      }
-      const span = document.createElement("span");
-      span.innerText = item.text;
-      return span;
-    }
-    case "slider": {
+  console.log("renderItem", item, old);
+  let element = old;
+  const payload = item.payload;
+  switch (payload.type) {
+    case "checkbox": {
       if (old instanceof HTMLInputElement) {
-        old.min = item.min.toString();
-        old.max = item.max.toString();
-        old.type = "range";
-        old.value = item.value.toString();
-        old.step = item.step.toString();
-        old.style.width = item.width + "px";
-        old.style.height = item.height + "px";
-        return;
-      }
-      const slider = document.createElement("input");
-      slider.min = item.min.toString();
-      slider.max = item.max.toString();
-      slider.type = "range";
-      slider.value = item.value.toString();
-      slider.step = item.step.toString();
-      slider.style.width = item.width + "px";
-      slider.style.height = item.height + "px";
-      slider.oninput = (e) => {
-        if (item.id) {
+        element = old;
+        old.type = "checkbox";
+        old.checked = payload.checked;
+        element = old;
+      } else {
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = payload.checked;
+        checkbox.onclick = () => {
           ctx.sender.send({
-            type: "onSliderChange",
-            id: item.id,
-            value: parseInt(e.target.value, 10)
+            type: "onClick",
+            id: item.id
           });
           ctx.sender.sendNow();
-        }
-      };
-      return slider;
+        };
+        element = checkbox;
+      }
+      break;
     }
-    case "view": {
-      outerLogger.debug("render view");
-      let div = old;
+    case "layout": {
       if (old instanceof HTMLDivElement) {
-        div.innerHTML = "";
-        for (let i = 0;i < item.body.length; i++) {
-          const el = renderItem(item.body[i], ctx);
+        old.innerHTML = "";
+        for (const i of payload.body) {
+          const el = renderItem(i, ctx);
           if (el) {
-            div.appendChild(el);
+            old.appendChild(el);
           }
         }
       } else {
-        div = document.createElement("div");
-        for (const i of item.body) {
+        console.log("create layout", payload);
+        const div = document.createElement("div");
+        for (const i of payload.body) {
           const el = renderItem(i, ctx);
           if (el) {
             div.appendChild(el);
           }
         }
+        element = div;
       }
-      if (item.width != null) {
-        div.style.width = item.width + "px";
+      if (payload.spacing) {
+        element.style.gap = payload.spacing + "px";
       }
-      if (item.height != null) {
-        div.style.height = item.height + "px";
+      if (payload.wrap) {
+        element.style.flexWrap = "wrap";
       }
-      if (item.margin != null) {
-        outerLogger.debug("setMargin", item.margin + "px");
-        div.style.margin = item.margin + "px";
+      if (payload.flex) {
+        element.style.display = "flex";
+        element.style.flexDirection = payload.flex;
       }
-      if (item.marginTop != null) {
-        div.style.marginTop = item.marginTop + "px";
-      }
-      if (item.marginRight != null) {
-        div.style.marginRight = item.marginRight + "px";
-      }
-      if (item.marginBottom != null) {
-        div.style.marginBottom = item.marginBottom + "px";
-      }
-      if (item.marginLeft != null) {
-        div.style.marginLeft = item.marginLeft + "px";
-      }
-      if (item.paddingTop != null) {
-        div.style.paddingTop = item.paddingTop + "px";
-      }
-      if (item.paddingRight != null) {
-        div.style.paddingRight = item.paddingRight + "px";
-      }
-      if (item.paddingBottom != null) {
-        div.style.paddingBottom = item.paddingBottom + "px";
-      }
-      if (item.paddingLeft != null) {
-        div.style.paddingLeft = item.paddingLeft + "px";
-      }
-      if (item.padding != null) {
-        div.style.padding = item.padding + "px";
-      }
-      if (item.spacing != null) {
-        div.style.gap = item.spacing + "px";
-      }
-      if (item.border != null) {
-        div.style.border = item.border;
-      }
-      if (item.wrap) {
-        div.style.flexWrap = "wrap";
-      }
-      if (item.backgroundColor) {
-        div.style.backgroundColor = item.backgroundColor;
-      }
-      if (item.cursor) {
-        div.style.cursor = item.cursor;
-      }
-      if (item.maxWidth) {
-        div.style.maxWidth = item.maxWidth + "px";
-      }
-      div.style.overflow = "auto";
-      if (item.flex) {
-        div.style.display = "flex";
-        const flex = item.flex;
-        div.style.flexDirection = flex.flexDirection;
-        if (flex.grow) {
-          div.style.flexGrow = flex.grow.toString();
-        }
-      }
-      if (item.id) {
-        div.onclick = () => {
-          ctx.sender.send({
-            type: "onClick",
-            id: item.id,
-            name: item.id
-          });
-          ctx.sender.sendNow();
-        };
-      }
-      return div;
-    }
-    case "button": {
-      const logger6 = outerLogger.child(`button:${item.name}:${item.id}`);
-      logger6.debug("render button");
-      if (old instanceof HTMLButtonElement) {
-        old.id = item.id;
-        old.textContent = item.title;
-        return;
-      }
-      const button = document.createElement("button");
-      button.id = item.id;
-      button.innerText = item.title;
-      if (item.flex != null) {
-        button.style.display = "flex";
-        const flex = item.flex;
-        button.style.flexDirection = flex.flexDirection;
-        if (flex.grow) {
-          button.style.flexGrow = flex.grow.toString();
-        }
-      }
-      button.onclick = () => {
-        ctx.sender.send({
-          type: "onClick",
-          id: button.id,
-          name: item.name
-        });
-        ctx.sender.sendNow();
-      };
-      return button;
-    }
-    case "textInput": {
-      const logger6 = outerLogger.child(`textInput:${item.name}:${item.id}`);
-      logger6.debug(`render textInput`, item);
-      let registered = false;
-      if (old instanceof HTMLInputElement) {
-        if (!registered || !ctx.debouncer.valueChanged) {
-          old.value = item.value;
-        }
-        return;
-      }
-      const input = document.createElement("input");
-      input.placeholder = item.placeholder;
-      input.value = item.value;
-      if (item.flex != null) {
-        input.style.display = "flex";
-        const flex = item.flex;
-        input.style.flexDirection = flex.flexDirection;
-        if (flex.grow) {
-          input.style.flexGrow = flex.grow.toString();
-        }
-      }
-      input.oninput = (e) => {
-        logger6.debug(`oninput ${input.value}`);
-        ctx.debouncer.change(e.target.value);
-      };
-      input.onkeydown = (e) => {
-        logger6.debug(`keydown: ${e.key}`);
-        if (e.key === "Enter") {
-          ctx.debouncer.trigger();
-          ctx.sender.send({
-            type: "onKeyDown",
-            id: item.id,
-            name: item.name,
-            keycode: e.key
-          });
-          ctx.sender.sendNow();
-        }
-      };
-      input.onfocus = () => {
-        logger6.debug("focus");
-        ctx.debouncer.register((v) => {
-          logger6.debug(`changed to ${v}`);
-          ctx.sender.send({
-            type: "onTextChanged",
-            id: item.id,
-            name: item.name,
-            value: v
-          });
-          ctx.sender.sendNow();
-        });
-        registered = true;
-      };
-      input.onblur = () => {
-        logger6.debug("blur");
-        ctx.debouncer.trigger();
-        ctx.debouncer.unregister();
-        registered = false;
-      };
-      return input;
-    }
-    case "checkbox": {
-      const logger6 = outerLogger.child(`checkbox:${item.name}:${item.id}`);
-      logger6.debug("render checkbox");
-      if (old instanceof HTMLInputElement) {
-        old.checked = item.checked;
-        return;
-      }
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.checked = item.checked;
-      checkbox.name = item.name;
-      checkbox.onclick = () => {
-        ctx.sender.send({
-          type: "onClick",
-          id: item.id,
-          name: item.name
-        });
-        ctx.sender.sendNow();
-      };
-      return checkbox;
-    }
-    case "h1": {
-      const logger6 = outerLogger.child(`h1:${item.text}`);
-      logger6.debug("render h1");
-      if (old instanceof HTMLHeadingElement) {
-        old.innerText = item.text;
-        return;
-      }
-      const h1 = document.createElement("h1");
-      h1.innerText = item.text;
-      return h1;
+      break;
     }
     case "select": {
-      const logger6 = outerLogger.child(`select:${item.id}`);
-      logger6.debug("render select");
       if (old instanceof HTMLSelectElement) {
-        if (old.value !== item.value) {
-          old.value = item.value;
-        }
-        if (old.style.width !== item.width + "px") {
-          old.style.width = item.width + "px";
-        }
-        if (old.style.height !== item.height + "px") {
-          old.style.height = item.height + "px";
-        }
+        element = old;
         const existingOptions = Array.from(old.options);
-        const newOptions = item.options.map((option) => option.value);
-        if (existingOptions.length !== item.options.length || !existingOptions.every((opt, index) => opt.value === newOptions[index])) {
+        const newOptions = payload.options.map((option) => option.value);
+        if (existingOptions.length !== payload.options.length || !existingOptions.every((opt, index) => opt.value === newOptions[index])) {
           old.innerHTML = "";
-          for (const option of item.options) {
+          for (const option of payload.options) {
             const opt = document.createElement("option");
             opt.value = option.value;
             opt.text = option.name;
             old.add(opt);
           }
         }
-        return;
+      } else {
+        const select = document.createElement("select");
+        for (const option of payload.options) {
+          const opt = document.createElement("option");
+          opt.value = option.value;
+          opt.text = option.name;
+          select.add(opt);
+        }
+        select.value = payload.value;
+        select.onchange = () => {
+          ctx.sender.send({
+            type: "onSelect",
+            id: item.id,
+            value: select.value
+          });
+          ctx.sender.sendNow();
+        };
+        element = select;
       }
-      console.log("creating new select");
-      const select = document.createElement("select");
-      for (const option of item.options) {
-        const opt = document.createElement("option");
-        opt.value = option.value;
-        opt.text = option.name;
-        select.add(opt);
-      }
-      select.value = item.value;
-      select.style.width = item.width + "px";
-      select.style.height = item.height + "px";
-      select.onchange = () => {
-        ctx.sender.send({
-          type: "onSelect",
-          id: item.id,
-          value: select.value
-        });
-        ctx.sender.sendNow();
-      };
-      return select;
+      break;
     }
-    default:
-      return document.createTextNode("Unknown item type");
+    case "button": {
+      if (old instanceof HTMLButtonElement) {
+        element = old;
+        old.textContent = payload.title;
+        element = old;
+      } else {
+        const button = document.createElement("button");
+        button.textContent = payload.title;
+        button.onclick = () => {
+          ctx.sender.send({
+            type: "onClick",
+            id: item.id,
+            inx: item.inx
+          });
+          ctx.sender.sendNow();
+        };
+        element = button;
+      }
+      break;
+    }
+    case "slider": {
+      if (old instanceof HTMLInputElement) {
+        element = old;
+        old.min = payload.min.toString();
+        old.max = payload.max.toString();
+        old.type = "range";
+        old.value = payload.value.toString();
+        old.step = payload.step.toString();
+      }
+      break;
+    }
+    case "text": {
+      if (old instanceof HTMLSpanElement) {
+        element = old;
+        old.innerText = payload.value + "";
+      } else {
+        console.log("create text", payload);
+        element = document.createElement("span");
+        element.innerText = payload.value + "";
+      }
+      break;
+    }
+    case "textInput": {
+      if (old instanceof HTMLInputElement) {
+        console.log("it already exists");
+        element = old;
+        old.value = payload.value;
+        old.placeholder = payload.placeholder;
+      } else {
+        const input = document.createElement("input");
+        input.placeholder = payload.placeholder;
+        input.value = payload.value;
+        input.oninput = (e) => {
+          ctx.sender.send({
+            type: "onTextChanged",
+            id: item.id,
+            inx: item.inx,
+            value: e.target.value
+          });
+        };
+        element = input;
+      }
+      break;
+    }
   }
+  if (item.width) {
+    element.style.width = item.width + "px";
+  }
+  if (item.height) {
+    element.style.height = item.height + "px";
+  }
+  if (item.maxWidth) {
+    element.style.maxWidth = item.maxWidth + "px";
+  }
+  if (item.maxHeight) {
+    element.style.maxHeight = item.maxHeight + "px";
+  }
+  return element;
 };
 
 // ts/message_sender.ts
@@ -565,12 +426,6 @@ window.onload = () => {
         }
         if (message.type === "removeInx") {
           element.children.item(message.inx)?.remove();
-        }
-        if (message.type === "setProp") {
-          element.setAttribute(message.prop, message.value);
-        }
-        if (message.type === "setStyle") {
-          element.style[message.prop] = message.value;
         }
       }
     },

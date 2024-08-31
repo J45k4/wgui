@@ -350,8 +350,6 @@ pub const ITEM_TEXT_INPUT: u8 = 6;
 pub struct Layout {
 	pub body: Vec<Item>,
 	pub flex: FlexDirection,
-	pub height: u32,
-	pub width: u32,
 	pub padding: u32,
 	pub spacing: u32,
 	pub wrap: bool,
@@ -359,9 +357,13 @@ pub struct Layout {
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
 pub enum ItemPayload {
 	Layout(Layout),
 	Text {
+		value: String,
+	},
+	TextInput {
 		value: String,
 		placeholder: String
 	},
@@ -377,6 +379,9 @@ pub enum ItemPayload {
 		value: i32,
 		step: i32
 	},
+	Button {
+		title: String
+	},
 	None
 }
 
@@ -387,14 +392,18 @@ impl Default for ItemPayload {
 }
 
 #[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase", tag = "type")]
 pub struct Item {
 	pub id: u32,
+	pub inx: u32,
 	pub typ: u8,
 	pub payload: ItemPayload,
 	pub border: String,
 	pub background_color: String,
 	pub cursor: String,
+	pub height: u32,
+	pub width: u32,
+	pub max_height: u32,
+	pub max_width: u32,
 }
 
 pub fn checkbox() -> Item {
@@ -442,9 +451,8 @@ where
 pub fn button(title: &str) -> Item {
 	Item {
 		typ: ITEM_BUTTON,
-		payload: ItemPayload::Text { 
-			value: title.to_string(), 
-			placeholder: "".to_string()
+		payload: ItemPayload::Button { 
+			title: title.to_string(), 
 		},
 		..Default::default()
 	}
@@ -455,7 +463,6 @@ pub fn text(text: &str) -> Item {
 		typ: ITEM_TEXT,
 		payload: ItemPayload::Text {
 			value: text.to_string(),
-			placeholder: "".to_string()
 		},
 		..Default::default()
 	}
@@ -464,6 +471,10 @@ pub fn text(text: &str) -> Item {
 pub fn text_input() -> Item {
 	Item {
 		typ: ITEM_TEXT_INPUT,
+		payload: ItemPayload::TextInput {
+			value: "".to_string(),
+			placeholder: "".to_string()
+		},
 		..Default::default()
 	}
 }
@@ -483,6 +494,11 @@ pub fn slider() -> Item {
 impl Item {
 	pub fn id(mut self, id: u32) -> Self {
 		self.id = id;
+		self
+	}
+
+	pub fn inx(mut self, inx: u32) -> Self {
+		self.inx = inx;
 		self
 	}
 	
@@ -511,10 +527,23 @@ impl Item {
 		self
 	}
 
-	pub fn value(mut self, v: i32) -> Self {
+	pub fn ivalue(mut self, v: i32) -> Self {
 		match self.payload {
 			ItemPayload::Slider { ref mut value, .. } => {
 				*value = v;
+			},
+			_ => {}
+		}
+		self
+	}
+
+	pub fn svalue(mut self, v: &str) -> Self {
+		match self.payload {
+			ItemPayload::Text { ref mut value, .. } => {
+				*value = v.to_string();
+			},
+			ItemPayload::TextInput { ref mut value, .. } => {
+				*value = v.to_string();
 			},
 			_ => {}
 		}
@@ -560,6 +589,36 @@ impl Item {
 		}
 		self
 	}
+
+	pub fn placeholder(mut self, p: &str) -> Self {
+		match self.payload {
+			ItemPayload::TextInput { ref mut placeholder, .. } => {
+				*placeholder = p.to_string();
+			},
+			_ => {}
+		}
+		self
+	}
+
+	pub fn border(mut self, b: &str) -> Self {
+		self.border = b.to_string();
+		self
+	}
+
+	pub fn background_color(mut self, c: &str) -> Self {
+		self.background_color = c.to_string();
+		self
+	}
+
+	// pub fn value(mut self, v: &str) -> Self {
+	// 	match self.payload {
+	// 		ItemPayload::Text { ref mut value, .. } => {
+	// 			*value = v.to_string();
+	// 		},
+	// 		_ => {}
+	// 	}
+	// 	self
+	// }
 }
 
 #[cfg(test)]

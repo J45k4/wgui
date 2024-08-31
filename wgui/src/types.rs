@@ -8,8 +8,8 @@ use crate::gui::Item;
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub struct OnClick {
-    pub id: Option<String>,
-    pub name: Option<String>
+    pub id: u32,
+	pub inx: Option<u32>
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
@@ -20,8 +20,8 @@ pub struct OnKeyDown {
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OnTextChanged {
-    pub id: Option<String>,
-    pub name: Option<String>,
+    pub id: u32,
+	pub inx: Option<u32>,
     pub value: String,
 }
 
@@ -125,6 +125,20 @@ pub enum Value {
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+pub enum PropKey {
+	ID = 1,
+	Border = 2,
+	BackgroundColor = 3,
+	Spacing = 4,
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SetProp {
+	pub key: PropKey,
+	pub value: Value
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum ClientAction {
     Replace(Replace),
@@ -138,22 +152,25 @@ pub enum ClientAction {
     SetQuery(SetQuery),
 	SetProp {
 		path: ItemPath,
-		prop: String,
-		value: String
+		sets: Vec<SetProp>
 	},
-	SetStyle {
-		path: ItemPath,
-		prop: String,
-		value: String
-	},
-	SetID {
-		path: ItemPath,
-		id: u32
-	},
-	SetSpacing {
-		path: ItemPath,
-		spacing: u32
-	}
+	// SetStyle {
+	// 	path: ItemPath,
+	// 	prop: String,
+	// 	value: String
+	// },
+	// SetID {
+	// 	path: ItemPath,
+	// 	id: u32
+	// },
+	// SetSpacing {
+	// 	path: ItemPath,
+	// 	spacing: u32
+	// },
+	// SetWidth {
+	// 	path: ItemPath,
+	// 	width: u32
+	// }
 }
 
 pub enum ServerEvent {

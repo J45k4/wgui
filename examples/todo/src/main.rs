@@ -25,19 +25,26 @@ fn get_color(completed: bool) -> String {
 	}
 }
 
+const ADD_TODO_ID: u32 = 1;
+const TODO_CHECKBOX_ID: u32 = 2;
+const NEW_TODO_TEXT_ID: u32 = 3;
+
 fn render(state: &TodoState) -> Item {
 	vstack([
 		text("Todo List"),
 		vstack([
 			hstack([
-				text_input().placeholder("What needs to be done?").name("new_todo_name").value(&state.new_todo_name),
-				button("Add").id("add_todo_button")
-			]).spacing(3).id("add_todo"),
+				text_input().id(NEW_TODO_TEXT_ID).placeholder("What needs to be done?"),
+				button("Add").id(ADD_TODO_ID)
+			]).spacing(3),
 			vstack(
 				state.items.iter().enumerate().map(|(i, item)| {
-					hstack(&[
+					hstack([
 						text(&item.name),
-						checkbox().id(&format!("todo_checkbox_{}", i)).checked(item.completed)
+						checkbox()
+						.id(TODO_CHECKBOX_ID)
+						.inx(i as u32)
+						.checked(item.completed)
 					])
 					.border(&format!("1px solid {}", get_color(item.completed)))
 					.background_color(&get_color(item.completed))
@@ -77,39 +84,62 @@ async fn main() {
             ClientEvent::PathChanged(_) => {},
             ClientEvent::Input(q) => {},
             ClientEvent::OnClick(o) => {
-                if let Some(id) = o.id {
-                    if id == "add_todo_button" {
-                        log::info!("add_todo_button clicked");
-                        state.items.push(TodoItems {
-                            name: state.new_todo_name.clone(),
-                            completed: false
-                        });
-                        state.new_todo_name = "".to_string();
-                    }
+				match o.id {
+					ADD_TODO_ID => {
+						log::info!("add_todo_button clicked");
+						state.items.push(TodoItems {
+							name: state.new_todo_name.clone(),
+							completed: false
+						});
+						state.new_todo_name = "".to_string();
+					},
+					TODO_CHECKBOX_ID => {
 
-                    if id == "todo_checkbox" {
-                        log::info!("todo_checkbox clicked");
-                        state.items[0].completed = !state.items[0].completed;
-                    }
+					},
+					_ => {}
+				}
 
-                    if id.starts_with("todo_checkbox_") {
-                        log::info!("todo_checkbox_ clicked");
-                        let inx = id.split("_").last().unwrap().parse::<usize>().unwrap();
-                        state.items[inx].completed = !state.items[inx].completed;
-                    }
+                // if let Some(id) = o.id {
+                //     if id == "add_todo_button" {
+                //         log::info!("add_todo_button clicked");
+                //         state.items.push(TodoItems {
+                //             name: state.new_todo_name.clone(),
+                //             completed: false
+                //         });
+                //         state.new_todo_name = "".to_string();
+                //     }
 
-					if id == "add_todo" {
-						log::info!("add_todo clicked");
-					}
-                }
+                //     if id == "todo_checkbox" {
+                //         log::info!("todo_checkbox clicked");
+                //         state.items[0].completed = !state.items[0].completed;
+                //     }
+
+                //     if id.starts_with("todo_checkbox_") {
+                //         log::info!("todo_checkbox_ clicked");
+                //         let inx = id.split("_").last().unwrap().parse::<usize>().unwrap();
+                //         state.items[inx].completed = !state.items[inx].completed;
+                //     }
+
+				// 	if id == "add_todo" {
+				// 		log::info!("add_todo clicked");
+				// 	}
+                // }
             },
             ClientEvent::OnTextChanged(t) => {
-                if let Some(name) = t.name {
-                    if name == "new_todo_name" {
-                        log::info!("new_todo_name {:?}", t.value);
-                        state.new_todo_name = t.value;
-                    }
-                }
+				match t.id {
+					NEW_TODO_TEXT_ID => {
+						log::info!("new_todo_name {:?}", t.value);
+						state.new_todo_name = t.value;
+					},
+					_ => {}
+				}
+
+                // if let Some(name) = t.name {
+                //     if name == "new_todo_name" {
+                //         log::info!("new_todo_name {:?}", t.value);
+                //         state.new_todo_name = t.value;
+                //     }
+                // }
             }
 			ClientEvent::OnSliderChange(s) => {
 				if s.id == "slider" {
