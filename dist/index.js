@@ -104,7 +104,8 @@ var renderItem = (item, ctx, old) => {
         checkbox.onclick = () => {
           ctx.sender.send({
             type: "onClick",
-            id: item.id
+            id: item.id,
+            inx: item.inx
           });
           ctx.sender.sendNow();
         };
@@ -260,8 +261,6 @@ var renderItem = (item, ctx, old) => {
 };
 
 // ts/message_sender.ts
-var logger7 = createLogger("message_sender");
-
 class MessageSender {
   sender;
   queue = [];
@@ -275,8 +274,7 @@ class MessageSender {
   }
   sendNext() {
     if (this.timeout) {
-      logger7.info("timeout already exist");
-      return;
+      clearTimeout(this.timeout);
     }
     this.timeout = setTimeout(() => {
       this.sendNow();
@@ -294,7 +292,7 @@ class MessageSender {
 }
 
 // ts/ws.ts
-var logger9 = createLogger("ws");
+var logger7 = createLogger("ws");
 var connectWebsocket = (args) => {
   let ws;
   const sender = new MessageSender((msgs) => {
@@ -323,13 +321,13 @@ var connectWebsocket = (args) => {
       }, 1000);
     };
     ws.onerror = (e) => {
-      logger9.error("error", e);
+      logger7.error("error", e);
     };
   };
   createConnection();
   return {
     close: () => {
-      logger9.debug("close");
+      logger7.debug("close");
       if (!ws) {
         return;
       }
@@ -340,7 +338,7 @@ var connectWebsocket = (args) => {
 };
 
 // ts/app.ts
-var logger11 = createLogger("app");
+var logger9 = createLogger("app");
 window.onload = () => {
   const res = document.querySelector("body");
   if (!res) {

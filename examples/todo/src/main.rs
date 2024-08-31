@@ -34,7 +34,7 @@ fn render(state: &TodoState) -> Item {
 		text("Todo List"),
 		vstack([
 			hstack([
-				text_input().id(NEW_TODO_TEXT_ID).placeholder("What needs to be done?"),
+				text_input().id(NEW_TODO_TEXT_ID).placeholder("What needs to be done?").svalue(&state.new_todo_name),
 				button("Add").id(ADD_TODO_ID)
 			]).spacing(3),
 			vstack(
@@ -94,7 +94,10 @@ async fn main() {
 						state.new_todo_name = "".to_string();
 					},
 					TODO_CHECKBOX_ID => {
-
+						if let Some(inx) = o.inx {
+							log::info!("todo_checkbox_{} clicked", inx);
+							state.items[inx as usize].completed = !state.items[inx as usize].completed;
+						}
 					},
 					_ => {}
 				}

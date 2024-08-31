@@ -1,8 +1,6 @@
 import { createLogger } from "./logger.ts";
 import { MessageToSrv } from "./types.ts";
 
-const logger = createLogger("message_sender")
-
 type SendMsgs = (msg: MessageToSrv[]) => void
 
 export class MessageSender {
@@ -20,11 +18,8 @@ export class MessageSender {
 
     private sendNext() {
         if (this.timeout) {
-            logger.info("timeout already exist")
-
-            return
+            clearTimeout(this.timeout)
         }
-
         this.timeout = setTimeout(() => {
             this.sendNow()
         }, 500)

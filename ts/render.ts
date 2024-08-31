@@ -24,6 +24,7 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 					ctx.sender.send({
 						type: "onClick",
 						id: item.id,
+						inx: item.inx,
 					})
 					ctx.sender.sendNow()
 				}
