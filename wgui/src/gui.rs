@@ -28,10 +28,8 @@ impl Default for Value {
 pub struct Layout {
 	pub body: Vec<Item>,
 	pub flex: FlexDirection,
-	pub padding: u32,
 	pub spacing: u32,
-	pub wrap: bool,
-	pub max_width: u32
+	pub wrap: bool
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
@@ -103,6 +101,8 @@ pub struct Item {
 	pub max_width: u32,
 	pub grow: u32,
 	pub text_align: String,
+	pub margin: u32,
+	pub padding: u32,
 }
 
 pub fn checkbox() -> Item {
@@ -271,54 +271,6 @@ pub fn td(items: Item) -> Item {
 	}
 }
 
-// #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
-// pub struct Tr {
-// 	items: Vec<Td>
-// }
-
-// pub fn tr<T>(items: T) -> Tr 
-// where
-// 	T: IntoIterator<Item = Td>
-// {
-// 	Tr {
-// 		items: items.into_iter().collect()
-// 	}
-// }
-
-// pub fn th(text: &str) -> Item {
-// 	Item {
-// 		..Default::default()
-// 	}
-// }
-
-// #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
-// pub struct Th {
-// 	text: String
-// }
-
-// #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
-// pub struct Td {
-
-// }
-
-// pub fn td(items: Item) -> Td {
-// 	Td { }
-// }
-
-// pub fn table<T, B>(head: T, body: B) -> Item 
-// where	
-// 	T: IntoIterator<Item = Th>,
-// 	B: IntoIterator<Item = Tr>
-// {
-// 	Item {
-// 		payload: ItemPayload::Table { 
-// 			head: head.into_iter().collect(), 
-// 			body: body.into_iter().collect()
-// 		},
-// 		..Default::default()
-// 	}
-// }
-
 impl Item {
 	pub fn id(mut self, id: u32) -> Self {
 		self.id = id;
@@ -402,22 +354,12 @@ impl Item {
 	}
 
 	pub fn padding(mut self, padding: u32) -> Self {
-		match self.payload {
-			ItemPayload::Layout(ref mut layout) => {
-				layout.padding = padding;
-			},
-			_ => {}
-		}
+		self.padding = padding;
 		self
 	}
 
 	pub fn margin(mut self, margin: u32) -> Self {
-		match self.payload {
-			ItemPayload::Layout(ref mut layout) => {
-				layout.padding = margin;
-			},
-			_ => {}
-		}
+		self.margin = margin;
 		self
 	}
 

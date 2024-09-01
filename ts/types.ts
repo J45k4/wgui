@@ -142,6 +142,9 @@ export type Item = {
 	backgroundColor?: string
 	textAlign?: string
 	cursor?: string
+	margin?: number
+	padding?: number
+	border?: string
 	payload: ItemPayload
 }
 

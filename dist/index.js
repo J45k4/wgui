@@ -306,6 +306,15 @@ var renderItem = (item, ctx, old) => {
   if (item.cursor) {
     element.style.cursor = item.cursor;
   }
+  if (item.margin) {
+    element.style.margin = item.margin + "px";
+  }
+  if (item.padding) {
+    element.style.padding = item.padding + "px";
+  }
+  if (item.border) {
+    element.style.border = item.border;
+  }
   return element;
 };
 

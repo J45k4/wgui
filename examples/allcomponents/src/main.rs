@@ -33,7 +33,7 @@ fn render(state: &State) -> Item {
 		hstack([
 			text("This is text1").grow(2).background_color("green").cursor("pointer"),
 			text("This is text2").grow(1).background_color("lightblue"),
-		]),
+		]).margin(20).padding(10).border("1px solid black"),
 		select([
 			option("Option 1", "option1"),
 			option("Option 2", "option2"),
