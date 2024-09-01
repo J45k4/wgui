@@ -455,6 +455,11 @@ impl Item {
 		self.text_align = a.to_string();
 		self
 	}
+
+	pub fn cursor(mut self, c: &str) -> Self {
+		self.cursor = c.to_string();
+		self
+	}
 }
 
 #[cfg(test)]

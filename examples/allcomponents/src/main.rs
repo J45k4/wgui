@@ -31,7 +31,7 @@ fn render(state: &State) -> Item {
 
 	vstack([
 		hstack([
-			text("This is text1").grow(2).background_color("green"),
+			text("This is text1").grow(2).background_color("green").cursor("pointer"),
 			text("This is text2").grow(1).background_color("lightblue"),
 		]),
 		select([

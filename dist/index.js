@@ -303,6 +303,9 @@ var renderItem = (item, ctx, old) => {
   if (item.textAlign) {
     element.style.textAlign = item.textAlign;
   }
+  if (item.cursor) {
+    element.style.cursor = item.cursor;
+  }
   return element;
 };
 

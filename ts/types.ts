@@ -141,6 +141,7 @@ export type Item = {
 	grow?: number
 	backgroundColor?: string
 	textAlign?: string
+	cursor?: string
 	payload: ItemPayload
 }
 

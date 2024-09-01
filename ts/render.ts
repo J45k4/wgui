@@ -348,5 +348,9 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 		element.style.textAlign = item.textAlign
 	}
 
+	if (item.cursor) {
+		element.style.cursor = item.cursor
+	}
+
 	return element
 }
