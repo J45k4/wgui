@@ -1,11 +1,16 @@
 use std::collections::HashSet;
 
 use log::Level;
+use wgui::gui::hstack;
 use wgui::gui::option;
 use wgui::gui::select;
 use wgui::gui::slider;
 use wgui::gui::table;
+use wgui::gui::tbody;
+use wgui::gui::td;
 use wgui::gui::text;
+use wgui::gui::th;
+use wgui::gui::thead;
 use wgui::gui::tr;
 use wgui::gui::vstack;
 use wgui::gui::Item;
@@ -25,7 +30,10 @@ fn render(state: &State) -> Item {
 	log::info!("render state: {:?}", state);
 
 	vstack([
-		text("This is text"),
+		hstack([
+			text("This is text1").grow(2).background_color("green"),
+			text("This is text2").grow(1).background_color("lightblue"),
+		]),
 		select([
 			option("Option 1", "option1"),
 			option("Option 2", "option2"),
@@ -36,22 +44,24 @@ fn render(state: &State) -> Item {
 			.min(0).max(100)
 			.ivalue(state.slider_value)
 			.width(100),
-		table(
-			[
-				text("Header 1"),
-				text("Header 2"),
-			],
-			[
-				[
-					text("row1 col1"),
-					text("row1 col2"),
-				],
-				[
-					text("row2 col1"),
-					text("row2 col2"),
-				],
-			]
-		)
+		table([
+			thead([
+				tr([
+					th(text("Header 1")),
+					th(text("Header 2")),
+				])
+			]),
+			tbody([
+				tr([
+					td(text("Row 1, Cell 1")).text_align("center"),
+					td(text("Row 1, Cell 2")).text_align("center"),
+				]),
+				tr([
+					td(text("Row 2, Cell 1")).text_align("center"),
+					td(text("Row 2, Cell 2")).text_align("center"),
+				]),
+			])
+		])
 	]).into()
 }
 

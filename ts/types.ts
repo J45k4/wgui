@@ -20,7 +20,7 @@ export type Flex = {
 export type Layout = {
     type: "layout"
 	id?: string
-    flex?: Flex
+    flex?: FlexDirection
     height: number
     width: number
     marginTop?: number
@@ -83,17 +83,46 @@ export type Select = {
 
 export type Table = {
 	type: "table"
-	head: Item[],
-	body: Item[][]
+	items: Item[]
+}
+
+export type Thead = {
+	type: "thead"
+	items: Item[]
+}
+
+export type Tbody = {
+	type: "tbody"
+	items: Item[]
+}
+
+export type Tr = {
+	type: "tr"
+	items: Item[]
+}
+
+export type Th = {
+	type: "th"
+	item: Item
+}
+
+export type Td = {
+	type: "td"
+	item: Item
 }
 
 export type None = {
 	type: "none"
 }
 
-type ItemPayload = Text |
+export type ItemPayload = Text |
 	TextInput | 
-	Table | 
+	Table |
+	Thead |
+	Tbody |
+	Tr |
+	Th | 
+	Td |
 	Select | 
 	Checkbox | 
 	Slider |
@@ -109,6 +138,9 @@ export type Item = {
 	width: number
 	maxHeight: number
 	maxWidth: number
+	grow?: number
+	backgroundColor?: string
+	textAlign?: string
 	payload: ItemPayload
 }
 
@@ -217,7 +249,8 @@ export type PathChanged = {
 
 export type OnSliderChange = {
 	type: "onSliderChange"
-	id: string
+	id: number
+	inx?: number
 	value: number
 }
 

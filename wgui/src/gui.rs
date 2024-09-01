@@ -11,317 +11,6 @@ impl Default for FlexDirection {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct Flex {
-    #[serde(rename = "flexDirection")]
-    pub direction: FlexDirection,
-    pub grow: Option<u32>,
-}
-
-#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
-pub enum Margin {
-	All(f32),
-	Individual {
-		top: f32,
-		right: f32,
-		bottom: f32,
-		left: f32
-	},
-	None
-}
-
-impl Default for Margin {
-	fn default() -> Self {
-		Margin::None
-	}
-}
-
-#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
-pub enum Padding {
-	All(u32),
-	Individual {
-		top: u32,
-		right: u32,
-		bottom: u32,
-		left: u32
-	},
-	None
-}
-
-impl Default for Padding {
-	fn default() -> Self {
-		Padding::None
-	}
-}
-
-#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
-pub struct HStack {
-	pub body: Vec<Item>,
-	pub margin: Margin,
-	pub padding: Padding,
-	pub spacing: f32
-}
-
-#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
-pub struct VStack {
-	pub body: Vec<Item>,
-	pub margin: Margin,
-	pub padding: Padding,
-	pub spacing: f32
-}
-
-#[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct View {
-	pub id: Option<String>,
-    pub flex: Option<Flex>,
-    pub height: Option<u32>,
-    pub width: Option<u32>,
-    pub body: Vec<Item>,
-	pub margin: Option<u32>,
-	pub padding: Option<u32>,
-	pub spacing: Option<u32>,
-	pub border: Option<String>,
-	pub wrap: Option<bool>,
-	pub background_color: Option<String>,
-	pub cursor: Option<String>,
-	pub max_width: Option<u32>
-}
-
-
-impl View {
-	pub fn id(mut self, id: &str) -> Self {
-		self.id = Some(id.to_string());
-		self
-	}
-
-	pub fn add<T: Into<Item>>(mut self, item: T) -> Self {
-		self.body.push(item.into());
-		self
-	}
-
-	pub fn add_many<T: Into<Item>>(mut self, items: Vec<T>) -> Self {
-		self.body.extend(items.into_iter().map(|item| item.into()));
-		self
-	}
-
-	pub fn spacing(mut self, spacing: u32) -> Self {
-		self.spacing = Some(spacing);
-		self
-	}
-
-	pub fn border(mut self, border: &str) -> Self {
-		self.border = Some(border.to_string());
-		self
-	}
-	
-	pub fn padding(mut self, padding: u32) -> Self {
-		self.padding = Some(padding);
-		self
-	}
-
-	pub fn margin(mut self, margin: u32) -> Self {
-		self.margin = Some(margin);
-		self
-	}
-
-	pub fn wrap(mut self, wrap: bool) -> Self {
-		self.wrap = Some(wrap);
-		self
-	}
-
-	pub fn background_color(mut self, color: &str) -> Self {
-		self.background_color = Some(color.to_string());
-		self
-	}
-
-	pub fn cursor(mut self, cursor: &str) -> Self {
-		self.cursor = Some(cursor.to_string());
-		self
-	}
-
-	pub fn max_width(mut self, max_width: u32) -> Self {
-		self.max_width = Some(max_width);
-		self
-	}
-
-	pub fn width(mut self, width: u32) -> Self {
-		self.width = Some(width);
-		self
-	}
-
-	pub fn height(mut self, height: u32) -> Self {
-		self.height = Some(height);
-		self
-	}
-}
-
-#[derive(Debug, PartialEq, Default, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Button {
-    pub id: Option<String>,
-    pub name: Option<String>,
-    pub title: String,
-    pub flex: Option<Flex>
-}
-
-impl Button {
-	pub fn id(mut self, id: &str) -> Self {
-		self.id = Some(id.to_string());
-		self
-	}
-
-	pub fn name(mut self, name: &str) -> Self {
-		self.name = Some(name.to_string());
-		self
-	}
-
-	pub fn title(mut self, title: &str) -> Self {
-		self.title = title.to_string();
-		self
-	}
-
-	pub fn flex(mut self, flex: Flex) -> Self {
-		self.flex = Some(flex);
-		self
-	
-	}
-}
-
-// impl Into<Item> for Button {
-// 	fn into(self) -> Item {
-// 		Item::Button(self)
-// 	}
-// }
-
-#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Text {
-    pub text: String,
-}
-
-// impl Into<Item> for Text {
-// 	fn into(self) -> Item {
-// 		Item::Text(self)
-// 	}
-// }
-
-#[derive(Debug, PartialEq, Default, Clone, serde::Serialize, serde::Deserialize)]
-pub struct TextInput {
-    pub id: String,
-    pub name: String,
-    pub placeholder: String,
-    pub value: String,
-    pub flex: Option<Flex>,
-}
-
-impl TextInput {
-	pub fn id(mut self, id: &str) -> Self {
-		self.id = id.to_string();
-		self
-	}
-
-	pub fn name(mut self, name: &str) -> Self {
-		self.name = name.to_string();
-		self
-	}
-
-	pub fn placeholder(mut self, placeholder: &str) -> Self {
-		self.placeholder = placeholder.to_string();
-		self
-	}
-
-	pub fn value(mut self, value: &str) -> Self {
-		self.value = value.to_string();
-		self
-	}
-
-	pub fn flex(mut self, flex: Flex) -> Self {
-		self.flex = Some(flex);
-		self
-	}
-
-}
-
-#[derive(Debug, Default, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Checkbox {
-    pub id: String,
-    pub name: String,
-    pub checked: bool
-}
-
-impl Checkbox {
-	pub fn new(id: &str, name: &str, checked: bool) -> Checkbox {
-		Checkbox {
-			id: id.to_string(),
-			name: name.to_string(),
-			checked
-		}
-	}
-
-	pub fn id(mut self, id: &str) -> Self {
-		self.id = id.to_string();
-		self
-	}
-
-	pub fn checked(mut self, checked: bool) -> Self {
-		self.checked = checked;
-		self
-	}
-}
-
-#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Video {
-    id: String,
-    name: String,
-    src: String,
-}
-
-#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
-pub struct H1 {
-    pub text: String
-}
-
-
-
-#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Select {
-	id: String,
-	value: Option<String>,
-	options: Vec<SelectOption>,
-	width: Option<u32>,
-	height: Option<u32>
-}
-
-impl Select {
-	pub fn id(mut self, id: &str) -> Self {
-		self.id = id.to_string();
-		self
-	}
-
-	pub fn value(mut self, value: &str) -> Self {
-		self.value = Some(value.to_string());
-		self
-	}
-
-	pub fn width(mut self, width: u32) -> Self {
-		self.width = Some(width);
-		self
-	}
-
-	pub fn height(mut self, height: u32) -> Self {
-		self.height = Some(height);
-		self
-	}
-
-	pub fn add_option(mut self, value: &str, name: &str) -> Self {
-		self.options.push(SelectOption {
-			value: value.to_string(),
-			name: name.to_string()
-		});
-		self
-	}
-}
-
-
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 enum Value {
 	String(String),
@@ -334,13 +23,6 @@ impl Default for Value {
 		Value::Undefined
 	}
 }
-
-pub const ITEM_CHECKBOX: u8 = 1;
-pub const ITEM_VSTACK: u8 = 2;
-pub const ITEM_HSTACK: u8 = 3;
-pub const ITEM_BUTTON: u8 = 4;
-pub const ITEM_TEXT: u8 = 5;
-pub const ITEM_TEXT_INPUT: u8 = 6;
 
 #[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Layout {
@@ -380,8 +62,22 @@ pub enum ItemPayload {
 		title: String
 	},
 	Table {
-		head: Vec<Item>,
-		body: Vec<Vec<Item>>
+		items: Vec<Item>,
+	},
+	Tbody {
+		items: Vec<Item>
+	},
+	Thead {
+		items: Vec<Item>
+	},
+	Tr {
+		items: Vec<Item>
+	},
+	Th {
+		item: Box<Item>
+	},
+	Td {
+		item: Box<Item>
 	},
 	None
 }
@@ -393,10 +89,10 @@ impl Default for ItemPayload {
 }
 
 #[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Item {
 	pub id: u32,
 	pub inx: u32,
-	pub typ: u8,
 	pub payload: ItemPayload,
 	pub border: String,
 	pub background_color: String,
@@ -405,11 +101,13 @@ pub struct Item {
 	pub width: u32,
 	pub max_height: u32,
 	pub max_width: u32,
+	pub grow: u32,
+	pub text_align: String,
 }
 
 pub fn checkbox() -> Item {
 	Item {
-		typ: ITEM_CHECKBOX,
+		payload: ItemPayload::Checkbox { checked: false },
 		..Default::default()
 	}
 }
@@ -419,7 +117,6 @@ where
     I: IntoIterator<Item = Item>,
 {
     Item {
-		typ: ITEM_VSTACK,
 		payload: ItemPayload::Layout(
 			Layout {
 				body: body.into_iter().collect(),
@@ -436,7 +133,6 @@ where
     I: IntoIterator<Item = Item>,
 {
 	Item {
-		typ: ITEM_HSTACK,
 		payload: ItemPayload::Layout(
 			Layout {
 				body: body.into_iter().collect(),
@@ -451,7 +147,6 @@ where
 
 pub fn button(title: &str) -> Item {
 	Item {
-		typ: ITEM_BUTTON,
 		payload: ItemPayload::Button { 
 			title: title.to_string(), 
 		},
@@ -461,7 +156,6 @@ pub fn button(title: &str) -> Item {
 
 pub fn text(text: &str) -> Item {
 	Item {
-		typ: ITEM_TEXT,
 		payload: ItemPayload::Text {
 			value: text.to_string(),
 		},
@@ -471,7 +165,6 @@ pub fn text(text: &str) -> Item {
 
 pub fn text_input() -> Item {
 	Item {
-		typ: ITEM_TEXT_INPUT,
 		payload: ItemPayload::TextInput {
 			value: "".to_string(),
 			placeholder: "".to_string()
@@ -512,36 +205,119 @@ pub fn slider() -> Item {
 	}
 }
 
-pub struct Tr {
-
-}
-
-pub fn tr<T>(items: T) -> Tr 
+pub fn table<T>(body: T) -> Item
 where
-	T: IntoIterator<Item = Tr>
-{
-	Tr { }
-}
-
-pub fn th(text: &str) -> Item {
-	Item {
-		..Default::default()
-	}
-}
-
-pub fn table<T, B>(head: T, body: B) -> Item 
-where	
-	T: IntoIterator<Item = Item>,
-	B: IntoIterator<Item = T>
+	T: IntoIterator<Item = Item>
 {
 	Item {
-		payload: ItemPayload::Table { 
-			head: head.into_iter().collect(), 
-			body: body.into_iter().map(|row| row.into_iter().collect()).collect()
+		payload: ItemPayload::Table {
+			items: body.into_iter().collect()
 		},
 		..Default::default()
 	}
 }
+
+pub fn thead<T>(items: T) -> Item
+where
+	T: IntoIterator<Item = Item>
+{
+	Item {
+		payload: ItemPayload::Thead {
+			items: items.into_iter().collect()
+		},
+		..Default::default()
+	}
+}
+
+pub fn tbody<T>(items: T) -> Item
+where
+	T: IntoIterator<Item = Item>
+{
+	Item {
+		payload: ItemPayload::Tbody {
+			items: items.into_iter().collect()
+		},
+		..Default::default()
+	}
+}
+
+pub fn tr<T>(items: T) -> Item
+where
+	T: IntoIterator<Item = Item>
+{
+	Item {
+		payload: ItemPayload::Tr {
+			items: items.into_iter().collect()
+		},
+		..Default::default()
+	}
+}
+
+pub fn th(item: Item) -> Item {
+	Item {
+		payload: ItemPayload::Th {
+			item: Box::new(item)
+		},
+		..Default::default()
+	}
+}
+
+pub fn td(items: Item) -> Item {
+	Item {
+		payload: ItemPayload::Td {
+			item: Box::new(items)
+		},
+		..Default::default()
+	}
+}
+
+// #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+// pub struct Tr {
+// 	items: Vec<Td>
+// }
+
+// pub fn tr<T>(items: T) -> Tr 
+// where
+// 	T: IntoIterator<Item = Td>
+// {
+// 	Tr {
+// 		items: items.into_iter().collect()
+// 	}
+// }
+
+// pub fn th(text: &str) -> Item {
+// 	Item {
+// 		..Default::default()
+// 	}
+// }
+
+// #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+// pub struct Th {
+// 	text: String
+// }
+
+// #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+// pub struct Td {
+
+// }
+
+// pub fn td(items: Item) -> Td {
+// 	Td { }
+// }
+
+// pub fn table<T, B>(head: T, body: B) -> Item 
+// where	
+// 	T: IntoIterator<Item = Th>,
+// 	B: IntoIterator<Item = Tr>
+// {
+// 	Item {
+// 		payload: ItemPayload::Table { 
+// 			head: head.into_iter().collect(), 
+// 			body: body.into_iter().collect()
+// 		},
+// 		..Default::default()
+// 	}
+// }
 
 impl Item {
 	pub fn id(mut self, id: u32) -> Self {
@@ -670,15 +446,15 @@ impl Item {
 		self
 	}
 
-	// pub fn value(mut self, v: &str) -> Self {
-	// 	match self.payload {
-	// 		ItemPayload::Text { ref mut value, .. } => {
-	// 			*value = v.to_string();
-	// 		},
-	// 		_ => {}
-	// 	}
-	// 	self
-	// }
+	pub fn grow(mut self, g: u32) -> Self {
+		self.grow = g;
+		self
+	}
+
+	pub fn text_align(mut self, a: &str) -> Self {
+		self.text_align = a.to_string();
+		self
+	}
 }
 
 #[cfg(test)]

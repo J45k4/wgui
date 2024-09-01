@@ -14,15 +14,6 @@ use crate::types::Value;
 
 fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: ItemPath) {
     log::trace!("{:?} inner_dif", path);
-
-	if old.typ != new.typ {
-		changes.push(ClientAction::Replace(Replace {
-			path: path.clone(),
-			item: new.clone()
-		}));
-		return;
-	}
-
 	let mut sets: Vec<SetProp> = Vec::new();
 
 	match (&old.payload, &new.payload) {

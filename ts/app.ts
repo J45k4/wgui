@@ -50,23 +50,19 @@ window.onload = () => {
 
                 if (message.type === "replaceState") {
                     history.replaceState({}, "", message.url)
-
                     continue
                 }
 
                 if (message.type === "setQuery") {
                     const params = new URLSearchParams(location.search)
-
                     for (const key of Object.keys(message.query)) {
                         const value = message.query[key]
 
                         if (value != null) {
                             params.set(key, value)
                         }
-                    }            
-
+                    }
                     history.replaceState({}, "", `${params.toString()}`)
-
                     continue   
                 }
     
@@ -78,7 +74,6 @@ window.onload = () => {
     
                 if (message.type === "replace") {
                     const newEl = renderItem(message.item, ctx, element)
-                
                     if (newEl) {
                         element.replaceWith(newEl)
                     }
@@ -86,7 +81,6 @@ window.onload = () => {
                 
                 if (message.type === "replaceAt") {
                     const newEl = renderItem(message.item, ctx)
-    
                     if (newEl) {
                         element.children.item(message.inx)?.replaceWith(newEl)
                     }
