@@ -54,12 +54,6 @@ export type TextInput = {
     value: string
 }
 
-export type Table = {
-    type: "table"
-    headers: string[]
-    rows: Item[][]
-}
-
 export type Checkbox = {
     type: "checkbox"
     checked: boolean
@@ -80,10 +74,17 @@ export type Slider = {
 
 export type Select = {
 	type: "select"
+	value: string
 	options: {
 		value: string
 		name: string
 	}[]
+}
+
+export type Table = {
+	type: "table"
+	head: Item[],
+	body: Item[][]
 }
 
 export type None = {
@@ -222,7 +223,8 @@ export type OnSliderChange = {
 
 export type OnSelect = {
 	type: "onSelect"
-	id: string
+	id: number
+	inx?: number
 	value: string
 }
 

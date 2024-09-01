@@ -1,40 +1,4 @@
-// ts/logger.ts
-var loglevel = 2 /* Info */;
-var createLogger = (name) => {
-  return {
-    info: (...data) => {
-      if (loglevel < 2 /* Info */) {
-        return;
-      }
-      console.log(`[${name}]`, ...data);
-    },
-    error: (...data) => {
-      if (loglevel < 4 /* Error */) {
-        return;
-      }
-      console.error(`[${name}]`, ...data);
-    },
-    warn: (...data) => {
-      if (loglevel < 3 /* Warn */) {
-        return;
-      }
-      console.warn(`[${name}]`, ...data);
-    },
-    debug: (...data) => {
-      if (loglevel < 1 /* Debug */) {
-        return;
-      }
-      console.debug(`[${name}]`, ...data);
-    },
-    child: (childName) => {
-      return createLogger(`${name}:${childName}`);
-    }
-  };
-};
-
 // ts/debouncer.ts
-var logger2 = createLogger("debouncer");
-
 class Deboncer {
   timeout;
   value = "";
@@ -71,7 +35,6 @@ class Deboncer {
 }
 
 // ts/path.ts
-var logger4 = createLogger("path");
 var getPathItem = (path, element) => {
   const p = path[0];
   if (p == null) {
@@ -85,9 +48,7 @@ var getPathItem = (path, element) => {
 };
 
 // ts/render.ts
-var outerLogger = createLogger("render");
 var renderItem = (item, ctx, old) => {
-  console.log("renderItem", item, old);
   let element = old;
   const payload = item.payload;
   switch (payload.type) {
@@ -123,7 +84,6 @@ var renderItem = (item, ctx, old) => {
           }
         }
       } else {
-        console.log("create layout", payload);
         const div = document.createElement("div");
         for (const i of payload.body) {
           const el = renderItem(i, ctx);
@@ -172,6 +132,7 @@ var renderItem = (item, ctx, old) => {
           ctx.sender.send({
             type: "onSelect",
             id: item.id,
+            inx: item.inx,
             value: select.value
           });
           ctx.sender.sendNow();
@@ -216,7 +177,6 @@ var renderItem = (item, ctx, old) => {
         element = old;
         old.innerText = payload.value + "";
       } else {
-        console.log("create text", payload);
         element = document.createElement("span");
         element.innerText = payload.value + "";
       }
@@ -224,7 +184,6 @@ var renderItem = (item, ctx, old) => {
     }
     case "textInput": {
       if (old instanceof HTMLInputElement) {
-        console.log("it already exists");
         element = old;
         old.value = payload.value;
         old.placeholder = payload.placeholder;
@@ -242,6 +201,40 @@ var renderItem = (item, ctx, old) => {
         };
         element = input;
       }
+      break;
+    }
+    case "table": {
+      if (old instanceof HTMLTableElement) {
+        element = old;
+        element.innerHTML = "";
+      } else {
+        element = document.createElement("table");
+      }
+      const head = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      for (const i of payload.head) {
+        const th = document.createElement("th");
+        th.appendChild(renderItem(i, ctx));
+        headRow.appendChild(th);
+      }
+      head.appendChild(headRow);
+      element.appendChild(head);
+      const body = document.createElement("tbody");
+      for (const row of payload.body) {
+        const tr = document.createElement("tr");
+        for (const i of row) {
+          const td = document.createElement("td");
+          td.appendChild(renderItem(i, ctx));
+          tr.appendChild(td);
+        }
+        body.appendChild(tr);
+      }
+      element.appendChild(body);
+      break;
+    }
+    case "none": {
+      element = document.createElement("div");
+      element.innerText = "None";
       break;
     }
   }
@@ -292,7 +285,6 @@ class MessageSender {
 }
 
 // ts/ws.ts
-var logger7 = createLogger("ws");
 var connectWebsocket = (args) => {
   let ws;
   const sender = new MessageSender((msgs) => {
@@ -321,13 +313,12 @@ var connectWebsocket = (args) => {
       }, 1000);
     };
     ws.onerror = (e) => {
-      logger7.error("error", e);
+      console.error("error", e);
     };
   };
   createConnection();
   return {
     close: () => {
-      logger7.debug("close");
       if (!ws) {
         return;
       }
@@ -338,7 +329,6 @@ var connectWebsocket = (args) => {
 };
 
 // ts/app.ts
-var logger9 = createLogger("app");
 window.onload = () => {
   const res = document.querySelector("body");
   if (!res) {

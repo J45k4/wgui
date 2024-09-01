@@ -1,13 +1,19 @@
 use std::collections::HashSet;
 
 use log::Level;
+use wgui::gui::option;
 use wgui::gui::select;
 use wgui::gui::slider;
+use wgui::gui::table;
 use wgui::gui::text;
+use wgui::gui::tr;
 use wgui::gui::vstack;
 use wgui::gui::Item;
 use wgui::types::ClientEvent;
 use wgui::Wgui;
+
+const SELECT: u32 = 1;
+const SLIDER: u32 = 2;
 
 #[derive(Default, Debug)]
 struct State {
@@ -18,23 +24,34 @@ struct State {
 fn render(state: &State) -> Item {
 	log::info!("render state: {:?}", state);
 
-	vstack(vec![
+	vstack([
 		text("This is text"),
-		select()
-		.id("select")
-		.value(&state.option)
-		.add_option("", "")
-		.add_option("Option 1", "option1")
-		.add_option("Option 2", "option2")
-		.add_option("Option 3", "option3")
-		.width(100)
-		.into(),
+		select([
+			option("Option 1", "option1"),
+			option("Option 2", "option2"),
+			option("Option 3", "option3")
+		]).id(SELECT).svalue(&state.option).width(100),
 		slider()
-		.id("slider")
-		.min(0).max(100)
-		.value(state.slider_value)
-		.width(100)
-		.into(),
+			.id(SLIDER)
+			.min(0).max(100)
+			.ivalue(state.slider_value)
+			.width(100),
+		table(
+			[
+				text("Header 1"),
+				text("Header 2"),
+			],
+			[
+				[
+					text("row1 col1"),
+					text("row1 col2"),
+				],
+				[
+					text("row2 col1"),
+					text("row2 col2"),
+				],
+			]
+		)
 	]).into()
 }
 
@@ -66,12 +83,12 @@ async fn main() {
 
             }
 			ClientEvent::OnSliderChange(s) => {
-				if s.id == "slider" {
+				if s.id == SLIDER {
 					state.slider_value = s.value;
 				}
 			}
 			ClientEvent::OnSelect(o) => {
-				if o.id == "select" {
+				if o.id == SELECT {
 					state.option = o.value;
 				}
 			}

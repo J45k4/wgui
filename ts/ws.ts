@@ -1,8 +1,5 @@
-import { createLogger } from "./logger.ts";
 import { MessageSender } from "./message_sender.ts";
 import { MessageToSrv, SrvMessage } from "./types.ts";
-
-const logger = createLogger("ws")
 
 type OnMessage = (sender: MessageSender, msgs: SrvMessage[]) => void
 type OnOpen = (sender: MessageSender) => void
@@ -45,7 +42,7 @@ export const connectWebsocket = (args: {
         }
 
         ws.onerror = (e) => {
-            logger.error("error", e)
+            console.error("error", e)
         }
     }
 
@@ -53,8 +50,6 @@ export const connectWebsocket = (args: {
 
     return {
         close: () => {
-            logger.debug("close")
-
             if (!ws) {
                 return
             }

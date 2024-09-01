@@ -280,11 +280,7 @@ pub struct H1 {
     pub text: String
 }
 
-#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SelectOption {
-	value: String,
-	name: String
-}
+
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Select {
@@ -368,6 +364,7 @@ pub enum ItemPayload {
 		placeholder: String
 	},
 	Select {
+		value: String,
 		options: Vec<SelectOption>,
 	},
 	Checkbox {
@@ -381,6 +378,10 @@ pub enum ItemPayload {
 	},
 	Button {
 		title: String
+	},
+	Table {
+		head: Vec<Item>,
+		body: Vec<Vec<Item>>
 	},
 	None
 }
@@ -479,14 +480,65 @@ pub fn text_input() -> Item {
 	}
 }
 
-pub fn select() -> Item {
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SelectOption {
+	value: String,
+	name: String
+}
+
+pub fn option(value: &str, name: &str) -> SelectOption {
+	SelectOption {
+		value: value.to_string(),
+		name: name.to_string()
+	}
+}
+
+pub fn select<I>(options: I) -> Item
+where
+    I: IntoIterator<Item = SelectOption>,
+{
 	Item {
+		payload: ItemPayload::Select {
+			value: "".to_string(),
+			options: options.into_iter().collect() 
+		},
 		..Default::default()
 	}
 }
 
 pub fn slider() -> Item {
 	Item {
+		..Default::default()
+	}
+}
+
+pub struct Tr {
+
+}
+
+pub fn tr<T>(items: T) -> Tr 
+where
+	T: IntoIterator<Item = Tr>
+{
+	Tr { }
+}
+
+pub fn th(text: &str) -> Item {
+	Item {
+		..Default::default()
+	}
+}
+
+pub fn table<T, B>(head: T, body: B) -> Item 
+where	
+	T: IntoIterator<Item = Item>,
+	B: IntoIterator<Item = T>
+{
+	Item {
+		payload: ItemPayload::Table { 
+			head: head.into_iter().collect(), 
+			body: body.into_iter().map(|row| row.into_iter().collect()).collect()
+		},
 		..Default::default()
 	}
 }
@@ -543,6 +595,9 @@ impl Item {
 				*value = v.to_string();
 			},
 			ItemPayload::TextInput { ref mut value, .. } => {
+				*value = v.to_string();
+			},
+			ItemPayload::Select { ref mut value, .. } => {
 				*value = v.to_string();
 			},
 			_ => {}
@@ -607,6 +662,11 @@ impl Item {
 
 	pub fn background_color(mut self, c: &str) -> Self {
 		self.background_color = c.to_string();
+		self
+	}
+
+	pub fn width(mut self, w: u32) -> Self {
+		self.width = w;
 		self
 	}
 

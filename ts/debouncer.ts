@@ -1,7 +1,3 @@
-import { createLogger } from "./logger.ts"
-
-const logger = createLogger("debouncer")
-
 export class Deboncer {
     private timeout: any
     private value = ""

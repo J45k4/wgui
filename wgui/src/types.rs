@@ -38,13 +38,15 @@ pub struct InputQuery {
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OnSliderChange {
-	pub id: String,
+	pub id: u32,
+	pub inx: Option<u32>,
 	pub value: i32
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OnSelect {
-	pub id: String,
+	pub id: u32,
+	pub inx: Option<u32>,
 	pub value: String
 }
 
@@ -153,24 +155,7 @@ pub enum ClientAction {
 	SetProp {
 		path: ItemPath,
 		sets: Vec<SetProp>
-	},
-	// SetStyle {
-	// 	path: ItemPath,
-	// 	prop: String,
-	// 	value: String
-	// },
-	// SetID {
-	// 	path: ItemPath,
-	// 	id: u32
-	// },
-	// SetSpacing {
-	// 	path: ItemPath,
-	// 	spacing: u32
-	// },
-	// SetWidth {
-	// 	path: ItemPath,
-	// 	width: u32
-	// }
+	}
 }
 
 pub enum ServerEvent {

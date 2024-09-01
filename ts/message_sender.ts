@@ -1,4 +1,3 @@
-import { createLogger } from "./logger.ts";
 import { MessageToSrv } from "./types.ts";
 
 type SendMsgs = (msg: MessageToSrv[]) => void

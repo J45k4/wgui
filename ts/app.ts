@@ -1,11 +1,8 @@
 import { Deboncer } from "./debouncer.ts";
-import { createLogger } from "./logger.ts";
 import { getPathItem } from "./path.ts";
 import { renderItem } from "./render.ts";
 import { Context, SrvMessage } from "./types.ts";
 import { connectWebsocket } from "./ws.ts";
-
-const logger = createLogger("app")
 
 window.onload = () => {
     const res = document.querySelector("body")

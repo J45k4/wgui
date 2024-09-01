@@ -1,7 +1,3 @@
-import { createLogger } from "./logger.ts"
-
-const logger = createLogger("path")
-
 export const getPathItem = (path: number[], element: any): Element | undefined => {
     const p = path[0]
     if (p == null) {
