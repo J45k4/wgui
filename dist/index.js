@@ -274,6 +274,16 @@ var renderPayload = (item, ctx, old) => {
       element = document.createElement("span");
       element.innerText = payload.value + "";
     }
+    if (item.id) {
+      element.onclick = () => {
+        ctx.sender.send({
+          type: "onClick",
+          id: item.id,
+          inx: item.inx
+        });
+        ctx.sender.sendNow();
+      };
+    }
     return element;
   }
 };
