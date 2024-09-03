@@ -1,10 +1,7 @@
 use std::collections::HashSet;
 use std::vec;
-
 use log::Level;
-use wgui::gui::*;
-use wgui::types::ClientEvent;
-use wgui::Wgui;
+use wgui::*;
 
 struct TodoItems {
     name: String,
@@ -101,32 +98,6 @@ async fn main() {
 					},
 					_ => {}
 				}
-
-                // if let Some(id) = o.id {
-                //     if id == "add_todo_button" {
-                //         log::info!("add_todo_button clicked");
-                //         state.items.push(TodoItems {
-                //             name: state.new_todo_name.clone(),
-                //             completed: false
-                //         });
-                //         state.new_todo_name = "".to_string();
-                //     }
-
-                //     if id == "todo_checkbox" {
-                //         log::info!("todo_checkbox clicked");
-                //         state.items[0].completed = !state.items[0].completed;
-                //     }
-
-                //     if id.starts_with("todo_checkbox_") {
-                //         log::info!("todo_checkbox_ clicked");
-                //         let inx = id.split("_").last().unwrap().parse::<usize>().unwrap();
-                //         state.items[inx].completed = !state.items[inx].completed;
-                //     }
-
-				// 	if id == "add_todo" {
-				// 		log::info!("add_todo clicked");
-				// 	}
-                // }
             },
             ClientEvent::OnTextChanged(t) => {
 				match t.id {
@@ -136,18 +107,9 @@ async fn main() {
 					},
 					_ => {}
 				}
-
-                // if let Some(name) = t.name {
-                //     if name == "new_todo_name" {
-                //         log::info!("new_todo_name {:?}", t.value);
-                //         state.new_todo_name = t.value;
-                //     }
-                // }
             }
 			ClientEvent::OnSliderChange(s) => {
-				if s.id == "slider" {
-					state.slider_value = s.value;
-				}
+				state.slider_value = s.value;
 			}
             _ => {}
         }

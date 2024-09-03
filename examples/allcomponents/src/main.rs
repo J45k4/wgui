@@ -1,21 +1,6 @@
 use std::collections::HashSet;
-
 use log::Level;
-use wgui::gui::hstack;
-use wgui::gui::option;
-use wgui::gui::select;
-use wgui::gui::slider;
-use wgui::gui::table;
-use wgui::gui::tbody;
-use wgui::gui::td;
-use wgui::gui::text;
-use wgui::gui::th;
-use wgui::gui::thead;
-use wgui::gui::tr;
-use wgui::gui::vstack;
-use wgui::gui::Item;
-use wgui::types::ClientEvent;
-use wgui::Wgui;
+use wgui::*;
 
 const SELECT: u32 = 1;
 const SLIDER: u32 = 2;

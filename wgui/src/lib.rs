@@ -1,20 +1,19 @@
-use gui::Item;
 use server::Server;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
-use types::ClientEvent;
-use types::Clients;
-use types::Command;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-pub mod gui;
+mod gui;
 mod edit_distance;
-pub mod types;
+mod types;
 mod ui_client;
 mod diff;
 mod server;
+
+pub use gui::*;
+pub use types::*;
 
 pub struct Wgui {
     events_rx: mpsc::UnboundedReceiver<ClientEvent>,
