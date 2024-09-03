@@ -402,6 +402,11 @@ impl Item {
 		self.cursor = c.to_string();
 		self
 	}
+
+	pub fn height(mut self, h: u32) -> Self {
+		self.height = h;
+		self
+	}
 }
 
 #[cfg(test)]
