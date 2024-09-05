@@ -63,6 +63,7 @@ pub struct Server {
 impl Server {
     pub async fn new(addr: SocketAddr, event_tx: mpsc::UnboundedSender<ClientEvent>, clients: Clients) -> Self {
         let listener = TcpListener::bind(addr).await.unwrap();
+		log::info!("listening on {}", addr);
 
         Self {
             listener,
