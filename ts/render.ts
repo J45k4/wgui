@@ -151,7 +151,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 				type: "onSliderChange",
 				id: item.id,
 				inx: item.inx,
-				value: e.target.value,
+				value: parseInt(e.target.value)
 			})
 		}
 		return slider

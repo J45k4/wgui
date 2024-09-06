@@ -201,6 +201,12 @@ where
 
 pub fn slider() -> Item {
 	Item {
+		payload: ItemPayload::Slider {
+			min: 0,
+			max: 100,
+			value: 0,
+			step: 1
+		},
 		..Default::default()
 	}
 }

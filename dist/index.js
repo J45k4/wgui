@@ -181,7 +181,7 @@ var renderPayload = (item, ctx, old) => {
         type: "onSliderChange",
         id: item.id,
         inx: item.inx,
-        value: e.target.value
+        value: parseInt(e.target.value)
       });
     };
     return slider;
@@ -337,6 +337,12 @@ class MessageSender {
     this.sender = send;
   }
   send(msg) {
+    this.queue = this.queue.filter((m) => {
+      if (m.type === msg.type) {
+        return false;
+      }
+      return true;
+    });
     this.queue.push(msg);
     this.sendNext();
   }

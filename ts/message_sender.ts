@@ -11,6 +11,12 @@ export class MessageSender {
     }
 
     public send(msg: MessageToSrv) {
+		this.queue = this.queue.filter((m) => {
+			if (m.type === msg.type) {
+				return false
+			}
+			return true
+		})
         this.queue.push(msg)
         this.sendNext()
     }
