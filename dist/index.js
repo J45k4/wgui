@@ -183,6 +183,7 @@ var renderPayload = (item, ctx, old) => {
         inx: item.inx,
         value: parseInt(e.target.value)
       });
+      ctx.sender.sendNow();
     };
     return slider;
   }

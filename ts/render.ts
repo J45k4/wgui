@@ -153,6 +153,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 				inx: item.inx,
 				value: parseInt(e.target.value)
 			})
+			ctx.sender.sendNow()
 		}
 		return slider
 	}
