@@ -412,6 +412,16 @@ impl Item {
 		self.height = h;
 		self
 	}
+
+	pub fn wrap(mut self, w: bool) -> Self {
+		match self.payload {
+			ItemPayload::Layout(ref mut layout) => {
+				layout.wrap = w;
+			},
+			_ => {}
+		}
+		self
+	}
 }
 
 #[cfg(test)]
