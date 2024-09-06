@@ -388,6 +388,11 @@ impl Item {
 		self
 	}
 
+	pub fn max_width(mut self, w: u32) -> Self {
+		self.max_width = w;
+		self
+	}
+
 	pub fn grow(mut self, g: u32) -> Self {
 		self.grow = g;
 		self
