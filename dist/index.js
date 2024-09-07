@@ -64,17 +64,21 @@ var renderPayload = (item, ctx, old) => {
       checkbox = old;
     } else {
       checkbox = document.createElement("input");
+      if (old)
+        old.replaceWith(checkbox);
     }
     checkbox.type = "checkbox";
     checkbox.checked = payload.checked;
-    checkbox.onclick = () => {
-      ctx.sender.send({
-        type: "onClick",
-        id: item.id,
-        inx: item.inx
-      });
-      ctx.sender.sendNow();
-    };
+    if (item.id) {
+      checkbox.onclick = () => {
+        ctx.sender.send({
+          type: "onClick",
+          id: item.id,
+          inx: item.inx
+        });
+        ctx.sender.sendNow();
+      };
+    }
     return checkbox;
   }
   if (payload.type === "layout") {
@@ -97,6 +101,8 @@ var renderPayload = (item, ctx, old) => {
         }
       }
       element = div;
+      if (old)
+        old.replaceWith(element);
     }
     if (payload.spacing) {
       element.style.gap = payload.spacing + "px";
@@ -134,15 +140,8 @@ var renderPayload = (item, ctx, old) => {
         select.add(opt);
       }
       select.value = payload.value;
-      select.onchange = () => {
-        ctx.sender.send({
-          type: "onSelect",
-          id: item.id,
-          inx: item.inx,
-          value: select.value
-        });
-        ctx.sender.sendNow();
-      };
+      if (old)
+        old.replaceWith(select);
     }
     return select;
   }
@@ -152,16 +151,20 @@ var renderPayload = (item, ctx, old) => {
       button = old;
     } else {
       button = document.createElement("button");
+      if (old)
+        old.replaceWith(button);
     }
     button.textContent = payload.title;
-    button.onclick = () => {
-      ctx.sender.send({
-        type: "onClick",
-        id: item.id,
-        inx: item.inx
-      });
-      ctx.sender.sendNow();
-    };
+    if (item.id) {
+      button.onclick = () => {
+        ctx.sender.send({
+          type: "onClick",
+          id: item.id,
+          inx: item.inx
+        });
+        ctx.sender.sendNow();
+      };
+    }
     return button;
   }
   if (payload.type === "slider") {
@@ -170,30 +173,39 @@ var renderPayload = (item, ctx, old) => {
       slider = old;
     } else {
       slider = document.createElement("input");
+      if (old)
+        old.replaceWith(slider);
     }
     slider.min = payload.min.toString();
     slider.max = payload.max.toString();
     slider.type = "range";
     slider.value = payload.value.toString();
     slider.step = payload.step.toString();
-    slider.oninput = (e) => {
-      ctx.sender.send({
-        type: "onSliderChange",
-        id: item.id,
-        inx: item.inx,
-        value: parseInt(e.target.value)
-      });
-      ctx.sender.sendNow();
-    };
+    if (item.id) {
+      slider.oninput = (e) => {
+        ctx.sender.send({
+          type: "onSliderChange",
+          id: item.id,
+          inx: item.inx,
+          value: parseInt(e.target.value)
+        });
+        ctx.sender.sendNow();
+      };
+    }
     return slider;
   }
   if (payload.type === "textInput") {
     let input;
     if (old instanceof HTMLInputElement) {
       input = old;
-      console.log("old input");
     } else {
       input = document.createElement("input");
+      if (old)
+        old.replaceWith(input);
+    }
+    input.placeholder = payload.placeholder;
+    input.value = payload.value;
+    if (payload.id) {
       input.oninput = (e) => {
         ctx.sender.send({
           type: "onTextChanged",
@@ -203,8 +215,6 @@ var renderPayload = (item, ctx, old) => {
         });
       };
     }
-    input.placeholder = payload.placeholder;
-    input.value = payload.value;
     return input;
   }
   if (payload.type === "table") {
@@ -213,6 +223,8 @@ var renderPayload = (item, ctx, old) => {
       table = old;
     } else {
       table = document.createElement("table");
+      if (old)
+        old.replaceWith(table);
     }
     renderChildren(table, payload.items, ctx);
     return table;
@@ -223,6 +235,8 @@ var renderPayload = (item, ctx, old) => {
       thead = old;
     } else {
       thead = document.createElement("thead");
+      if (old)
+        old.replaceWith(thead);
     }
     renderChildren(thead, payload.items, ctx);
     return thead;
@@ -233,6 +247,8 @@ var renderPayload = (item, ctx, old) => {
       tbody = old;
     } else {
       tbody = document.createElement("tbody");
+      if (old)
+        old.replaceWith(tbody);
     }
     renderChildren(tbody, payload.items, ctx);
     return tbody;
@@ -243,6 +259,8 @@ var renderPayload = (item, ctx, old) => {
       tr = old;
     } else {
       tr = document.createElement("tr");
+      if (old)
+        old.replaceWith(tr);
     }
     renderChildren(tr, payload.items, ctx);
     return tr;
@@ -253,6 +271,8 @@ var renderPayload = (item, ctx, old) => {
       th = old;
     } else {
       th = document.createElement("th");
+      if (old)
+        old.replaceWith(th);
     }
     renderChildren(th, [payload.item], ctx);
     return th;
@@ -263,6 +283,8 @@ var renderPayload = (item, ctx, old) => {
       td = old;
     } else {
       td = document.createElement("td");
+      if (old)
+        old.replaceWith(td);
     }
     renderChildren(td, [payload.item], ctx);
     return td;
@@ -275,6 +297,8 @@ var renderPayload = (item, ctx, old) => {
     } else {
       element = document.createElement("span");
       element.innerText = payload.value + "";
+      if (old)
+        old.replaceWith(element);
     }
     if (item.id) {
       element.onclick = () => {
@@ -350,6 +374,9 @@ var renderItem = (item, ctx, old) => {
   }
   if (item.border) {
     element.style.border = item.border;
+  }
+  if (item.editable) {
+    element.contentEditable = "true";
   }
   return element;
 };
@@ -492,10 +519,7 @@ window.onload = () => {
           renderItem(message.item, ctx, element);
         }
         if (message.type === "replaceAt") {
-          const newEl = renderItem(message.item, ctx);
-          if (newEl) {
-            element.children.item(message.inx)?.replaceWith(newEl);
-          }
+          renderItem(message.item, ctx, element.children.item(message.inx));
         }
         if (message.type === "addFront") {
           const newEl = renderItem(message.item, ctx);

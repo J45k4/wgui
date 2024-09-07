@@ -11,7 +11,7 @@ const renderChildren = (element: HTMLElement, items: Item[], ctx: Context) => {
 	}
 }
 
-const renderPayload = (item: Item, ctx: Context, old?: Element) => {
+const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 	const payload = item.payload
 	if (payload.type === "checkbox") {
 		let checkbox: HTMLInputElement
@@ -19,16 +19,19 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 			checkbox = old
 		} else {
 			checkbox = document.createElement("input")
+			if (old) old.replaceWith(checkbox)
 		}
 		checkbox.type = "checkbox"
 		checkbox.checked = payload.checked
-		checkbox.onclick = () => {
-			ctx.sender.send({
-				type: "onClick",
-				id: item.id,
-				inx: item.inx,
-			})
-			ctx.sender.sendNow()
+		if (item.id) {
+			checkbox.onclick = () => {
+				ctx.sender.send({
+					type: "onClick",
+					id: item.id,
+					inx: item.inx,
+				})
+				ctx.sender.sendNow()
+			}
 		}
 		return checkbox
 	}
@@ -53,7 +56,9 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 				}
 			}
 			element = div
+			if (old) old.replaceWith(element)
 		}
+		
 
 		if (payload.spacing) {
 			element.style.gap = payload.spacing + "px"
@@ -76,9 +81,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 			const newOptions = payload.options.map(option => option.value)
 	
 			// Update the options only if they differ
-			if (existingOptions.length !== payload.options.length ||
-				!existingOptions.every((opt, index) => opt.value === newOptions[index])) {
-	
+			if (existingOptions.length !== payload.options.length || !existingOptions.every((opt, index) => opt.value === newOptions[index])) {
 				old.innerHTML = ""
 				for (const option of payload.options) {
 					const opt = document.createElement("option")
@@ -89,27 +92,14 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 			}
 		} else {
 			select = document.createElement("select")
-	
 			for (const option of payload.options) {
 				const opt = document.createElement("option")
 				opt.value = option.value
 				opt.text = option.name
 				select.add(opt)
 			}
-	
-			// Set the value of the new select element
 			select.value = payload.value
-	
-			select.onchange = () => {
-				ctx.sender.send({
-					type: "onSelect",
-					id: item.id,
-					inx: item.inx,
-					value: select.value,
-				})
-	
-				ctx.sender.sendNow()
-			}
+			if (old) old.replaceWith(select)
 		}
 
 		return select
@@ -121,15 +111,18 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 			button = old
 		} else {
 			button = document.createElement("button")
+			if (old) old.replaceWith(button)
 		}
 		button.textContent = payload.title
-		button.onclick = () => {
-			ctx.sender.send({
-				type: "onClick",
-				id: item.id,
-				inx: item.inx,
-			})
-			ctx.sender.sendNow()
+		if (item.id) {
+			button.onclick = () => {
+				ctx.sender.send({
+					type: "onClick",
+					id: item.id,
+					inx: item.inx,
+				})
+				ctx.sender.sendNow()
+			}
 		}
 		return button
 	}
@@ -140,20 +133,23 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 			slider = old
 		} else {
 			slider = document.createElement("input")
+			if (old) old.replaceWith(slider)
 		}
 		slider.min = payload.min.toString()
 		slider.max = payload.max.toString()
 		slider.type = "range"
 		slider.value = payload.value.toString()
 		slider.step = payload.step.toString()
-		slider.oninput = (e: any) => {
-			ctx.sender.send({
-				type: "onSliderChange",
-				id: item.id,
-				inx: item.inx,
-				value: parseInt(e.target.value)
-			})
-			ctx.sender.sendNow()
+		if (item.id) {
+			slider.oninput = (e: any) => {
+				ctx.sender.send({
+					type: "onSliderChange",
+					id: item.id,
+					inx: item.inx,
+					value: parseInt(e.target.value)
+				})
+				ctx.sender.sendNow()
+			}
 		}
 		return slider
 	}
@@ -162,9 +158,13 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 		let input: HTMLInputElement
 		if (old instanceof HTMLInputElement) {
 			input = old
-			console.log("old input")
 		} else {
 			input = document.createElement("input")
+			if (old) old.replaceWith(input)
+		}
+		input.placeholder = payload.placeholder as string
+		input.value = payload.value
+		if (payload.id) {
 			input.oninput = (e: any) => {
 				ctx.sender.send({
 					type: "onTextChanged",
@@ -174,8 +174,6 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 				})
 			}
 		}
-		input.placeholder = payload.placeholder as string
-		input.value = payload.value
 
 		return input
 	}
@@ -186,6 +184,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 			table = old
 		} else {
 			table = document.createElement("table")
+			if (old) old.replaceWith(table)
 		}
 		renderChildren(table, payload.items, ctx)
 		return table
@@ -197,6 +196,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 			thead = old
 		} else {
 			thead = document.createElement("thead")
+			if (old) old.replaceWith(thead)
 		}
 		renderChildren(thead, payload.items, ctx)
 		return thead
@@ -208,6 +208,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 			tbody = old
 		} else {
 			tbody = document.createElement("tbody")
+			if (old) old.replaceWith(tbody)
 		}
 		renderChildren(tbody, payload.items, ctx)
 		return tbody
@@ -219,6 +220,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 			tr = old
 		} else {
 			tr = document.createElement("tr")
+			if (old) old.replaceWith(tr)
 		}
 		renderChildren(tr, payload.items, ctx)
 		return tr
@@ -230,6 +232,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 			th = old
 		} else {
 			th = document.createElement("th")
+			if (old) old.replaceWith(th)
 		}
 		renderChildren(th, [payload.item], ctx)
 		return th
@@ -241,6 +244,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 			td = old
 		} else {
 			td = document.createElement("td")
+			if (old) old.replaceWith(td)
 		}
 		renderChildren(td, [payload.item], ctx)
 		return td
@@ -254,6 +258,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 		} else {
 			element = document.createElement("span")
 			element.innerText = payload.value + ""
+			if (old) old.replaceWith(element)
 		}
 		if (item.id) {
 			element.onclick = () => {
@@ -269,7 +274,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 	}
 }
 
-export const renderItem = (item: Item, ctx: Context, old?: Element) => {
+export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 	const element = renderPayload(item, ctx, old)
 
 	if (!element) {
@@ -333,6 +338,8 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 	if (item.border) {
 		element.style.border = item.border
 	}
-
+	if (item.editable) {
+		element.contentEditable = "true"
+	}
 	return element
 }

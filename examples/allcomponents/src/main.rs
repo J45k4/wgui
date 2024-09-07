@@ -5,12 +5,14 @@ use wgui::*;
 const SELECT: u32 = 1;
 const SLIDER: u32 = 2;
 const TEXT_INPUT: u32 = 3;
+const SHOW_TABLE_BUTTON: u32 = 4;
 
 #[derive(Default, Debug)]
 struct State {
 	option: String,
 	text_input_value: String,
-	slider_value: i32
+	slider_value: i32,
+	show_table: bool,
 }
 
 fn render(state: &State) -> Item {
@@ -20,7 +22,7 @@ fn render(state: &State) -> Item {
 		hstack([
 			text("This is text1").grow(2).background_color("green").cursor("pointer").id(3),
 			text("This is text2").grow(1).background_color("lightblue"),
-		]).margin(20).padding(10).border("1px solid black"),
+		]).margin(20).padding(10).border("1px solid black").editable(true),
 		text_input() //.placeholder("Enter text here")
 		.id(TEXT_INPUT)
 		.width(100)
@@ -36,24 +38,29 @@ fn render(state: &State) -> Item {
 			.min(0).max(100)
 			.ivalue(state.slider_value)
 			.width(100),
-		table([
-			thead([
-				tr([
-					th(text("Header 1")),
-					th(text("Header 2")),
+		button("show table").id(4),
+		if state.show_table {
+			table([
+				thead([
+					tr([
+						th(text("Header 1")),
+						th(text("Header 2")),
+					])
+				]),
+				tbody([
+					tr([
+						td(text("Row 1, Cell 1")).text_align("center"),
+						td(text("Row 1, Cell 2")).text_align("center"),
+					]),
+					tr([
+						td(text("Row 2, Cell 1")).text_align("center"),
+						td(text("Row 2, Cell 2")).text_align("center"),
+					]),
 				])
-			]),
-			tbody([
-				tr([
-					td(text("Row 1, Cell 1")).text_align("center"),
-					td(text("Row 1, Cell 2")).text_align("center"),
-				]),
-				tr([
-					td(text("Row 2, Cell 1")).text_align("center"),
-					td(text("Row 2, Cell 2")).text_align("center"),
-				]),
 			])
-		])
+		} else {
+			text("Table is hidden")
+		}
 	]).into()
 }
 
@@ -79,7 +86,9 @@ async fn main() {
             ClientEvent::PathChanged(_) => {},
             ClientEvent::Input(q) => {},
             ClientEvent::OnClick(o) => {
-				
+				if o.id == SHOW_TABLE_BUTTON {
+					state.show_table = !state.show_table;
+				}
             },
             ClientEvent::OnTextChanged(t) => {
 				if t.id == TEXT_INPUT {

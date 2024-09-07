@@ -74,16 +74,10 @@ window.onload = () => {
     
                 if (message.type === "replace") {
                     renderItem(message.item, ctx, element)
-                    // if (newEl) {
-                    //     element.replaceWith(newEl)
-                    // }
                 }
                 
                 if (message.type === "replaceAt") {
-                    const newEl = renderItem(message.item, ctx)
-                    if (newEl) {
-                        element.children.item(message.inx)?.replaceWith(newEl)
-                    }
+                    renderItem(message.item, ctx, element.children.item(message.inx))
                 }
                 
                 if (message.type === "addFront") {

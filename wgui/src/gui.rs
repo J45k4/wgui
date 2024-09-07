@@ -477,6 +477,11 @@ impl Item {
 		}
 		self
 	}
+
+	pub fn editable(mut self, e: bool) -> Self {
+		self.editable = e;
+		self
+	}
 }
 
 #[cfg(test)]
