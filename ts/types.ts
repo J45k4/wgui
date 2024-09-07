@@ -19,7 +19,6 @@ export type Flex = {
 
 export type Layout = {
     type: "layout"
-	id?: string
     flex?: FlexDirection
     height: number
     width: number
@@ -49,7 +48,6 @@ export type Button = {
 
 export type TextInput = {
     type: "textInput"
-    id: string
     placeholder: string
     value: string
 }

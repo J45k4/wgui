@@ -205,7 +205,7 @@ var renderPayload = (item, ctx, old) => {
     }
     input.placeholder = payload.placeholder;
     input.value = payload.value;
-    if (payload.id) {
+    if (item.id) {
       input.oninput = (e) => {
         ctx.sender.send({
           type: "onTextChanged",
