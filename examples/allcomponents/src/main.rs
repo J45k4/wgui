@@ -4,10 +4,12 @@ use wgui::*;
 
 const SELECT: u32 = 1;
 const SLIDER: u32 = 2;
+const TEXT_INPUT: u32 = 3;
 
 #[derive(Default, Debug)]
 struct State {
 	option: String,
+	text_input_value: String,
 	slider_value: i32
 }
 
@@ -19,6 +21,11 @@ fn render(state: &State) -> Item {
 			text("This is text1").grow(2).background_color("green").cursor("pointer").id(3),
 			text("This is text2").grow(1).background_color("lightblue"),
 		]).margin(20).padding(10).border("1px solid black"),
+		text_input() //.placeholder("Enter text here")
+		.id(TEXT_INPUT)
+		.width(100)
+		.svalue(&state.text_input_value)
+		.margin_bottom(10),
 		select([
 			option("Option 1", "option1"),
 			option("Option 2", "option2"),
@@ -75,7 +82,9 @@ async fn main() {
 				
             },
             ClientEvent::OnTextChanged(t) => {
-
+				if t.id == TEXT_INPUT {
+					state.text_input_value = t.value;
+				}
             }
 			ClientEvent::OnSliderChange(s) => {
 				if s.id == SLIDER {

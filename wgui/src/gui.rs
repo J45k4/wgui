@@ -101,8 +101,17 @@ pub struct Item {
 	pub max_width: u32,
 	pub grow: u32,
 	pub text_align: String,
-	pub margin: u32,
-	pub padding: u32,
+	pub margin: u16,
+	pub margin_left: u16,
+	pub margin_right: u16,
+	pub margin_top: u16,
+	pub margin_bottom: u16,
+	pub padding: u16,
+	pub padding_left: u16,
+	pub padding_right: u16,
+	pub padding_top: u16,
+	pub padding_bottom: u16,
+	pub editable: bool,
 }
 
 pub fn checkbox() -> Item {
@@ -359,13 +368,53 @@ impl Item {
 		self
 	}
 
-	pub fn padding(mut self, padding: u32) -> Self {
+	pub fn padding(mut self, padding: u16) -> Self {
 		self.padding = padding;
 		self
 	}
 
-	pub fn margin(mut self, margin: u32) -> Self {
+	pub fn padding_left(mut self, padding_left: u16) -> Self {
+		self.padding_left = padding_left;
+		self
+	}
+
+	pub fn padding_right(mut self, padding_right: u16) -> Self {
+		self.padding_right = padding_right;
+		self
+	}
+
+	pub fn padding_top(mut self, padding_top: u16) -> Self {
+		self.padding_top = padding_top;
+		self
+	}
+
+	pub fn padding_bottom(mut self, padding_bottom: u16) -> Self {
+		self.padding_bottom = padding_bottom;
+		self
+	}
+
+	pub fn margin(mut self, margin: u16) -> Self {
 		self.margin = margin;
+		self
+	}
+
+	pub fn margin_left(mut self, margin_left: u16) -> Self {
+		self.margin_left = margin_left;
+		self
+	}
+
+	pub fn margin_right(mut self, margin_right: u16) -> Self {
+		self.margin_right = margin_right;
+		self
+	}
+
+	pub fn margin_top(mut self, margin_top: u16) -> Self {
+		self.margin_top = margin_top;
+		self
+	}
+
+	pub fn margin_bottom(mut self, margin_bottom: u16) -> Self {
+		self.margin_bottom = margin_bottom;
 		self
 	}
 

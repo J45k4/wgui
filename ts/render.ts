@@ -162,19 +162,21 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 		let input: HTMLInputElement
 		if (old instanceof HTMLInputElement) {
 			input = old
+			console.log("old input")
 		} else {
 			input = document.createElement("input")
+			input.oninput = (e: any) => {
+				ctx.sender.send({
+					type: "onTextChanged",
+					id: item.id,
+					inx: item.inx,
+					value: e.target.value,
+				})
+			}
 		}
 		input.placeholder = payload.placeholder as string
 		input.value = payload.value
-		input.oninput = (e: any) => {
-			ctx.sender.send({
-				type: "onTextChanged",
-				id: item.id,
-				inx: item.inx,
-				value: e.target.value,
-			})
-		}
+
 		return input
 	}
 
@@ -265,69 +267,6 @@ const renderPayload = (item: Item, ctx: Context, old?: Element) => {
 		}
 		return element
 	}
-
-	// switch (payload.type) {
-	// 	case "text": {
-	// 		// TODO
-	// 		// let element: Text
-	// 		// if (old instanceof HTMLSpanElement) {
-	// 		// 	element = old
-	// 		// 	old.innerText = payload.value + ""
-	// 		// } else {
-	// 		// 	element = document.createElement("span")
-	// 		// 	element.innerText = payload.value + ""
-	// 		// }
-	// 		// break
-	// 	}
-	// 	case "table": {
-	// 		let element: HTMLTableElement
-	// 		if (old instanceof HTMLTableElement) {
-	// 			element = old
-	// 			element.innerHTML = ""
-	// 		} else {
-	// 			element = document.createElement("table")
-	// 		}
-	// 		renderChildren(element, payload.items, ctx)
-	// 		return element
-	// 	}
-	// 	case "thead": {
-	// 		let element: HTMLTableSectionElement
-	// 		if (old instanceof HTMLTableSectionElement) {
-	// 			element = old
-	// 			element.innerHTML = ""
-	// 		} else {
-	// 			element = document.createElement("thead")
-	// 		}
-	// 		break	
-	// 	}
-	// 	case "tbody": {
-	// 		if (old instanceof HTMLTableSectionElement) {
-	// 			element = old
-	// 			element.innerHTML = ""
-	// 		} else {
-	// 			element = document.createElement("tbody")
-	// 		}
-	// 		break	
-	// 	}
-	// 	case "tr": {
-	// 		break	
-	// 	}
-	// 	case "th": {
-	// 		break	
-	// 	}
-	// 	case "td": {
-	// 		break	
-	// 	}
-	// 	case "none": {
-	// 		element = document.createElement("div")
-	// 		element.innerText = "None"
-	// 		break
-	// 	}
-	// 	default: {
-	// 		const _: never = payload
-	// 		throw new Error("Unknown payload type: " + payload)
-	// 	}
-	// }
 }
 
 export const renderItem = (item: Item, ctx: Context, old?: Element) => {
@@ -364,8 +303,32 @@ export const renderItem = (item: Item, ctx: Context, old?: Element) => {
 	if (item.margin) {
 		element.style.margin = item.margin + "px"
 	}
+	if (item.marginLeft) {
+		element.style.marginLeft = item.marginLeft + "px"
+	}
+	if (item.marginRight) {
+		element.style.marginRight = item.marginRight + "px"
+	}
+	if (item.marginTop) {
+		element.style.marginTop = item.marginTop + "px"
+	}
+	if (item.marginBottom) {
+		element.style.marginBottom = item.marginBottom + "px"
+	}
 	if (item.padding) {
 		element.style.padding = item.padding + "px"
+	}
+	if (item.paddingLeft) {
+		element.style.paddingLeft = item.paddingLeft + "px"
+	}
+	if (item.paddingRight) {
+		element.style.paddingRight = item.paddingRight + "px"
+	}
+	if (item.paddingTop) {
+		element.style.paddingTop = item.paddingTop + "px"
+	}
+	if (item.paddingBottom) {
+		element.style.paddingBottom = item.paddingBottom + "px"
 	}
 	if (item.border) {
 		element.style.border = item.border

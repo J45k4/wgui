@@ -191,19 +191,20 @@ var renderPayload = (item, ctx, old) => {
     let input;
     if (old instanceof HTMLInputElement) {
       input = old;
+      console.log("old input");
     } else {
       input = document.createElement("input");
+      input.oninput = (e) => {
+        ctx.sender.send({
+          type: "onTextChanged",
+          id: item.id,
+          inx: item.inx,
+          value: e.target.value
+        });
+      };
     }
     input.placeholder = payload.placeholder;
     input.value = payload.value;
-    input.oninput = (e) => {
-      ctx.sender.send({
-        type: "onTextChanged",
-        id: item.id,
-        inx: item.inx,
-        value: e.target.value
-      });
-    };
     return input;
   }
   if (payload.type === "table") {
@@ -320,8 +321,32 @@ var renderItem = (item, ctx, old) => {
   if (item.margin) {
     element.style.margin = item.margin + "px";
   }
+  if (item.marginLeft) {
+    element.style.marginLeft = item.marginLeft + "px";
+  }
+  if (item.marginRight) {
+    element.style.marginRight = item.marginRight + "px";
+  }
+  if (item.marginTop) {
+    element.style.marginTop = item.marginTop + "px";
+  }
+  if (item.marginBottom) {
+    element.style.marginBottom = item.marginBottom + "px";
+  }
   if (item.padding) {
     element.style.padding = item.padding + "px";
+  }
+  if (item.paddingLeft) {
+    element.style.paddingLeft = item.paddingLeft + "px";
+  }
+  if (item.paddingRight) {
+    element.style.paddingRight = item.paddingRight + "px";
+  }
+  if (item.paddingTop) {
+    element.style.paddingTop = item.paddingTop + "px";
+  }
+  if (item.paddingBottom) {
+    element.style.paddingBottom = item.paddingBottom + "px";
   }
   if (item.border) {
     element.style.border = item.border;
@@ -464,10 +489,7 @@ window.onload = () => {
           continue;
         }
         if (message.type === "replace") {
-          const newEl = renderItem(message.item, ctx, element);
-          if (newEl) {
-            element.replaceWith(newEl);
-          }
+          renderItem(message.item, ctx, element);
         }
         if (message.type === "replaceAt") {
           const newEl = renderItem(message.item, ctx);

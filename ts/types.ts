@@ -145,6 +145,15 @@ export type Item = {
 	margin?: number
 	padding?: number
 	border?: string
+	marginLeft?: number
+	marginRight?: number
+	marginTop?: number
+	marginBottom?: number
+	paddingLeft?: number
+	paddingRight?: number
+	paddingTop?: number
+	paddingBottom?: number
+	editable?: boolean
 	payload: ItemPayload
 }
 

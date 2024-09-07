@@ -73,10 +73,10 @@ window.onload = () => {
                 }
     
                 if (message.type === "replace") {
-                    const newEl = renderItem(message.item, ctx, element)
-                    if (newEl) {
-                        element.replaceWith(newEl)
-                    }
+                    renderItem(message.item, ctx, element)
+                    // if (newEl) {
+                    //     element.replaceWith(newEl)
+                    // }
                 }
                 
                 if (message.type === "replaceAt") {
