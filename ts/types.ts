@@ -152,6 +152,7 @@ export type Item = {
 	paddingTop?: number
 	paddingBottom?: number
 	editable?: boolean
+	overflow?: string
 	payload: ItemPayload
 }
 

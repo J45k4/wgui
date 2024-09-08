@@ -378,6 +378,8 @@ var renderItem = (item, ctx, old) => {
   if (item.editable) {
     element.contentEditable = "true";
   }
+  if (item.overflow)
+    element.style.overflow = item.overflow;
   return element;
 };
 

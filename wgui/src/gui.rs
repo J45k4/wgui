@@ -111,6 +111,7 @@ pub struct Item {
 	pub padding_right: u16,
 	pub padding_top: u16,
 	pub padding_bottom: u16,
+	pub overflow: String,
 	pub editable: bool,
 }
 
@@ -480,6 +481,11 @@ impl Item {
 
 	pub fn editable(mut self, e: bool) -> Self {
 		self.editable = e;
+		self
+	}
+
+	pub fn overflow(mut self, o: &str) -> Self {
+		self.overflow = o.to_string();
 		self
 	}
 }

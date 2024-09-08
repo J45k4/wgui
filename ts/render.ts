@@ -341,5 +341,6 @@ export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 	if (item.editable) {
 		element.contentEditable = "true"
 	}
+	if (item.overflow) element.style.overflow = item.overflow
 	return element
 }
