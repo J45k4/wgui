@@ -143,6 +143,15 @@ var renderPayload = (item, ctx, old) => {
       if (old)
         old.replaceWith(select);
     }
+    select.oninput = (e) => {
+      ctx.sender.send({
+        type: "onSelect",
+        id: item.id,
+        inx: item.inx,
+        value: e.target.value
+      });
+      ctx.sender.sendNow();
+    };
     return select;
   }
   if (payload.type === "button") {

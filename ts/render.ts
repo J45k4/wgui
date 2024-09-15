@@ -102,6 +102,16 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			if (old) old.replaceWith(select)
 		}
 
+		select.oninput = (e: any) => {
+			ctx.sender.send({
+				type: "onSelect",
+				id: item.id,
+				inx: item.inx,
+				value: e.target.value
+			})
+			ctx.sender.sendNow()
+		}
+
 		return select
 	}
 
