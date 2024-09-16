@@ -489,6 +489,11 @@ impl Item {
 		self
 	}
 
+	pub fn max_height(mut self, h: u32) -> Self {
+		self.max_height = h;
+		self
+	}
+
 	pub fn wrap(mut self, w: bool) -> Self {
 		match self.payload {
 			ItemPayload::Layout(ref mut layout) => {
