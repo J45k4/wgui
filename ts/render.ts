@@ -329,9 +329,11 @@ export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 	if (item.height) {
 		element.style.height = item.height + "px"
 	}
+	if (item.minWidth) element.style.minWidth = item.minWidth + "px"
 	if (item.maxWidth) {
 		element.style.maxWidth = item.maxWidth + "px"
 	}
+	if (item.minHeight) element.style.minHeight = item.minHeight + "px"
 	if (item.maxHeight) {
 		element.style.maxHeight = item.maxHeight + "px"
 	}

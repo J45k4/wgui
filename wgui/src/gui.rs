@@ -101,7 +101,9 @@ pub struct Item {
 	pub cursor: String,
 	pub height: u32,
 	pub width: u32,
+	pub min_height: u32,
 	pub max_height: u32,
+	pub min_width: u32,
 	pub max_width: u32,
 	pub grow: u32,
 	pub text_align: String,
@@ -464,6 +466,11 @@ impl Item {
 		self
 	}
 
+	pub fn min_width(mut self, w: u32) -> Self {
+		self.min_width = w;
+		self
+	}
+
 	pub fn max_width(mut self, w: u32) -> Self {
 		self.max_width = w;
 		self
@@ -486,6 +493,11 @@ impl Item {
 
 	pub fn height(mut self, h: u32) -> Self {
 		self.height = h;
+		self
+	}
+
+	pub fn min_height(mut self, h: u32) -> Self {
+		self.min_height = h;
 		self
 	}
 

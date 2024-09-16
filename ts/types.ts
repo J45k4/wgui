@@ -141,7 +141,9 @@ export type Item = {
 	typ: number
 	height: number
 	width: number
+	minHeight: number
 	maxHeight: number
+	minWidth: number
 	maxWidth: number
 	grow?: number
 	backgroundColor?: string
