@@ -236,6 +236,7 @@ var renderPayload = (item, ctx, old) => {
         old.replaceWith(textarea);
     }
     textarea.placeholder = payload.placeholder;
+    textarea.wrap = "off";
     textarea.style.resize = "none";
     textarea.style.overflowY = "hidden";
     textarea.style.minHeight = "20px";
@@ -245,7 +246,7 @@ var renderPayload = (item, ctx, old) => {
     textarea.oninput = (e) => {
       const value = e.target.value;
       const rowCount2 = value.split("\n").length;
-      textarea.style.height = rowCount2 * 20 + "px";
+      textarea.style.height = (rowCount2 + 1) * 20 + "px";
       if (item.id) {
         ctx.sender.send({
           type: "onTextChanged",

@@ -197,6 +197,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			if (old) old.replaceWith(textarea)
 		}
 		textarea.placeholder = payload.placeholder as string
+		textarea.wrap = "off"
 		textarea.style.resize = "none"
 		textarea.style.overflowY = "hidden"
 		textarea.style.minHeight = "20px"
@@ -206,7 +207,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		textarea.oninput = (e: any) => {
 			const value = e.target.value
 			const rowCount = value.split("\n").length
-			textarea.style.height = rowCount * 20 + "px"
+			textarea.style.height = (rowCount + 1) * 20 + "px"
 
 			if (item.id) {
 				ctx.sender.send({
