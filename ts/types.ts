@@ -52,6 +52,12 @@ export type TextInput = {
     value: string
 }
 
+export type Textarea = {
+	type: "textarea"
+	value: string
+	placeholder: string
+}
+
 export type Checkbox = {
     type: "checkbox"
     checked: boolean
@@ -114,7 +120,8 @@ export type None = {
 }
 
 export type ItemPayload = Text |
-	TextInput | 
+	TextInput |
+	Textarea |
 	Table |
 	Thead |
 	Tbody |

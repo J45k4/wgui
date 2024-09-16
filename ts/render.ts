@@ -188,6 +188,38 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		return input
 	}
 
+	if (payload.type === "textarea") {
+		let textarea: HTMLTextAreaElement
+		if (old instanceof HTMLTextAreaElement) {
+			textarea = old
+		} else {
+			textarea = document.createElement("textarea")
+			if (old) old.replaceWith(textarea)
+		}
+		textarea.placeholder = payload.placeholder as string
+		textarea.style.resize = "none"
+		textarea.style.overflowY = "hidden"
+		textarea.style.minHeight = "20px"
+		textarea.style.lineHeight = "20px"
+		const rowCount = payload.value.split("\n").length
+		textarea.style.height = rowCount * 20 + "px"
+		textarea.oninput = (e: any) => {
+			const value = e.target.value
+			const rowCount = value.split("\n").length
+			textarea.style.height = rowCount * 20 + "px"
+
+			if (item.id) {
+				ctx.sender.send({
+					type: "onTextChanged",
+					id: item.id,
+					inx: item.inx,
+					value: e.target.value,
+				})
+			}
+		}
+		return textarea
+	}
+
 	if (payload.type === "table") {
 		let table: HTMLTableElement
 		if (old instanceof HTMLTableElement) {

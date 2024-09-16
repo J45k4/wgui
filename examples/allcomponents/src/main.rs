@@ -6,6 +6,7 @@ const SELECT: u32 = 1;
 const SLIDER: u32 = 2;
 const TEXT_INPUT: u32 = 3;
 const SHOW_TABLE_BUTTON: u32 = 4;
+const TEXTAREA: u32 = 5;
 
 #[derive(Default, Debug)]
 struct State {
@@ -38,6 +39,7 @@ fn render(state: &State) -> Item {
 			.min(0).max(100)
 			.ivalue(state.slider_value)
 			.width(100),
+		textarea().placeholder("Enter text here").id(TEXTAREA),
 		button("show table").id(4),
 		if state.show_table {
 			table([

@@ -43,6 +43,10 @@ pub enum ItemPayload {
 		value: String,
 		placeholder: String
 	},
+	Textarea {
+		value: String,
+		placeholder: String
+	},
 	Select {
 		value: String,
 		options: Vec<SelectOption>,
@@ -176,6 +180,16 @@ pub fn text(text: &str) -> Item {
 pub fn text_input() -> Item {
 	Item {
 		payload: ItemPayload::TextInput {
+			value: "".to_string(),
+			placeholder: "".to_string()
+		},
+		..Default::default()
+	}
+}
+
+pub fn textarea() -> Item {
+	Item {
+		payload: ItemPayload::Textarea {
 			value: "".to_string(),
 			placeholder: "".to_string()
 		},
@@ -341,6 +355,9 @@ impl Item {
 			ItemPayload::TextInput { ref mut value, .. } => {
 				*value = v.to_string();
 			},
+			ItemPayload::Textarea { ref mut value, .. } => {
+				*value = v.to_string();
+			},
 			ItemPayload::Select { ref mut value, .. } => {
 				*value = v.to_string();
 			},
@@ -422,6 +439,9 @@ impl Item {
 	pub fn placeholder(mut self, p: &str) -> Self {
 		match self.payload {
 			ItemPayload::TextInput { ref mut placeholder, .. } => {
+				*placeholder = p.to_string();
+			},
+			ItemPayload::Textarea { ref mut placeholder, .. } => {
 				*placeholder = p.to_string();
 			},
 			_ => {}
