@@ -202,6 +202,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		textarea.style.overflowY = "hidden"
 		textarea.style.minHeight = "20px"
 		textarea.style.lineHeight = "20px"
+		textarea.value = payload.value
 		const rowCount = payload.value.split("\n").length
 		textarea.style.height = rowCount * 20 + "px"
 		textarea.oninput = (e: any) => {
