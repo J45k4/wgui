@@ -354,6 +354,38 @@ var renderPayload = (item, ctx, old) => {
     }
     return element;
   }
+  if (payload.type === "folderPicker") {
+    let element;
+    if (old instanceof HTMLInputElement) {
+      element = old;
+    } else {
+      element = document.createElement("input");
+      if (old)
+        old.replaceWith(element);
+    }
+    element.type = "file";
+    element.webkitdirectory = true;
+    element.oninput = (e) => {
+      console.log("oninput", e);
+    };
+    return element;
+  }
+  if (payload.type === "flaotingLayout") {
+    let element;
+    if (old instanceof HTMLDivElement) {
+      element = old;
+    } else {
+      element = document.createElement("div");
+      if (old)
+        old.replaceWith(element);
+    }
+    element.style.position = "absolute";
+    element.style.left = payload.x + "px";
+    element.style.top = payload.y + "px";
+    element.style.width = payload.width + "px";
+    element.style.height = payload.height + "px";
+    return element;
+  }
 };
 var renderItem = (item, ctx, old) => {
   const element = renderPayload(item, ctx, old);

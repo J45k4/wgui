@@ -90,17 +90,10 @@ impl UiWsWorker {
                     },
                     None => vec![ClientAction::Replace(Replace { path: vec![], item: root.clone() })]
                 };
-
-                if changes.len() == 0 {
-                    return Ok(());
-                }
-
+                if changes.len() == 0 { return Ok(()); }
                 self.last_root = Some(root);
-            
                 log::debug!("sending changes: {:?}", changes);
-            
                 let str = serde_json::to_string(&changes).unwrap();
-            
                 self.ws.send(Message::text(str)).await?;
             }
             // Command::Navigate(url) => {

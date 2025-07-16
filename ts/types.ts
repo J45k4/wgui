@@ -17,6 +17,11 @@ export type Flex = {
     flexDirection: FlexDirection
 }
 
+export type Pos = {
+	x: number
+	y: number
+}
+
 export type Layout = {
     type: "layout"
     flex?: FlexDirection
@@ -38,6 +43,9 @@ export type Layout = {
 	cursor?: string
 	wrap?: boolean
 	maxWidth?: number
+	pos?: Pos
+	vresize?: boolean
+	hresize?: boolean
     body: Item[]
 }
 
@@ -115,6 +123,18 @@ export type Td = {
 	item: Item
 }
 
+export type FolderPicker = {
+	type: "folderPicker"
+}
+
+export type FloatingLayout = {
+	type: "flaotingLayout"
+	x: number
+	y: number
+	width: number
+	height: number
+}
+
 export type None = {
 	type: "none"
 }
@@ -133,6 +153,8 @@ export type ItemPayload = Text |
 	Slider |
 	Layout |
 	Button |
+	FolderPicker |
+	FloatingLayout |
 	None 
 
 export type Item = {

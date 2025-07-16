@@ -316,6 +316,39 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		}
 		return element
 	}
+
+	if (payload.type === "folderPicker") {
+		let element: HTMLInputElement
+		if (old instanceof HTMLInputElement) {
+			element = old
+		} else {
+			element = document.createElement("input")
+			if (old) old.replaceWith(element)
+		}
+		element.type = "file"
+		element.webkitdirectory = true
+		// element.multiple = true
+		element.oninput = (e: any) => {
+			console.log("oninput", e)
+		}
+		return element
+	}
+
+	if (payload.type === "flaotingLayout") {
+		let element: HTMLDivElement
+		if (old instanceof HTMLDivElement) {
+			element = old
+		} else {
+			element = document.createElement("div")
+			if (old) old.replaceWith(element)
+		}
+		element.style.position = "absolute"
+		element.style.left = payload.x + "px"
+		element.style.top = payload.y + "px"
+		element.style.width = payload.width + "px"
+		element.style.height = payload.height + "px"
+		return element
+	}
 }
 
 export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {

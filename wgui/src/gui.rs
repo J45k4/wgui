@@ -25,11 +25,21 @@ impl Default for Value {
 }
 
 #[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct Pos {
+	x: u32,
+	y: u32
+}
+
+#[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Layout {
 	pub body: Vec<Item>,
 	pub flex: FlexDirection,
 	pub spacing: u32,
-	pub wrap: bool
+	pub wrap: bool,
+	pub horizontal_resize: bool,
+	pub vresize: bool,
+	pub hresize: bool,
+	pub pos: Option<Pos>
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
@@ -80,6 +90,17 @@ pub enum ItemPayload {
 	},
 	Td {
 		item: Box<Item>
+	},
+	Img {
+		src: String,
+		alt: String
+	},
+	FolderPicker,
+	FloatingLayout {
+		x: u32,
+		y: u32,
+		width: u32,
+		height: u32,
 	},
 	None
 }
@@ -299,6 +320,23 @@ pub fn td(items: Item) -> Item {
 		payload: ItemPayload::Td {
 			item: Box::new(items)
 		},
+		..Default::default()
+	}
+}
+
+pub fn img(src: &str, alt: &str) -> Item {
+	Item {
+		payload: ItemPayload::Img {
+			src: src.to_string(),
+			alt: alt.to_string()
+		},
+		..Default::default()
+	}
+}
+
+pub fn folder_picker() -> Item {
+	Item {
+		payload: ItemPayload::FolderPicker,
 		..Default::default()
 	}
 }
@@ -523,6 +561,26 @@ impl Item {
 
 	pub fn overflow(mut self, o: &str) -> Self {
 		self.overflow = o.to_string();
+		self
+	}
+
+	pub fn hresize(mut self, r: bool) -> Self {
+		match self.payload {
+			ItemPayload::Layout(ref mut layout) => {
+				layout.horizontal_resize = r;
+			},
+			_ => {}
+		}
+		self
+	}
+
+	pub fn vresize(mut self, r: bool) -> Self {
+		match self.payload {
+			ItemPayload::Layout(ref mut layout) => {
+				layout.vresize = r;
+			},
+			_ => {}
+		}
 		self
 	}
 }
