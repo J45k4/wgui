@@ -242,11 +242,13 @@ var renderPayload = (item, ctx, old) => {
     textarea.style.minHeight = "20px";
     textarea.style.lineHeight = "20px";
     textarea.value = payload.value;
-    const rowCount = payload.value.split("\n").length;
+    const rowCount = payload.value.split(`
+`).length;
     textarea.style.height = rowCount * 20 + "px";
     textarea.oninput = (e) => {
       const value = e.target.value;
-      const rowCount2 = value.split("\n").length;
+      const rowCount2 = value.split(`
+`).length;
       textarea.style.height = (rowCount2 + 1) * 20 + "px";
       if (item.id) {
         ctx.sender.send({
@@ -556,14 +558,14 @@ window.onload = () => {
   res.appendChild(content);
   const root = document.createElement("div");
   content.appendChild(root);
-  const debouncer2 = new Deboncer;
+  const debouncer = new Deboncer;
   const {
     sender
   } = connectWebsocket({
     onMessage: (sender2, msgs) => {
       const ctx = {
         sender: sender2,
-        debouncer: debouncer2
+        debouncer
       };
       for (const message of msgs) {
         if (message.type === "pushState") {
