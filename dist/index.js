@@ -372,6 +372,51 @@ var renderPayload = (item, ctx, old) => {
     };
     return element;
   }
+  if (payload.type === "modal") {
+    let overlay;
+    if (old instanceof HTMLDivElement && old.dataset.modal === "overlay") {
+      overlay = old;
+      overlay.innerHTML = "";
+    } else {
+      overlay = document.createElement("div");
+      overlay.dataset.modal = "overlay";
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      if (old)
+        old.replaceWith(overlay);
+    }
+    overlay.style.position = "fixed";
+    overlay.style.left = "0";
+    overlay.style.top = "0";
+    overlay.style.width = "100vw";
+    overlay.style.height = "100vh";
+    overlay.style.display = payload.open ? "flex" : "none";
+    overlay.style.alignItems = "center";
+    overlay.style.justifyContent = "center";
+    overlay.style.padding = "32px";
+    overlay.style.boxSizing = "border-box";
+    overlay.style.backgroundColor = "rgba(0, 0, 0, 0.45)";
+    overlay.style.backdropFilter = "blur(2px)";
+    overlay.style.zIndex = "1000";
+    overlay.style.pointerEvents = payload.open ? "auto" : "none";
+    overlay.setAttribute("aria-hidden", payload.open ? "false" : "true");
+    renderChildren(overlay, payload.body, ctx);
+    if (item.id) {
+      overlay.onclick = (event) => {
+        if (event.target === overlay) {
+          ctx.sender.send({
+            type: "onClick",
+            id: item.id,
+            inx: item.inx
+          });
+          ctx.sender.sendNow();
+        }
+      };
+    } else {
+      overlay.onclick = null;
+    }
+    return overlay;
+  }
   if (payload.type === "flaotingLayout") {
     let element;
     if (old instanceof HTMLDivElement) {

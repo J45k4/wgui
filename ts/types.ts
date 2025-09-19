@@ -135,6 +135,12 @@ export type FloatingLayout = {
 	height: number
 }
 
+export type Modal = {
+	type: "modal"
+	open: boolean
+	body: Item[]
+}
+
 export type None = {
 	type: "none"
 }
@@ -155,6 +161,7 @@ export type ItemPayload = Text |
 	Button |
 	FolderPicker |
 	FloatingLayout |
+	Modal |
 	None 
 
 export type Item = {

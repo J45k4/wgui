@@ -102,6 +102,10 @@ pub enum ItemPayload {
 		width: u32,
 		height: u32,
 	},
+	Modal {
+		body: Vec<Item>,
+		open: bool,
+	},
 	None,
 }
 
@@ -210,6 +214,19 @@ pub fn textarea() -> Item {
 		payload: ItemPayload::Textarea {
 			value: "".to_string(),
 			placeholder: "".to_string(),
+		},
+		..Default::default()
+	}
+}
+
+pub fn modal<I>(body: I) -> Item
+where
+	I: IntoIterator<Item = Item>,
+{
+	Item {
+		payload: ItemPayload::Modal {
+			body: body.into_iter().collect(),
+			open: true,
 		},
 		..Default::default()
 	}
@@ -562,6 +579,17 @@ impl Item {
 
 	pub fn overflow(mut self, o: &str) -> Self {
 		self.overflow = o.to_string();
+		self
+	}
+
+	pub fn open(mut self, open: bool) -> Self {
+		if let ItemPayload::Modal {
+			open: ref mut is_open,
+			..
+		} = self.payload
+		{
+			*is_open = open;
+		}
 		self
 	}
 

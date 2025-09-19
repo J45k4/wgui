@@ -7,6 +7,9 @@ const SLIDER: u32 = 2;
 const TEXT_INPUT: u32 = 3;
 const SHOW_TABLE_BUTTON: u32 = 4;
 const TEXTAREA: u32 = 5;
+const OPEN_MODAL_BUTTON: u32 = 6;
+const CLOSE_MODAL_BUTTON: u32 = 7;
+const MODAL_BACKDROP: u32 = 8;
 
 #[derive(Default, Debug)]
 struct State {
@@ -14,6 +17,7 @@ struct State {
 	text_input_value: String,
 	slider_value: i32,
 	show_table: bool,
+	show_modal: bool,
 }
 
 fn render(state: &State) -> Item {
@@ -52,7 +56,8 @@ fn render(state: &State) -> Item {
 			.ivalue(state.slider_value)
 			.width(100),
 		textarea().placeholder("Enter text here").id(TEXTAREA),
-		button("show table").id(4),
+		button("show table").id(SHOW_TABLE_BUTTON),
+		button("open modal").id(OPEN_MODAL_BUTTON),
 		if state.show_table {
 			table([
 				thead([tr([th(text("Header 1")), th(text("Header 2"))])]),
@@ -70,6 +75,21 @@ fn render(state: &State) -> Item {
 		} else {
 			text("Table is hidden")
 		},
+		modal([
+			vstack([
+				text("Modal heading").text_align("center"),
+				text("This modal is rendered by the new component and can be dismissed from here or by clicking the backdrop."),
+				hstack([
+					button("close").id(CLOSE_MODAL_BUTTON),
+				])
+			])
+			.padding(20)
+			.spacing(12)
+			.background_color("white")
+			.width(340)
+		])
+		.id(MODAL_BACKDROP)
+		.open(state.show_modal),
 	])
 	.into()
 }
@@ -94,11 +114,18 @@ async fn main() {
 			}
 			ClientEvent::PathChanged(_) => {}
 			ClientEvent::Input(q) => {}
-			ClientEvent::OnClick(o) => {
-				if o.id == SHOW_TABLE_BUTTON {
+			ClientEvent::OnClick(o) => match o.id {
+				SHOW_TABLE_BUTTON => {
 					state.show_table = !state.show_table;
 				}
-			}
+				OPEN_MODAL_BUTTON => {
+					state.show_modal = true;
+				}
+				CLOSE_MODAL_BUTTON | MODAL_BACKDROP => {
+					state.show_modal = false;
+				}
+				_ => {}
+			},
 			ClientEvent::OnTextChanged(t) => {
 				if t.id == TEXT_INPUT {
 					state.text_input_value = t.value;
