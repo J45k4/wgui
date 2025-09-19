@@ -13,7 +13,7 @@ use crate::types::SetProp;
 use crate::types::Value;
 
 fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: ItemPath) {
-    log::trace!("{:?} inner_dif", path);
+	log::trace!("{:?} inner_dif", path);
 	let mut sets: Vec<SetProp> = Vec::new();
 
 	match (&old.payload, &new.payload) {
@@ -24,7 +24,7 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 				println!("{:?} spacing is different", path);
 				sets.push(SetProp {
 					key: PropKey::Spacing,
-					value: Value::Number(new.spacing)
+					value: Value::Number(new.spacing),
 				})
 			}
 
@@ -34,40 +34,28 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 					EditOperation::InsertFirst(item) => {
 						log::trace!("{:?} insert first", path);
 
-						changes.push(
-							ClientAction::AddFront(
-								AddFront {
-									path: path.clone(),
-									item: item
-								}
-							)
-						);
-					},
+						changes.push(ClientAction::AddFront(AddFront {
+							path: path.clone(),
+							item: item,
+						}));
+					}
 					EditOperation::InsertAfter(index, item) => {
 						log::trace!("{:?} insert after {}", path, index);
 
-						changes.push(
-							ClientAction::InsertAt(
-								InsertAt {
-									path: path.clone(),
-									inx: index,
-									item: item
-								}
-							)
-						);
-					},
+						changes.push(ClientAction::InsertAt(InsertAt {
+							path: path.clone(),
+							inx: index,
+							item: item,
+						}));
+					}
 					EditOperation::RemoveAt(index) => {
 						log::trace!("{:?} remove at index {}", path, index);
 
-						changes.push(
-							ClientAction::RemoveInx(
-								RemoveInx {
-									path: path.clone(),
-									inx: index
-								}
-							)
-						);
-					},
+						changes.push(ClientAction::RemoveInx(RemoveInx {
+							path: path.clone(),
+							inx: index,
+						}));
+					}
 					EditOperation::ReplaceAt(i, item) => {
 						log::trace!("{:?} replace at {}", path, i);
 
@@ -77,7 +65,7 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 						log::trace!("{:?} new path: {:?}", path, path);
 
 						inner_diff(changes, &old.body[i], &item, path);
-					},
+					}
 					EditOperation::InsertBack(item) => {
 						log::trace!("{:?} insert back", path);
 
@@ -85,27 +73,23 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 					}
 				}
 			}
-		},
+		}
 		_ => {
 			if old != new {
-                log::trace!("{:?} old and new are different", path);
+				log::trace!("{:?} old and new are different", path);
 
-                changes.push(
-                    ClientAction::Replace(
-                        Replace {
-                            path: path.clone(),
-                            item: new.clone()
-                        }
-                    )
-                );
-            }
+				changes.push(ClientAction::Replace(Replace {
+					path: path.clone(),
+					item: new.clone(),
+				}));
+			}
 		}
 	}
 
 	if old.id != new.id {
 		sets.push(SetProp {
 			key: PropKey::ID,
-			value: Value::Number(new.id)
+			value: Value::Number(new.id),
 		})
 	}
 
@@ -113,7 +97,7 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 		println!("{:?} border is different", path);
 		sets.push(SetProp {
 			key: PropKey::Border,
-			value: Value::String(new.border.clone())
+			value: Value::String(new.border.clone()),
 		});
 	}
 	if old.background_color != new.background_color {
@@ -124,22 +108,20 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 		// })
 		sets.push(SetProp {
 			key: PropKey::BackgroundColor,
-			value: Value::String(new.background_color.clone())
+			value: Value::String(new.background_color.clone()),
 		});
 	}
 
 	if sets.len() > 0 {
 		changes.push(ClientAction::SetProp {
 			path: path.clone(),
-			sets
+			sets,
 		});
 	}
 
-
-
-    // match (old, new) {
-    //     (Item::View(old), Item::View(new)) => {
-    //         log::trace!("{:?} inner_diff calculating view minumum edits", path);
+	// match (old, new) {
+	//     (Item::View(old), Item::View(new)) => {
+	//         log::trace!("{:?} inner_diff calculating view minumum edits", path);
 
 	// 		// if old != new {
 	// 		// 	println!("{:?} old and new are different", path);
@@ -150,47 +132,47 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 	// 		// }
 
 	// 		if old.spacing != new.spacing {
-	// 			changes.push(ClientAction::SetStyle { 
-	// 				path: path.clone(), 
-	// 				prop: "gap".to_string(), 
+	// 			changes.push(ClientAction::SetStyle {
+	// 				path: path.clone(),
+	// 				prop: "gap".to_string(),
 	// 				value: new.spacing.unwrap_or_default().to_string()
 	// 			})
 	// 		}
-    //     }
-    //     _ => {
-    //         log::trace!("{:?} comparing old and new", path);
+	//     }
+	//     _ => {
+	//         log::trace!("{:?} comparing old and new", path);
 
-    //         if old != new {
-    //             log::trace!("{:?} old and new are different", path);
+	//         if old != new {
+	//             log::trace!("{:?} old and new are different", path);
 
-    //             changes.push(
-    //                 ClientAction::Replace(
-    //                     Replace {
-    //                         path: path.clone(),
-    //                         item: new.clone()
-    //                     }
-    //                 )
-    //             );
-    //         }
-    //     }
-    // }
+	//             changes.push(
+	//                 ClientAction::Replace(
+	//                     Replace {
+	//                         path: path.clone(),
+	//                         item: new.clone()
+	//                     }
+	//                 )
+	//             );
+	//         }
+	//     }
+	// }
 }
 
 pub fn diff(old: &Item, new: &Item) -> Vec<ClientAction> {
-    log::trace!("diff");
-    log::trace!("{:?}", old);
-    log::trace!("{:?}", new);
-    let mut changes = Vec::new();
-    let mut path = Vec::new();
-    inner_diff(&mut changes, old, new, path);
-    log::debug!("diff changes: {:?}", changes);
-    changes
+	log::trace!("diff");
+	log::trace!("{:?}", old);
+	log::trace!("{:?}", new);
+	let mut changes = Vec::new();
+	let mut path = Vec::new();
+	inner_diff(&mut changes, old, new, path);
+	log::debug!("diff changes: {:?}", changes);
+	changes
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::gui::hstack;
-    use super::*;
+	use super::*;
+	use crate::gui::hstack;
 
 	#[test]
 	fn test_view_metadata_diff() {

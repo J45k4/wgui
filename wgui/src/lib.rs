@@ -1,58 +1,54 @@
 use server::Server;
-use tokio::sync::mpsc;
-use tokio::sync::RwLock;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio::sync::RwLock;
 
-mod gui;
+mod diff;
 mod edit_distance;
+mod gui;
+mod server;
 mod types;
 mod ui_client;
-mod diff;
-mod server;
 
 pub use gui::*;
 pub use types::*;
 
 pub struct Wgui {
-    events_rx: mpsc::UnboundedReceiver<ClientEvent>,
-    clients: Clients
+	events_rx: mpsc::UnboundedReceiver<ClientEvent>,
+	clients: Clients,
 }
 
 impl Wgui {
-    pub fn new(addr: SocketAddr) -> Self 
-    {
-        let (events_tx, events_rx) = mpsc::unbounded_channel();
-        let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
+	pub fn new(addr: SocketAddr) -> Self {
+		let (events_tx, events_rx) = mpsc::unbounded_channel();
+		let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
 
-        {
-            let clients = clients.clone();
-            tokio::spawn(async move {
-                Server::new(addr, events_tx, clients).await.run().await;
-            });
-        }
+		{
+			let clients = clients.clone();
+			tokio::spawn(async move {
+				Server::new(addr, events_tx, clients).await.run().await;
+			});
+		}
 
-        Self {
-            events_rx,
-            clients
-        }
-    }
+		Self { events_rx, clients }
+	}
 
-    pub async fn next(&mut self) -> Option<ClientEvent> {
-        self.events_rx.recv().await
-    }
+	pub async fn next(&mut self) -> Option<ClientEvent> {
+		self.events_rx.recv().await
+	}
 
-    pub async fn render(&self, client_id: usize, item: Item) {
-        log::debug!("render {:?}", item);
-        let clients = self.clients.read().await;
-        let sender = match clients.get(&client_id) {
-            Some(sender) => sender,
-            None => {
-                println!("client not found");
-                return;
-            }
-        };
-        sender.send(Command::Render(item)).unwrap();
-    }
+	pub async fn render(&self, client_id: usize, item: Item) {
+		log::debug!("render {:?}", item);
+		let clients = self.clients.read().await;
+		let sender = match clients.get(&client_id) {
+			Some(sender) => sender,
+			None => {
+				println!("client not found");
+				return;
+			}
+		};
+		sender.send(Command::Render(item)).unwrap();
+	}
 }

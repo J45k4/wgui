@@ -1,21 +1,21 @@
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FlexDirection {
-    Column,
-    Row
+	Column,
+	Row,
 }
 
 impl Default for FlexDirection {
-    fn default() -> Self {
-        FlexDirection::Column
-    }
+	fn default() -> Self {
+		FlexDirection::Column
+	}
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 enum Value {
 	String(String),
 	Bool(bool),
-	Undefined
+	Undefined,
 }
 
 impl Default for Value {
@@ -27,7 +27,7 @@ impl Default for Value {
 #[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Pos {
 	x: u32,
-	y: u32
+	y: u32,
 }
 
 #[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -39,7 +39,7 @@ pub struct Layout {
 	pub horizontal_resize: bool,
 	pub vresize: bool,
 	pub hresize: bool,
-	pub pos: Option<Pos>
+	pub pos: Option<Pos>,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
@@ -51,49 +51,49 @@ pub enum ItemPayload {
 	},
 	TextInput {
 		value: String,
-		placeholder: String
+		placeholder: String,
 	},
 	Textarea {
 		value: String,
-		placeholder: String
+		placeholder: String,
 	},
 	Select {
 		value: String,
 		options: Vec<SelectOption>,
 	},
 	Checkbox {
-		checked: bool
+		checked: bool,
 	},
 	Slider {
 		min: i32,
 		max: i32,
 		value: i32,
-		step: i32
+		step: i32,
 	},
 	Button {
-		title: String
+		title: String,
 	},
 	Table {
 		items: Vec<Item>,
 	},
 	Tbody {
-		items: Vec<Item>
+		items: Vec<Item>,
 	},
 	Thead {
-		items: Vec<Item>
+		items: Vec<Item>,
 	},
 	Tr {
-		items: Vec<Item>
+		items: Vec<Item>,
 	},
 	Th {
-		item: Box<Item>
+		item: Box<Item>,
 	},
 	Td {
-		item: Box<Item>
+		item: Box<Item>,
 	},
 	Img {
 		src: String,
-		alt: String
+		alt: String,
 	},
 	FolderPicker,
 	FloatingLayout {
@@ -102,7 +102,7 @@ pub enum ItemPayload {
 		width: u32,
 		height: u32,
 	},
-	None
+	None,
 }
 
 impl Default for ItemPayload {
@@ -151,41 +151,36 @@ pub fn checkbox() -> Item {
 
 pub fn vstack<I>(body: I) -> Item
 where
-    I: IntoIterator<Item = Item>,
-{
-    Item {
-		payload: ItemPayload::Layout(
-			Layout {
-				body: body.into_iter().collect(),
-				flex: FlexDirection::Column,
-				..Default::default()
-			}
-		),
-        ..Default::default()
-    }
-}
-
-pub fn hstack<I>(body: I) -> Item
-where
-    I: IntoIterator<Item = Item>,
+	I: IntoIterator<Item = Item>,
 {
 	Item {
-		payload: ItemPayload::Layout(
-			Layout {
-				body: body.into_iter().collect(),
-				flex: FlexDirection::Row,
-				..Default::default()
-			}
-		),
+		payload: ItemPayload::Layout(Layout {
+			body: body.into_iter().collect(),
+			flex: FlexDirection::Column,
+			..Default::default()
+		}),
 		..Default::default()
 	}
 }
 
+pub fn hstack<I>(body: I) -> Item
+where
+	I: IntoIterator<Item = Item>,
+{
+	Item {
+		payload: ItemPayload::Layout(Layout {
+			body: body.into_iter().collect(),
+			flex: FlexDirection::Row,
+			..Default::default()
+		}),
+		..Default::default()
+	}
+}
 
 pub fn button(title: &str) -> Item {
 	Item {
-		payload: ItemPayload::Button { 
-			title: title.to_string(), 
+		payload: ItemPayload::Button {
+			title: title.to_string(),
 		},
 		..Default::default()
 	}
@@ -204,7 +199,7 @@ pub fn text_input() -> Item {
 	Item {
 		payload: ItemPayload::TextInput {
 			value: "".to_string(),
-			placeholder: "".to_string()
+			placeholder: "".to_string(),
 		},
 		..Default::default()
 	}
@@ -214,7 +209,7 @@ pub fn textarea() -> Item {
 	Item {
 		payload: ItemPayload::Textarea {
 			value: "".to_string(),
-			placeholder: "".to_string()
+			placeholder: "".to_string(),
 		},
 		..Default::default()
 	}
@@ -223,24 +218,24 @@ pub fn textarea() -> Item {
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SelectOption {
 	value: String,
-	name: String
+	name: String,
 }
 
 pub fn option(value: &str, name: &str) -> SelectOption {
 	SelectOption {
 		value: value.to_string(),
-		name: name.to_string()
+		name: name.to_string(),
 	}
 }
 
 pub fn select<I>(options: I) -> Item
 where
-    I: IntoIterator<Item = SelectOption>,
+	I: IntoIterator<Item = SelectOption>,
 {
 	Item {
 		payload: ItemPayload::Select {
 			value: "".to_string(),
-			options: options.into_iter().collect() 
+			options: options.into_iter().collect(),
 		},
 		..Default::default()
 	}
@@ -252,7 +247,7 @@ pub fn slider() -> Item {
 			min: 0,
 			max: 100,
 			value: 0,
-			step: 1
+			step: 1,
 		},
 		..Default::default()
 	}
@@ -260,11 +255,11 @@ pub fn slider() -> Item {
 
 pub fn table<T>(body: T) -> Item
 where
-	T: IntoIterator<Item = Item>
+	T: IntoIterator<Item = Item>,
 {
 	Item {
 		payload: ItemPayload::Table {
-			items: body.into_iter().collect()
+			items: body.into_iter().collect(),
 		},
 		..Default::default()
 	}
@@ -272,11 +267,11 @@ where
 
 pub fn thead<T>(items: T) -> Item
 where
-	T: IntoIterator<Item = Item>
+	T: IntoIterator<Item = Item>,
 {
 	Item {
 		payload: ItemPayload::Thead {
-			items: items.into_iter().collect()
+			items: items.into_iter().collect(),
 		},
 		..Default::default()
 	}
@@ -284,11 +279,11 @@ where
 
 pub fn tbody<T>(items: T) -> Item
 where
-	T: IntoIterator<Item = Item>
+	T: IntoIterator<Item = Item>,
 {
 	Item {
 		payload: ItemPayload::Tbody {
-			items: items.into_iter().collect()
+			items: items.into_iter().collect(),
 		},
 		..Default::default()
 	}
@@ -296,11 +291,11 @@ where
 
 pub fn tr<T>(items: T) -> Item
 where
-	T: IntoIterator<Item = Item>
+	T: IntoIterator<Item = Item>,
 {
 	Item {
 		payload: ItemPayload::Tr {
-			items: items.into_iter().collect()
+			items: items.into_iter().collect(),
 		},
 		..Default::default()
 	}
@@ -309,7 +304,7 @@ where
 pub fn th(item: Item) -> Item {
 	Item {
 		payload: ItemPayload::Th {
-			item: Box::new(item)
+			item: Box::new(item),
 		},
 		..Default::default()
 	}
@@ -318,7 +313,7 @@ pub fn th(item: Item) -> Item {
 pub fn td(items: Item) -> Item {
 	Item {
 		payload: ItemPayload::Td {
-			item: Box::new(items)
+			item: Box::new(items),
 		},
 		..Default::default()
 	}
@@ -328,7 +323,7 @@ pub fn img(src: &str, alt: &str) -> Item {
 	Item {
 		payload: ItemPayload::Img {
 			src: src.to_string(),
-			alt: alt.to_string()
+			alt: alt.to_string(),
 		},
 		..Default::default()
 	}
@@ -351,7 +346,7 @@ impl Item {
 		self.inx = inx;
 		self
 	}
-	
+
 	pub fn checked(mut self, checked: bool) -> Self {
 		self.payload = ItemPayload::Checkbox { checked };
 		self
@@ -361,7 +356,7 @@ impl Item {
 		match self.payload {
 			ItemPayload::Slider { ref mut min, .. } => {
 				*min = m;
-			},
+			}
 			_ => {}
 		}
 		self
@@ -371,7 +366,7 @@ impl Item {
 		match self.payload {
 			ItemPayload::Slider { ref mut max, .. } => {
 				*max = m;
-			},
+			}
 			_ => {}
 		}
 		self
@@ -381,7 +376,7 @@ impl Item {
 		match self.payload {
 			ItemPayload::Slider { ref mut value, .. } => {
 				*value = v;
-			},
+			}
 			_ => {}
 		}
 		self
@@ -391,16 +386,16 @@ impl Item {
 		match self.payload {
 			ItemPayload::Text { ref mut value, .. } => {
 				*value = v.to_string();
-			},
+			}
 			ItemPayload::TextInput { ref mut value, .. } => {
 				*value = v.to_string();
-			},
+			}
 			ItemPayload::Textarea { ref mut value, .. } => {
 				*value = v.to_string();
-			},
+			}
 			ItemPayload::Select { ref mut value, .. } => {
 				*value = v.to_string();
-			},
+			}
 			_ => {}
 		}
 		self
@@ -410,7 +405,7 @@ impl Item {
 		match self.payload {
 			ItemPayload::Slider { ref mut step, .. } => {
 				*step = s;
-			},
+			}
 			_ => {}
 		}
 		self
@@ -420,7 +415,7 @@ impl Item {
 		match self.payload {
 			ItemPayload::Layout(ref mut layout) => {
 				layout.spacing = spacing;
-			},
+			}
 			_ => {}
 		}
 		self
@@ -478,12 +473,18 @@ impl Item {
 
 	pub fn placeholder(mut self, p: &str) -> Self {
 		match self.payload {
-			ItemPayload::TextInput { ref mut placeholder, .. } => {
+			ItemPayload::TextInput {
+				ref mut placeholder,
+				..
+			} => {
 				*placeholder = p.to_string();
-			},
-			ItemPayload::Textarea { ref mut placeholder, .. } => {
+			}
+			ItemPayload::Textarea {
+				ref mut placeholder,
+				..
+			} => {
 				*placeholder = p.to_string();
-			},
+			}
 			_ => {}
 		}
 		self
@@ -548,7 +549,7 @@ impl Item {
 		match self.payload {
 			ItemPayload::Layout(ref mut layout) => {
 				layout.wrap = w;
-			},
+			}
 			_ => {}
 		}
 		self
@@ -568,7 +569,7 @@ impl Item {
 		match self.payload {
 			ItemPayload::Layout(ref mut layout) => {
 				layout.horizontal_resize = r;
-			},
+			}
 			_ => {}
 		}
 		self
@@ -578,7 +579,7 @@ impl Item {
 		match self.payload {
 			ItemPayload::Layout(ref mut layout) => {
 				layout.vresize = r;
-			},
+			}
 			_ => {}
 		}
 		self
@@ -591,12 +592,6 @@ mod tests {
 
 	#[test]
 	fn test_vstack() {
-		let view = vstack([
-			hstack([
-				text("Hello"),
-				button("Click me")
-			]),
-			button("DUNNO")
-		]);
+		let view = vstack([hstack([text("Hello"), button("Click me")]), button("DUNNO")]);
 	}
 }

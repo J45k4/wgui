@@ -8,122 +8,118 @@ use crate::gui::Item;
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub struct OnClick {
-    pub id: u32,
-	pub inx: Option<u32>
+	pub id: u32,
+	pub inx: Option<u32>,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OnKeyDown {
-    pub id: Option<String>,
-    pub keycode: String
+	pub id: Option<String>,
+	pub keycode: String,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OnTextChanged {
-    pub id: u32,
+	pub id: u32,
 	pub inx: Option<u32>,
-    pub value: String,
+	pub value: String,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PathChanged {
-    pub path: String,
-    pub query: HashMap<String, String>
+	pub path: String,
+	pub query: HashMap<String, String>,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
-pub struct InputQuery {
-
-}
+pub struct InputQuery {}
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OnSliderChange {
 	pub id: u32,
 	pub inx: Option<u32>,
-	pub value: i32
+	pub value: i32,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OnSelect {
 	pub id: u32,
 	pub inx: Option<u32>,
-	pub value: String
+	pub value: String,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
-pub enum ClientEvent { 
-    Disconnected { id: usize},
-    Connected { id: usize },
-    PathChanged(PathChanged),
-    Input(InputQuery),
-    OnClick(OnClick),
-    OnTextChanged(OnTextChanged),
+pub enum ClientEvent {
+	Disconnected { id: usize },
+	Connected { id: usize },
+	PathChanged(PathChanged),
+	Input(InputQuery),
+	OnClick(OnClick),
+	OnTextChanged(OnTextChanged),
 	OnSliderChange(OnSliderChange),
-	OnSelect(OnSelect)
+	OnSelect(OnSelect),
 }
 
 pub type ItemPath = Vec<usize>;
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Replace {
-    pub path: ItemPath,
-    pub item: Item
+	pub path: ItemPath,
+	pub item: Item,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ReplaceAt {
-    pub path: ItemPath,
-    pub item: Item,
-    pub inx: usize
+	pub path: ItemPath,
+	pub item: Item,
+	pub inx: usize,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AddBack {
-    pub path: ItemPath,
-    pub item: Item
+	pub path: ItemPath,
+	pub item: Item,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AddFront {
-    pub path: ItemPath,
-    pub item: Item
+	pub path: ItemPath,
+	pub item: Item,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct InsertAt {
-    pub path: ItemPath,
-    pub item: Item,
-    pub inx: usize
+	pub path: ItemPath,
+	pub item: Item,
+	pub inx: usize,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RemoveInx {
-    pub path: ItemPath,
-    pub inx: usize
+	pub path: ItemPath,
+	pub inx: usize,
 }
-
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PushState {
-    pub url: String,
+	pub url: String,
 }
-
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ReplaceState {
-    pub url: String,
+	pub url: String,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SetQuery {
-    pub query: HashMap<String, String>
+	pub query: HashMap<String, String>,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Value {
 	String(String),
-	Number(u32)
+	Number(u32),
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
@@ -137,35 +133,37 @@ pub enum PropKey {
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SetProp {
 	pub key: PropKey,
-	pub value: Value
+	pub value: Value,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum ClientAction {
-    Replace(Replace),
-    ReplaceAt(ReplaceAt),
-    AddBack(AddBack),
-    AddFront(AddFront),
-    InsertAt(InsertAt),
-    RemoveInx(RemoveInx),
-    PushState(PushState),
-    ReplaceState(ReplaceState),
-    SetQuery(SetQuery),
-	SetProp {
-		path: ItemPath,
-		sets: Vec<SetProp>
-	}
+	Replace(Replace),
+	ReplaceAt(ReplaceAt),
+	AddBack(AddBack),
+	AddFront(AddFront),
+	InsertAt(InsertAt),
+	RemoveInx(RemoveInx),
+	PushState(PushState),
+	ReplaceState(ReplaceState),
+	SetQuery(SetQuery),
+	SetProp { path: ItemPath, sets: Vec<SetProp> },
 }
 
 pub enum ServerEvent {
-    Connected { ch: mpsc::UnboundedSender<ClientEvent> },
-    ClientEvent { id: usize, event: ClientEvent }
+	Connected {
+		ch: mpsc::UnboundedSender<ClientEvent>,
+	},
+	ClientEvent {
+		id: usize,
+		event: ClientEvent,
+	},
 }
 
 #[derive(Debug, Clone)]
 pub enum Command {
-    Render(Item),
+	Render(Item),
 }
 
 pub type Clients = Arc<RwLock<HashMap<usize, mpsc::UnboundedSender<Command>>>>;
