@@ -43,6 +43,30 @@ async fn main() {
 - Todo list app (interactive text input + checkbox): `cargo run -p todo`
 - Component showcase (text input, select, slider, modal, table): `cargo run -p allcomponents`
 
+## API overview
+
+- Core runtime: `Wgui::new(addr)`, `wgui.next().await`, `wgui.render(client_id, item)`
+- Events: `ClientEvent::{Connected, Disconnected, OnClick, OnTextChanged, OnSliderChange, OnSelect, PathChanged}`
+
+Component builders
+
+- Layout: `vstack`, `hstack`
+- Text: `text`
+- Inputs: `text_input`, `textarea`, `select` + `option`, `checkbox`, `slider`
+- Actions: `button`
+- Table: `table`, `thead`, `tbody`, `tr`, `th`, `td`
+- Media: `img`
+- Overlays: `modal`
+- Misc: `folder_picker`
+
+Item modifiers
+
+- Identity: `.id(u32)`, `.inx(u32)`
+- Value helpers: `.svalue(&str)`, `.ivalue(i32)`, `.checked(bool)`, `.placeholder(&str)`, `.min(i32)`, `.max(i32)`, `.step(i32)`, `.open(bool)`
+- Layout/style: `.spacing(u32)`, `.wrap(bool)`, `.grow(u32)`, `.width(u32)`, `.min_width(u32)`, `.max_width(u32)`, `.height(u32)`, `.min_height(u32)`, `.max_height(u32)`
+- Box model: `.margin(u16)`, `.margin_left(u16)`, `.margin_right(u16)`, `.margin_top(u16)`, `.margin_bottom(u16)`, `.padding(u16)`, `.padding_left(u16)`, `.padding_right(u16)`, `.padding_top(u16)`, `.padding_bottom(u16)`
+- Visuals: `.border(&str)`, `.background_color(&str)`, `.text_align(&str)`, `.cursor(&str)`, `.overflow(&str)`, `.editable(bool)`, `.hresize(bool)`, `.vresize(bool)`
+
 ## Development
 
 ```
