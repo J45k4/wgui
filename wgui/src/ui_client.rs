@@ -1,36 +1,31 @@
-use std::{
-	collections::HashMap,
-	pin::Pin,
-	sync::Arc,
-	task::{Context, Poll},
-};
-
 use super::{gui::Item, types::ClientEvent};
 use crate::{
 	diff::diff,
 	types::{ClientAction, Clients, Command, Replace},
+	ws::{WsMessage, WsStream},
 };
-use futures_util::SinkExt;
-use futures_util::Stream;
-use futures_util::StreamExt;
-use hyper::upgrade::Upgraded;
-use hyper_tungstenite::{tungstenite::Message, HyperWebsocket, WebSocketStream};
-use hyper_util::rt::TokioIo;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use futures_util::{SinkExt, StreamExt};
+use tokio::sync::mpsc;
 
-pub struct UiWsWorker {
+pub struct UiWsWorker<S>
+where
+	S: WsStream,
+{
 	id: usize,
-	ws: WebSocketStream<TokioIo<Upgraded>>,
+	ws: S,
 	event_tx: mpsc::UnboundedSender<ClientEvent>,
 	cmd_recv: mpsc::UnboundedReceiver<Command>,
 	clients: Clients,
 	last_root: Option<Item>,
 }
 
-impl UiWsWorker {
+impl<S> UiWsWorker<S>
+where
+	S: WsStream,
+{
 	pub async fn new(
 		id: usize,
-		ws: WebSocketStream<TokioIo<Upgraded>>,
+		ws: S,
 		event_tx: mpsc::UnboundedSender<ClientEvent>,
 		clients: Clients,
 	) -> Self {
@@ -48,9 +43,9 @@ impl UiWsWorker {
 		}
 	}
 
-	pub async fn handle_websocket(&mut self, msg: Message) -> anyhow::Result<()> {
+	pub async fn handle_websocket(&mut self, msg: WsMessage) -> anyhow::Result<()> {
 		match msg {
-			Message::Text(msg) => {
+			WsMessage::Text(msg) => {
 				log::info!("recieved message: {}", msg);
 
 				let msgs: Vec<ClientEvent> = serde_json::from_str(&msg)?;
@@ -61,32 +56,20 @@ impl UiWsWorker {
 					self.event_tx.send(msg).unwrap();
 				}
 			}
-			Message::Binary(msg) => {
+			WsMessage::Binary(msg) => {
 				println!("Received binary message: {:02X?}", msg);
 				self.ws
-					.send(Message::binary(b"Thank you, come again.".to_vec()))
+					.send(WsMessage::Binary(b"Thank you, come again.".to_vec()))
 					.await?;
 			}
-			Message::Ping(msg) => {
-				// No need to send a reply: tungstenite takes care of this for you.
+			WsMessage::Ping(msg) => {
 				log::info!("Received ping message: {:02X?}", msg);
 			}
-			Message::Pong(msg) => {
+			WsMessage::Pong(msg) => {
 				log::info!("Received pong message: {:02X?}", msg);
 			}
-			Message::Close(msg) => {
-				// No need to send a reply: tungstenite takes care of this for you.
-				if let Some(msg) = &msg {
-					println!(
-						"Received close message with code {} and message: {}",
-						msg.code, msg.reason
-					);
-				} else {
-					println!("Received close message");
-				}
-			}
-			Message::Frame(msg) => {
-				unreachable!();
+			WsMessage::Close => {
+				println!("Received close message");
 			}
 		};
 
@@ -113,7 +96,7 @@ impl UiWsWorker {
 				self.last_root = Some(root);
 				log::debug!("sending changes: {:?}", changes);
 				let str = serde_json::to_string(&changes).unwrap();
-				self.ws.send(Message::text(str)).await?;
+				self.ws.send(WsMessage::Text(str)).await?;
 			} // Command::Navigate(url) => {
 			  //     // let changes = vec![
 			  //     //     ClientAction::PushState(

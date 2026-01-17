@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-wgui = { path = "../../wgui"}
+wgui = { path = "../../wgui", features = ["hyper"] }
 tokio = { version = "1", features = ["full"] }
 simple_logger = "4"
 log = "0.4"

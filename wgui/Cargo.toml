@@ -5,15 +5,20 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["hyper"]
+hyper = ["dep:hyper", "dep:http-body-util", "dep:hyper-util", "dep:hyper-tungstenite"]
+axum = ["dep:axum"]
+
 [dependencies]
 log = "0.4"
-hyper = { version = "1", features = ["full"] }
-tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
-http-body-util = "0.1"
-hyper-util = { version = "0.1", features = ["full"] }
-tokio-tungstenite = "0.21.0"
-hyper-tungstenite = "0.13.0"
 serde_json = "1"
 anyhow = "1"
-futures-util = "0.3"
+futures-util = { version = "0.3", features = ["sink"] }
+tokio = { version = "1", features = ["full"] }
+hyper = { version = "1", features = ["full"], optional = true }
+http-body-util = { version = "0.1", optional = true }
+hyper-util = { version = "0.1", features = ["full"], optional = true }
+hyper-tungstenite = { version = "0.13.0", optional = true }
+axum = { version = "0.7", optional = true, features = ["ws"] }

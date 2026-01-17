@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-wgui = { path = "../../wgui"}
+wgui = { path = "../../wgui", features = ["hyper"] }
 tokio = { version = "1", features = ["full"] }
 simple_logger = "4"
 log = "0.4"

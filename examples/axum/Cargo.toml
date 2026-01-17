@@ -1,0 +1,14 @@
+[package]
+name = "axum_example"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+axum = "0.7"
+futures-util = "0.3"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+simple_logger = "4"
+tokio = { version = "1", features = ["full"] }
+wgui = { path = "../../wgui", default-features = false, features = ["axum"] }

@@ -1,3 +1,5 @@
+#![cfg(feature = "hyper")]
+
 use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::server::conn::http1;
@@ -6,16 +8,12 @@ use hyper::Request;
 use hyper::Response;
 use hyper_util::rt::TokioIo;
 use std::net::SocketAddr;
-use std::sync::atomic::AtomicU64;
-use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
-use crate::types::ClientEvent;
-use crate::types::Clients;
-use crate::ui_client::UiWsWorker;
-
-static CLIENT_ID: AtomicU64 = AtomicU64::new(1);
+use crate::types::{ClientEvent, Clients};
+use crate::ws::TungsteniteWs;
+use crate::WguiHandle;
 
 const INDEX_HTML_BYTES: &[u8] = include_bytes!("../../dist/index.html");
 const INDEX_JS_BYTES: &[u8] = include_bytes!("../../dist/index.js");
@@ -34,14 +32,11 @@ async fn handle_req(
 
 	if req.uri().path() == "/ws" && hyper_tungstenite::is_upgrade_request(&req) {
 		let (response, websocket) = hyper_tungstenite::upgrade(&mut req, None).unwrap();
-		let id = CLIENT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as usize;
-		log::debug!("websocket worker created {}", id);
-		tokio::spawn(async move {
-			let ws = websocket.await.unwrap();
-			log::debug!("websocket connected");
-			let worker = UiWsWorker::new(id, ws, ctx.event_tx.clone(), ctx.clients.clone()).await;
-			worker.run().await;
-		});
+		let ws = websocket.await.unwrap();
+		log::debug!("websocket connected");
+		let ws = TungsteniteWs::new(ws);
+		let handle = WguiHandle::new(ctx.event_tx.clone(), ctx.clients.clone());
+		handle.handle_ws(ws).await;
 		return Ok(response);
 	}
 
