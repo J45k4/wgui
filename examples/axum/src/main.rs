@@ -57,8 +57,8 @@ async fn main() {
 
 	let app = Router::new().merge(router);
 
-	let addr: SocketAddr = "0.0.0.0:4000".parse().unwrap();
-	log::info!("listening on http://localhost:4000");
+	let addr: SocketAddr = "0.0.0.0:4001".parse().unwrap();
+	log::info!("listening on http://localhost:4001");
 
 	let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
 	axum::serve(listener, app).await.unwrap();
@@ -66,5 +66,15 @@ async fn main() {
 
 fn render_counter(count: i32) -> Item {
 	let label = format!("Count: {}", count);
-	wgui::vstack([wgui::text(&label), wgui::button("+1").id(1)])
+	wgui::vstack([
+		wgui::img(
+			"https://images.unsplash.com/photo-1524678606370-a47ad25cb82a?auto=format&fit=crop&w=600&q=60",
+			"Sample space"
+		)
+		.width(360)
+		.height(210)
+		.object_fit("cover"),
+		wgui::text(&label).margin_bottom(4),
+		wgui::button("+1").id(1),
+	])
 }

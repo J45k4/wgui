@@ -342,6 +342,7 @@ pub fn img(src: &str, alt: &str) -> Item {
 		payload: ItemPayload::Img {
 			src: src.to_string(),
 			alt: alt.to_string(),
+			object_fit: None,
 		},
 		..Default::default()
 	}
@@ -567,6 +568,18 @@ impl Item {
 		match self.payload {
 			ItemPayload::Layout(ref mut layout) => {
 				layout.wrap = w;
+			}
+			_ => {}
+		}
+		self
+	}
+
+	pub fn object_fit(mut self, fit: &str) -> Self {
+		match self.payload {
+			ItemPayload::Img {
+				ref mut object_fit, ..
+			} => {
+				*object_fit = Some(fit.to_string());
 			}
 			_ => {}
 		}
