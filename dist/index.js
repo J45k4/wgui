@@ -69,6 +69,7 @@ var renderPayload = (item, ctx, old) => {
     }
     checkbox.type = "checkbox";
     checkbox.checked = payload.checked;
+    checkbox.classList.add("retro-checkbox");
     if (item.id) {
       checkbox.onclick = () => {
         ctx.sender.send({
@@ -104,15 +105,17 @@ var renderPayload = (item, ctx, old) => {
       if (old)
         old.replaceWith(element);
     }
+    element.classList.add("retro-panel");
     if (payload.spacing) {
       element.style.gap = payload.spacing + "px";
     }
     if (payload.wrap) {
-      element.style.flexWrap = "wrap";
+      element.classList.add("flex-wrap");
     }
     if (payload.flex) {
       element.style.display = "flex";
       element.style.flexDirection = payload.flex;
+      element.classList.add(payload.flex === "row" ? "flex-row" : "flex-col");
     }
     return element;
   }
@@ -120,7 +123,7 @@ var renderPayload = (item, ctx, old) => {
     let select;
     if (old instanceof HTMLSelectElement) {
       select = old;
-      const existingOptions = Array.from(old.options);
+      const existingOptions = Array.prototype.slice.call(old.options);
       const newOptions = payload.options.map((option) => option.value);
       if (existingOptions.length !== payload.options.length || !existingOptions.every((opt, index) => opt.value === newOptions[index])) {
         old.innerHTML = "";
@@ -143,6 +146,7 @@ var renderPayload = (item, ctx, old) => {
       if (old)
         old.replaceWith(select);
     }
+    select.classList.add("retro-input");
     select.oninput = (e) => {
       ctx.sender.send({
         type: "onSelect",
@@ -164,6 +168,7 @@ var renderPayload = (item, ctx, old) => {
         old.replaceWith(button);
     }
     button.textContent = payload.title;
+    button.classList.add("retro-button");
     if (item.id) {
       button.onclick = () => {
         ctx.sender.send({
@@ -190,6 +195,7 @@ var renderPayload = (item, ctx, old) => {
     slider.type = "range";
     slider.value = payload.value.toString();
     slider.step = payload.step.toString();
+    slider.classList.add("retro-input");
     if (item.id) {
       slider.oninput = (e) => {
         ctx.sender.send({
@@ -214,6 +220,7 @@ var renderPayload = (item, ctx, old) => {
     }
     input.placeholder = payload.placeholder;
     input.value = payload.value;
+    input.classList.add("retro-input");
     if (item.id) {
       input.oninput = (e) => {
         ctx.sender.send({
@@ -245,6 +252,7 @@ var renderPayload = (item, ctx, old) => {
     const rowCount = payload.value.split(`
 `).length;
     textarea.style.height = rowCount * 20 + "px";
+    textarea.classList.add("retro-input");
     textarea.oninput = (e) => {
       const value = e.target.value;
       const rowCount2 = value.split(`
@@ -270,6 +278,7 @@ var renderPayload = (item, ctx, old) => {
       if (old)
         old.replaceWith(table);
     }
+    table.classList.add("retro-table");
     renderChildren(table, payload.items, ctx);
     return table;
   }
@@ -344,6 +353,7 @@ var renderPayload = (item, ctx, old) => {
       if (old)
         old.replaceWith(element);
     }
+    element.classList.add("retro-text");
     if (item.id) {
       element.onclick = () => {
         ctx.sender.send({
@@ -353,6 +363,7 @@ var renderPayload = (item, ctx, old) => {
         });
         ctx.sender.sendNow();
       };
+      element.classList.add("retro-clickable");
     }
     return element;
   }
@@ -457,6 +468,7 @@ var renderItem = (item, ctx, old) => {
   }
   if (item.grow) {
     element.style.flexGrow = item.grow.toString();
+    element.classList.add("grow");
   }
   if (item.backgroundColor) {
     element.style.backgroundColor = item.backgroundColor;
@@ -589,8 +601,149 @@ var connectWebsocket = (args) => {
   };
 };
 
+// ts/theme.ts
+var retroCSS = `:root {
+  --retro-bg: #1b1b24;
+  --retro-panel: #222631;
+  --retro-panel-alt: #2d3342;
+  --retro-accent: #ffcc00;
+  --retro-accent-hi: #ffe680;
+  --retro-accent-lo: #b38f00;
+  --retro-danger: #ff4d4d;
+  --retro-success: #4dff88;
+  --retro-fg: #f2f2f2;
+  --retro-fg-dim: #c3c6cf;
+  --retro-border: #4b5364;
+  --retro-border-strong: #6d788f;
+  --retro-font-stack: 'IBM Plex Mono', 'Courier New', monospace;
+  --retro-radius: 2px;
+  --retro-focus: 0 0 0 2px #ffcc00AA;
+}
+
+html, body {
+  background: var(--retro-bg);
+  color: var(--retro-fg);
+  font-family: var(--retro-font-stack);
+  font-size: 14px;
+  line-height: 1.3;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: none; /* embrace crispness */
+}
+
+body { margin:0; }
+
+* { box-sizing: border-box; }
+
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: #15161d; }
+::-webkit-scrollbar-thumb { background: var(--retro-panel-alt); border:2px solid #15161d; }
+::-webkit-scrollbar-thumb:hover { background: var(--retro-accent); }
+
+.retro-root { padding: 8px; display:flex; flex-direction:column; gap:8px; }
+
+.retro-panel {
+  background: linear-gradient(#272d39, #202530);
+  border: 2px solid var(--retro-border);
+  border-right-color: var(--retro-border-strong);
+  border-bottom-color: var(--retro-border-strong);
+  border-radius: var(--retro-radius);
+  padding: 8px 10px;
+  box-shadow: 0 0 0 1px #10141c, 0 2px 0 0 #12161f;
+}
+
+.retro-panel.inset {
+  border-top-color: var(--retro-border-strong);
+  border-left-color: var(--retro-border-strong);
+  border-right-color: var(--retro-border);
+  border-bottom-color: var(--retro-border);
+  box-shadow: inset 0 0 0 1px #10141c, inset 0 2px 4px #111722;
+}
+
+.retro-text { font-size: 13px; letter-spacing: 0.5px; }
+.retro-mono { font-family: var(--retro-font-stack); }
+
+button, .retro-button {
+  font: inherit;
+  background: var(--retro-panel-alt);
+  color: var(--retro-fg);
+  border: 2px solid var(--retro-border);
+  border-right-color: var(--retro-border-strong);
+  border-bottom-color: var(--retro-border-strong);
+  padding: 4px 12px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  position: relative;
+  transition: background .12s, color .12s, transform .05s;
+}
+button:hover, .retro-button:hover { background: var(--retro-accent); color:#000; }
+button:active, .retro-button:active { transform: translateY(1px); background: var(--retro-accent-lo); }
+button:focus-visible, .retro-button:focus-visible { outline:none; box-shadow: var(--retro-focus); }
+
+input[type=text], input[type=range], textarea, select, .retro-input {
+  font: inherit;
+  background: #161a22;
+  color: var(--retro-fg);
+  border: 2px solid var(--retro-border);
+  padding: 4px 6px;
+  border-radius: var(--retro-radius);
+  outline: none;
+}
+input[type=text]:focus, textarea:focus, select:focus { box-shadow: var(--retro-focus); }
+
+textarea { line-height: 1.2; }
+
+input[type=checkbox] { width:16px; height:16px; cursor:pointer; }
+input[type=checkbox] { accent-color: var(--retro-accent); }
+
+select { cursor: pointer; }
+
+.retro-slider-wrapper { display:flex; align-items:center; gap:6px; }
+input[type=range] { width: 160px; }
+
+/* Table styling */
+.retro-table { border-collapse: collapse; width:100%; font-size:12px; }
+.retro-table th, .retro-table td { border:1px solid var(--retro-border); padding:4px 6px; }
+.retro-table thead th { background: var(--retro-panel-alt); text-align:left; }
+.retro-table tbody tr:nth-child(even) { background:#1f232d; }
+.retro-table tbody tr:hover { background: var(--retro-panel-alt); }
+
+/* Modal overlay */
+[data-modal=overlay] {
+  font: inherit;
+}
+[data-modal=overlay] .retro-panel { min-width: 300px; }
+
+/* Utility spacing */
+.gap-xs { gap:4px; }
+.gap-sm { gap:8px; }
+.gap-md { gap:12px; }
+.gap-lg { gap:16px; }
+
+.flex-row { display:flex; flex-direction:row; }
+.flex-col { display:flex; flex-direction:column; }
+.flex-wrap { flex-wrap: wrap; }
+
+.full-width { width:100%; }
+.grow { flex-grow:1; }
+
+/* Retro focus ring for clickable text spans */
+.retro-clickable { cursor:pointer; }
+.retro-clickable:focus-visible { outline:none; box-shadow: var(--retro-focus); }
+
+`;
+var injectRetroTheme = () => {
+  if (document.getElementById("retro-theme"))
+    return;
+  const style = document.createElement("style");
+  style.id = "retro-theme";
+  style.textContent = retroCSS;
+  document.head.appendChild(style);
+};
+
 // ts/app.ts
 window.onload = () => {
+  injectRetroTheme();
   const res = document.querySelector("body");
   if (!res) {
     return;
@@ -598,6 +751,7 @@ window.onload = () => {
   res.innerHTML = "";
   res.style.display = "flex";
   res.style.flexDirection = "row";
+  res.classList.add("retro-root");
   const content = document.createElement("div");
   content.style.flexGrow = "1";
   res.appendChild(content);

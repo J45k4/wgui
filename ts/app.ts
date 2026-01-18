@@ -3,8 +3,10 @@ import { getPathItem } from "./path.ts";
 import { renderItem } from "./render.ts";
 import { Context, SrvMessage } from "./types.ts";
 import { connectWebsocket } from "./ws.ts";
+import { injectRetroTheme } from "./theme.ts"; // added retro theme injection
 
 window.onload = () => {
+    injectRetroTheme(); // ensure theme styles are present
     const res = document.querySelector("body")
 
     if (!res) {
@@ -15,6 +17,7 @@ window.onload = () => {
 
     res.style.display = "flex"
     res.style.flexDirection = "row"
+    res.classList.add("retro-root")
 
     const content = document.createElement("div")
     content.style.flexGrow = "1"
