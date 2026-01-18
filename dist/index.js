@@ -69,6 +69,7 @@ var renderPayload = (item, ctx, old) => {
     }
     checkbox.type = "checkbox";
     checkbox.checked = payload.checked;
+    checkbox.classList.add("retro-checkbox");
     if (item.id) {
       checkbox.onclick = () => {
         ctx.sender.send({
@@ -104,15 +105,17 @@ var renderPayload = (item, ctx, old) => {
       if (old)
         old.replaceWith(element);
     }
+    element.classList.add("retro-panel");
     if (payload.spacing) {
       element.style.gap = payload.spacing + "px";
     }
     if (payload.wrap) {
-      element.style.flexWrap = "wrap";
+      element.classList.add("flex-wrap");
     }
     if (payload.flex) {
       element.style.display = "flex";
       element.style.flexDirection = payload.flex;
+      element.classList.add(payload.flex === "row" ? "flex-row" : "flex-col");
     }
     return element;
   }
@@ -120,7 +123,7 @@ var renderPayload = (item, ctx, old) => {
     let select;
     if (old instanceof HTMLSelectElement) {
       select = old;
-      const existingOptions = Array.from(old.options);
+      const existingOptions = Array.prototype.slice.call(old.options);
       const newOptions = payload.options.map((option) => option.value);
       if (existingOptions.length !== payload.options.length || !existingOptions.every((opt, index) => opt.value === newOptions[index])) {
         old.innerHTML = "";
@@ -143,6 +146,7 @@ var renderPayload = (item, ctx, old) => {
       if (old)
         old.replaceWith(select);
     }
+    select.classList.add("retro-input");
     select.oninput = (e) => {
       ctx.sender.send({
         type: "onSelect",
@@ -164,6 +168,7 @@ var renderPayload = (item, ctx, old) => {
         old.replaceWith(button);
     }
     button.textContent = payload.title;
+    button.classList.add("retro-button");
     if (item.id) {
       button.onclick = () => {
         ctx.sender.send({
@@ -175,6 +180,24 @@ var renderPayload = (item, ctx, old) => {
       };
     }
     return button;
+  }
+  if (payload.type === "img") {
+    let image;
+    if (old instanceof HTMLImageElement) {
+      image = old;
+    } else {
+      image = document.createElement("img");
+      if (old)
+        old.replaceWith(image);
+    }
+    image.src = payload.src;
+    image.alt = payload.alt ?? "";
+    image.style.maxWidth = "100%";
+    image.style.maxHeight = "100%";
+    image.style.objectFit = payload.objectFit ?? "contain";
+    image.loading = "lazy";
+    image.classList.add("retro-panel");
+    return image;
   }
   if (payload.type === "slider") {
     let slider;
@@ -190,6 +213,7 @@ var renderPayload = (item, ctx, old) => {
     slider.type = "range";
     slider.value = payload.value.toString();
     slider.step = payload.step.toString();
+    slider.classList.add("retro-input");
     if (item.id) {
       slider.oninput = (e) => {
         ctx.sender.send({
@@ -214,6 +238,7 @@ var renderPayload = (item, ctx, old) => {
     }
     input.placeholder = payload.placeholder;
     input.value = payload.value;
+    input.classList.add("retro-input");
     if (item.id) {
       input.oninput = (e) => {
         ctx.sender.send({
@@ -245,6 +270,7 @@ var renderPayload = (item, ctx, old) => {
     const rowCount = payload.value.split(`
 `).length;
     textarea.style.height = rowCount * 20 + "px";
+    textarea.classList.add("retro-input");
     textarea.oninput = (e) => {
       const value = e.target.value;
       const rowCount2 = value.split(`
@@ -270,6 +296,7 @@ var renderPayload = (item, ctx, old) => {
       if (old)
         old.replaceWith(table);
     }
+    table.classList.add("retro-table");
     renderChildren(table, payload.items, ctx);
     return table;
   }
@@ -344,6 +371,7 @@ var renderPayload = (item, ctx, old) => {
       if (old)
         old.replaceWith(element);
     }
+    element.classList.add("retro-text");
     if (item.id) {
       element.onclick = () => {
         ctx.sender.send({
@@ -353,6 +381,7 @@ var renderPayload = (item, ctx, old) => {
         });
         ctx.sender.sendNow();
       };
+      element.classList.add("retro-clickable");
     }
     return element;
   }
@@ -457,6 +486,7 @@ var renderItem = (item, ctx, old) => {
   }
   if (item.grow) {
     element.style.flexGrow = item.grow.toString();
+    element.classList.add("grow");
   }
   if (item.backgroundColor) {
     element.style.backgroundColor = item.backgroundColor;
