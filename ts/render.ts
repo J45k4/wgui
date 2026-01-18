@@ -23,6 +23,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		}
 		checkbox.type = "checkbox"
 		checkbox.checked = payload.checked
+		checkbox.classList.add("retro-checkbox")
 		if (item.id) {
 			checkbox.onclick = () => {
 				ctx.sender.send({
@@ -59,16 +60,18 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			if (old) old.replaceWith(element)
 		}
 		
+		element.classList.add("retro-panel")
 
 		if (payload.spacing) {
 			element.style.gap = payload.spacing + "px"
 		}
 		if (payload.wrap) {
-			element.style.flexWrap = "wrap"
+			element.classList.add("flex-wrap")
 		}
 		if (payload.flex) {
 			element.style.display = "flex"
 			element.style.flexDirection = payload.flex
+			element.classList.add(payload.flex === "row" ? "flex-row" : "flex-col")
 		}
 		return element
 	}
@@ -77,7 +80,8 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		let select: HTMLSelectElement
 		if (old instanceof HTMLSelectElement) {
 			select = old
-			const existingOptions = Array.from(old.options)
+			// Use slice for broad compatibility instead of Array.from
+			const existingOptions = Array.prototype.slice.call(old.options) as HTMLOptionElement[]
 			const newOptions = payload.options.map(option => option.value)
 	
 			// Update the options only if they differ
@@ -102,6 +106,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			if (old) old.replaceWith(select)
 		}
 
+		select.classList.add("retro-input")
 		select.oninput = (e: any) => {
 			ctx.sender.send({
 				type: "onSelect",
@@ -124,6 +129,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			if (old) old.replaceWith(button)
 		}
 		button.textContent = payload.title
+		button.classList.add("retro-button")
 		if (item.id) {
 			button.onclick = () => {
 				ctx.sender.send({
@@ -135,6 +141,24 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			}
 		}
 		return button
+	}
+
+	if (payload.type === "img") {
+		let image: HTMLImageElement
+		if (old instanceof HTMLImageElement) {
+			image = old
+		} else {
+			image = document.createElement("img")
+			if (old) old.replaceWith(image)
+		}
+		image.src = payload.src
+		image.alt = payload.alt ?? ""
+		image.style.maxWidth = "100%"
+		image.style.maxHeight = "100%"
+		image.style.objectFit = payload.objectFit ?? "contain"
+		image.loading = "lazy"
+		image.classList.add("retro-panel")
+		return image
 	}
 
 	if (payload.type === "slider") {
@@ -150,6 +174,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		slider.type = "range"
 		slider.value = payload.value.toString()
 		slider.step = payload.step.toString()
+		slider.classList.add("retro-input")
 		if (item.id) {
 			slider.oninput = (e: any) => {
 				ctx.sender.send({
@@ -174,6 +199,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		}
 		input.placeholder = payload.placeholder as string
 		input.value = payload.value
+		input.classList.add("retro-input")
 		if (item.id) {
 			input.oninput = (e: any) => {
 				ctx.sender.send({
@@ -205,6 +231,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		textarea.value = payload.value
 		const rowCount = payload.value.split("\n").length
 		textarea.style.height = rowCount * 20 + "px"
+		textarea.classList.add("retro-input")
 		textarea.oninput = (e: any) => {
 			const value = e.target.value
 			const rowCount = value.split("\n").length
@@ -230,6 +257,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			table = document.createElement("table")
 			if (old) old.replaceWith(table)
 		}
+		table.classList.add("retro-table")
 		renderChildren(table, payload.items, ctx)
 		return table
 	}
@@ -304,6 +332,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			element.innerText = payload.value + ""
 			if (old) old.replaceWith(element)
 		}
+		element.classList.add("retro-text")
 		if (item.id) {
 			element.onclick = () => {
 				ctx.sender.send({
@@ -313,6 +342,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 				})
 				ctx.sender.sendNow()
 			}
+			element.classList.add("retro-clickable")
 		}
 		return element
 	}
@@ -423,6 +453,7 @@ export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 	}
 	if (item.grow) {
 		element.style.flexGrow = item.grow.toString()
+		element.classList.add("grow")
 	}
 	if (item.backgroundColor) {
 		element.style.backgroundColor = item.backgroundColor

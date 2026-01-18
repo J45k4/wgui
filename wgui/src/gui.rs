@@ -94,6 +94,7 @@ pub enum ItemPayload {
 	Img {
 		src: String,
 		alt: String,
+		object_fit: Option<String>,
 	},
 	FolderPicker,
 	FloatingLayout {

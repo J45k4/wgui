@@ -145,24 +145,32 @@ export type None = {
 	type: "none"
 }
 
+export type Image = {
+    type: "img"
+    src: string
+    alt?: string
+    objectFit?: string
+}
+
 export type ItemPayload = Text |
-	TextInput |
-	Textarea |
-	Table |
-	Thead |
-	Tbody |
-	Tr |
-	Th | 
-	Td |
-	Select | 
-	Checkbox | 
-	Slider |
-	Layout |
-	Button |
-	FolderPicker |
-	FloatingLayout |
-	Modal |
-	None 
+ 	TextInput |
+ 	Textarea |
+ 	Table |
+ 	Thead |
+ 	Tbody |
+ 	Tr |
+ 	Th | 
+ 	Td |
+ 	Select | 
+ 	Checkbox | 
+ 	Slider |
+ 	Layout |
+ 	Button |
+ 	Image |
+ 	FolderPicker |
+ 	FloatingLayout |
+ 	Modal |
+ 	None 
 
 export type Item = {
 	id: number
