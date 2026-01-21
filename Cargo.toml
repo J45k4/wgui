@@ -3,3 +3,6 @@ members = [
     "wgui",
     "examples/*"
 ]
+
+[workspace.dependencies]
+axum = "0.8"

@@ -74,10 +74,10 @@ impl Stream for AxumWs {
 		match Stream::poll_next(Pin::new(&mut self.inner), cx) {
 			Poll::Ready(Some(Ok(msg))) => {
 				let converted = match msg {
-					AxumMessage::Text(text) => WsMessage::Text(text),
-					AxumMessage::Binary(data) => WsMessage::Binary(data),
-					AxumMessage::Ping(data) => WsMessage::Ping(data),
-					AxumMessage::Pong(data) => WsMessage::Pong(data),
+					AxumMessage::Text(text) => WsMessage::Text(text.to_string()),
+					AxumMessage::Binary(data) => WsMessage::Binary(data.to_vec()),
+					AxumMessage::Ping(data) => WsMessage::Ping(data.to_vec()),
+					AxumMessage::Pong(data) => WsMessage::Pong(data.to_vec()),
 					AxumMessage::Close(_) => WsMessage::Close,
 				};
 				Poll::Ready(Some(Ok(converted)))
@@ -98,10 +98,10 @@ impl Sink<WsMessage> for AxumWs {
 
 	fn start_send(mut self: Pin<&mut Self>, item: WsMessage) -> Result<(), Self::Error> {
 		let msg = match item {
-			WsMessage::Text(text) => AxumMessage::Text(text),
-			WsMessage::Binary(data) => AxumMessage::Binary(data),
-			WsMessage::Ping(data) => AxumMessage::Ping(data),
-			WsMessage::Pong(data) => AxumMessage::Pong(data),
+			WsMessage::Text(text) => AxumMessage::Text(text.into()),
+			WsMessage::Binary(data) => AxumMessage::Binary(data.into()),
+			WsMessage::Ping(data) => AxumMessage::Ping(data.into()),
+			WsMessage::Pong(data) => AxumMessage::Pong(data.into()),
 			WsMessage::Close => AxumMessage::Close(None),
 		};
 

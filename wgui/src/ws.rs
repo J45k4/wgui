@@ -6,6 +6,10 @@ use std::task::{Context, Poll};
 
 use anyhow::Error;
 use futures_util::{Sink, Stream};
+#[cfg(feature = "hyper")]
+use hyper_tungstenite::tungstenite::Message as TungsteniteMessage;
+#[cfg(feature = "hyper")]
+use hyper_util::rt::TokioIo;
 
 static CLIENT_ID: AtomicU64 = AtomicU64::new(1);
 
