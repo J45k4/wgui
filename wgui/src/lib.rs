@@ -73,6 +73,18 @@ impl WguiHandle {
 		};
 		sender.send(Command::Render(item)).unwrap();
 	}
+
+	pub async fn set_title(&self, client_id: usize, title: &str) {
+		let clients = self.clients.read().await;
+		let sender = match clients.get(&client_id) {
+			Some(sender) => sender,
+			None => {
+				println!("client not found");
+				return;
+			}
+		};
+		sender.send(Command::SetTitle(title.to_string())).unwrap();
+	}
 }
 
 pub struct Wgui {
@@ -125,5 +137,9 @@ impl Wgui {
 
 	pub async fn render(&self, client_id: usize, item: Item) {
 		self.handle.render(client_id, item).await
+	}
+
+	pub async fn set_title(&self, client_id: usize, title: &str) {
+		self.handle.set_title(client_id, title).await
 	}
 }

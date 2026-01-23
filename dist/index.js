@@ -705,6 +705,10 @@ window.onload = () => {
           history.replaceState({}, "", `${params.toString()}`);
           continue;
         }
+        if (message.type === "setTitle") {
+          document.title = message.title;
+          continue;
+        }
         if (message.type === "setProp") {
           const target = getPathItem(message.path, root);
           if (!target) {

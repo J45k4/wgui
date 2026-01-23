@@ -149,6 +149,7 @@ pub enum ClientAction {
 	ReplaceState(ReplaceState),
 	SetQuery(SetQuery),
 	SetProp { path: ItemPath, sets: Vec<SetProp> },
+	SetTitle { title: String },
 }
 
 pub enum ServerEvent {
@@ -164,6 +165,7 @@ pub enum ServerEvent {
 #[derive(Debug, Clone)]
 pub enum Command {
 	Render(Item),
+	SetTitle(String),
 }
 
 pub type Clients = Arc<RwLock<HashMap<usize, mpsc::UnboundedSender<Command>>>>;

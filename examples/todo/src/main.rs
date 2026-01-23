@@ -113,7 +113,12 @@ async fn main() {
 			_ => {}
 		}
 
+		let done = state.items.iter().filter(|item| item.completed).count();
+		let undone = state.items.len() - done;
+		let title = format!("Todo {} done / {} undone", done, undone);
+
 		for id in &client_ids {
+			wgui.set_title(*id, &title).await;
 			wgui.render(*id, render(&state)).await;
 		}
 	}

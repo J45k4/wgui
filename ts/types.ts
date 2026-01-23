@@ -275,6 +275,11 @@ export type SetProp = {
     sets: SetPropSet[]
 }
 
+export type SetTitle = {
+    type: "setTitle"
+    title: string
+}
+
 export type SrvMessage = Replace |
     ReplaceAt |
     AddBack | 
@@ -284,7 +289,8 @@ export type SrvMessage = Replace |
     PushState |
     ReplaceState |
     SetQuery |
-	SetProp
+    SetProp |
+    SetTitle
 
 export type OnClick = {
     type: "onClick"

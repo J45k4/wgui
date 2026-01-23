@@ -97,28 +97,12 @@ where
 				log::debug!("sending changes: {:?}", changes);
 				let str = serde_json::to_string(&changes).unwrap();
 				self.ws.send(WsMessage::Text(str)).await?;
-			} // Command::Navigate(url) => {
-			  //     // let changes = vec![
-			  //     //     ClientAction::PushState(
-			  //     //         crate::PushState { url: url.clone() }
-			  //     //     )
-			  //     // ];
-			  //     // let changes = vec![];
-			  //     // let msg = serde_json::to_string(&changes)?;
-			  //     // self.ws.send(Message::text(msg)).await?;
-			  // }
-			  // Command::SetQuery(query) => {
-			  //     // let changes = vec![
-			  //     //     ClientAction::SetQuery(
-			  //     //         SetQuery {
-			  //     //             query: query.clone()
-			  //     //         }
-			  //     //     )
-			  //     // ];
-			  //     // let changes = vec![];
-			  //     // let msg = serde_json::to_string(&changes)?;
-			  //     // self.ws.send(Message::text(msg)).await?;
-			  // }
+			}
+			Command::SetTitle(title) => {
+				let changes = vec![ClientAction::SetTitle { title }];
+				let str = serde_json::to_string(&changes).unwrap();
+				self.ws.send(WsMessage::Text(str)).await?;
+			}
 		};
 
 		Ok(())
@@ -127,48 +111,48 @@ where
 	pub async fn run(mut self) {
 		loop {
 			tokio::select! {
-				msg = self.ws.next() => {
-					match msg {
-						Some(msg) => match msg {
-							Ok(msg) => {
-								match self.handle_websocket(msg).await {
-									Ok(_) => {},
-									Err(err) => {
-										log::error!("Error handling websocket message: {}", err);
-									},
-								}
+					msg = self.ws.next() => {
+						match msg {
+							Some(msg) => match msg {
+								Ok(msg) => {
+									match self.handle_websocket(msg).await {
+										Ok(_) => {},
+										Err(err) => {
+											log::error!("Error handling websocket message: {}", err);
+										},
+									}
+								},
+								Err(err) => {
+									log::error!("Error receiving websocket message: {}", err);
+
+									break;
+								},
 							},
-							Err(err) => {
-								log::error!("Error receiving websocket message: {}", err);
+							None => {
+								log::error!("Websocket closed");
 
 								break;
 							},
-						},
-						None => {
-							log::error!("Websocket closed");
-
-							break;
-						},
+						}
 					}
-				}
-				cmd = self.cmd_recv.recv() => {
-					match cmd {
-						Some(cmd) => {
-							match self.handle_command(cmd).await {
-								Ok(_) => {},
-								Err(err) => {
-									log::error!("Error handling command: {}", err);
+					cmd = self.cmd_recv.recv() => {
+						match cmd {
+							Some(cmd) => {
+								match self.handle_command(cmd).await {
+									Ok(_) => {},
+									Err(err) => {
+										log::error!("Error handling command: {}", err);
+									}
 								}
 							}
-						}
-						None => {
-							log::error!("Command channel closed");
+							None => {
+								log::error!("Command channel closed");
 
-							break;
+								break;
+							}
 						}
 					}
-				}
-			};
+				};
 		}
 
 		log::info!("[{}] connection closed", self.id);
