@@ -111,48 +111,48 @@ where
 	pub async fn run(mut self) {
 		loop {
 			tokio::select! {
-					msg = self.ws.next() => {
-						match msg {
-							Some(msg) => match msg {
-								Ok(msg) => {
-									match self.handle_websocket(msg).await {
-										Ok(_) => {},
-										Err(err) => {
-											log::error!("Error handling websocket message: {}", err);
-										},
-									}
-								},
-								Err(err) => {
-									log::error!("Error receiving websocket message: {}", err);
-
-									break;
-								},
-							},
-							None => {
-								log::error!("Websocket closed");
-
-								break;
-							},
-						}
-					}
-					cmd = self.cmd_recv.recv() => {
-						match cmd {
-							Some(cmd) => {
-								match self.handle_command(cmd).await {
+				msg = self.ws.next() => {
+					match msg {
+						Some(msg) => match msg {
+							Ok(msg) => {
+								match self.handle_websocket(msg).await {
 									Ok(_) => {},
 									Err(err) => {
-										log::error!("Error handling command: {}", err);
-									}
+										log::error!("Error handling websocket message: {}", err);
+									},
 								}
-							}
-							None => {
-								log::error!("Command channel closed");
+							},
+							Err(err) => {
+								log::error!("Error receiving websocket message: {}", err);
 
 								break;
+							},
+						},
+						None => {
+							log::error!("Websocket closed");
+
+							break;
+						},
+					}
+				}
+				cmd = self.cmd_recv.recv() => {
+					match cmd {
+						Some(cmd) => {
+							match self.handle_command(cmd).await {
+								Ok(_) => {},
+								Err(err) => {
+									log::error!("Error handling command: {}", err);
+								}
 							}
 						}
+						None => {
+							log::error!("Command channel closed");
+
+							break;
+						}
 					}
-				};
+				}
+			};
 		}
 
 		log::info!("[{}] connection closed", self.id);
