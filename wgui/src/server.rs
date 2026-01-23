@@ -31,12 +31,23 @@ async fn handle_req(
 	log::info!("{} {}", req.method(), req.uri().path());
 
 	if req.uri().path() == "/ws" && hyper_tungstenite::is_upgrade_request(&req) {
+		log::info!("upgrade request");
 		let (response, websocket) = hyper_tungstenite::upgrade(&mut req, None).unwrap();
-		let ws = websocket.await.unwrap();
-		log::debug!("websocket connected");
-		let ws = TungsteniteWs::new(ws);
-		let handle = WguiHandle::new(ctx.event_tx.clone(), ctx.clients.clone());
-		handle.handle_ws(ws).await;
+		let event_tx = ctx.event_tx.clone();
+		let clients = ctx.clients.clone();
+		tokio::spawn(async move {
+			match websocket.await {
+				Ok(ws) => {
+					log::info!("websocket connected");
+					let ws = TungsteniteWs::new(ws);
+					let handle = WguiHandle::new(event_tx, clients);
+					handle.handle_ws(ws).await;
+				}
+				Err(err) => {
+					log::error!("websocket error: {:?}", err);
+				}
+			}
+		});
 		return Ok(response);
 	}
 
@@ -60,7 +71,7 @@ impl Server {
 		clients: Clients,
 	) -> Self {
 		let listener = TcpListener::bind(addr).await.unwrap();
-		log::info!("listening on {}", addr);
+		log::info!("listening on http://localhost:{}", addr.port());
 
 		Self {
 			listener,

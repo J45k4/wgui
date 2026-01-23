@@ -240,6 +240,18 @@ export type RemoveInx = {
     path: number[]
 }
 
+export type PropKey = "ID" | "Border" | "BackgroundColor" | "Spacing"
+
+export type PropValue = {
+    String?: string
+    Number?: number
+}
+
+export type SetPropSet = {
+    key: PropKey
+    value: PropValue
+}
+
 export type PushState = {
     type: "pushState"
     url: string
@@ -258,12 +270,9 @@ export type SetQuery = {
 }
 
 export type SetProp = {
-	type: "setProp"
-	path: number[]
-	sets: {
-		prop: string
-		value: string
-	}[]
+    type: "setProp"
+    path: number[]
+    sets: SetPropSet[]
 }
 
 export type SrvMessage = Replace |

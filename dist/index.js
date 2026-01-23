@@ -620,6 +620,43 @@ var connectWebsocket = (args) => {
 };
 
 // ts/app.ts
+var getSetPropValue = (value) => {
+  if (!value) {
+    return;
+  }
+  if (value.String != null) {
+    return value.String;
+  }
+  if (value.Number != null) {
+    return value.Number.toString();
+  }
+  return;
+};
+var applySetProp = (element, set) => {
+  const value = getSetPropValue(set.value);
+  if (value == null) {
+    return;
+  }
+  if (!(element instanceof HTMLElement)) {
+    return;
+  }
+  switch (set.key) {
+    case "BackgroundColor":
+      element.style.backgroundColor = value;
+      break;
+    case "Border":
+      element.style.border = value;
+      break;
+    case "Spacing": {
+      const parsed = Number(value);
+      element.style.gap = isNaN(parsed) ? value : `${parsed}px`;
+      break;
+    }
+    case "ID":
+      element.id = value;
+      break;
+  }
+};
 window.onload = () => {
   const res = document.querySelector("body");
   if (!res) {
@@ -666,6 +703,16 @@ window.onload = () => {
             }
           }
           history.replaceState({}, "", `${params.toString()}`);
+          continue;
+        }
+        if (message.type === "setProp") {
+          const target = getPathItem(message.path, root);
+          if (!target) {
+            continue;
+          }
+          for (const set of message.sets) {
+            applySetProp(target, set);
+          }
           continue;
         }
         const element = getPathItem(message.path, root);

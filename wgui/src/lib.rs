@@ -52,7 +52,7 @@ impl WguiHandle {
 		let id = next_client_id();
 		let event_tx = self.event_tx.clone();
 		let clients = self.clients.clone();
-		log::debug!("websocket worker created {}", id);
+		log::info!("websocket worker created {}", id);
 		tokio::spawn(async move {
 			let worker = UiWsWorker::new(id, ws, event_tx, clients).await;
 			worker.run().await;
