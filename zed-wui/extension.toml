@@ -11,5 +11,6 @@ name = "WUI LSP"
 languages = ["WUI"]
 
 [grammars.wui]
-repository = "file:///Users/puppy/work/my/wgui/zed-wui/grammars/wui"
-rev = "local"
+repository = "https://github.com/J45k4/wgui.git"
+path = "zed-wui"
+rev = "a6a73fc6922bc842b522e15552ea0e96b19327e6"
