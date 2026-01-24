@@ -2,6 +2,7 @@ use log::Level;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::{Duration, SystemTime};
 use tokio::sync::mpsc;
@@ -25,7 +26,7 @@ impl TodoItem {
 	}
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct TodoState {
 	new_todo_name: String,
 	items: Vec<TodoItem>,
@@ -86,20 +87,29 @@ fn watch_template(path: PathBuf, tx: mpsc::UnboundedSender<()>) {
 async fn main() {
 	simple_logger::init_with_level(Level::Info).unwrap();
 
-	let mut state = TodoState::default();
+	let state = Arc::new(RwLock::new(TodoState::default()));
 	let mut client_ids = HashSet::new();
 	let mut next_id: u32 = 1;
 
 	let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
 	let template_path = Path::new(&manifest_dir).join("wui/pages/todo.wui");
-	let mut template = load_template(&template_path, "todo");
+	let template = Arc::new(RwLock::new(load_template(&template_path, "todo")));
 	let (reload_tx, mut reload_rx) = mpsc::unbounded_channel();
 	thread::spawn({
 		let path = template_path.clone();
 		move || watch_template(path, reload_tx)
 	});
 
-	let mut wgui = Wgui::new("0.0.0.0:12345".parse().unwrap());
+	let ssr_state = state.clone();
+	let ssr_template = template.clone();
+	let mut wgui = Wgui::new_with_ssr(
+		"0.0.0.0:12345".parse().unwrap(),
+		Arc::new(move || {
+			let state = ssr_state.read().unwrap();
+			let template = ssr_template.read().unwrap();
+			template.render(&*state)
+		}),
+	);
 
 	loop {
 		tokio::select! {
@@ -110,20 +120,28 @@ async fn main() {
 						client_ids.remove(&id);
 					}
 					ClientEvent::Connected { id } => {
-						wgui.render(id, template.render(&state)).await;
+						let template = template.read().unwrap();
+						let state = state.read().unwrap();
+						wgui.render(id, template.render(&*state)).await;
 						client_ids.insert(id);
 					}
 					ClientEvent::PathChanged(_) => {}
 					ClientEvent::Input(_) => {}
 					_ => {
-						if let Some(action) = template.decode(&event) {
+						let action = {
+							let template = template.read().unwrap();
+							template.decode(&event)
+						};
+						if let Some(action) = action {
+							let mut state = state.write().unwrap();
 							match action {
 								RuntimeAction::Click { name, arg } => match name.as_str() {
 									"AddTodo" => {
-										if !state.new_todo_name.trim().is_empty() {
+										let name = state.new_todo_name.trim().to_string();
+										if !name.is_empty() {
 											state.items.push(TodoItem {
 												id: next_id,
-												name: state.new_todo_name.trim().to_string(),
+												name,
 												completed: false,
 											});
 											next_id += 1;
@@ -161,9 +179,11 @@ async fn main() {
 				match Template::parse(&source, "todo") {
 					Ok(new_template) => {
 						log::info!("reloaded template {}", template_path.display());
-						template = new_template;
+						*template.write().unwrap() = new_template;
 						for id in &client_ids {
-							wgui.render(*id, template.render(&state)).await;
+							let template = template.read().unwrap();
+							let state = state.read().unwrap();
+							wgui.render(*id, template.render(&*state)).await;
 						}
 					}
 					Err(diags) => {
@@ -175,13 +195,19 @@ async fn main() {
 			}
 		}
 
-		let done = state.items.iter().filter(|item| item.completed).count();
-		let undone = state.items.len() - done;
+		let (done, undone) = {
+			let state = state.read().unwrap();
+			let done = state.items.iter().filter(|item| item.completed).count();
+			let undone = state.items.len() - done;
+			(done, undone)
+		};
 		let title = format!("Todo {} done / {} undone", done, undone);
 
 		for id in &client_ids {
 			wgui.set_title(*id, &title).await;
-			wgui.render(*id, template.render(&state)).await;
+			let template = template.read().unwrap();
+			let state = state.read().unwrap();
+			wgui.render(*id, template.render(&*state)).await;
 		}
 	}
 }

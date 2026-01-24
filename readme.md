@@ -51,6 +51,7 @@ See `docs/wui.md` for the WUI template language, compiler/runtime usage, and hot
 ## API overview
 
 - Core runtime: `Wgui::new(addr)`, `wgui.next().await`, `wgui.render(client_id, item)`
+- SSR snapshot: `Wgui::new_with_ssr(addr, || render())` or `axum::router_with_ssr(...)`
 - Events: `ClientEvent::{Connected, Disconnected, OnClick, OnTextChanged, OnSliderChange, OnSelect, PathChanged}`
 
 Component builders

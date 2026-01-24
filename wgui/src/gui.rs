@@ -246,6 +246,16 @@ pub fn option(value: &str, name: &str) -> SelectOption {
 	}
 }
 
+impl SelectOption {
+	pub fn value(&self) -> &str {
+		&self.value
+	}
+
+	pub fn name(&self) -> &str {
+		&self.name
+	}
+}
+
 pub fn select<I>(options: I) -> Item
 where
 	I: IntoIterator<Item = SelectOption>,

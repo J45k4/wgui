@@ -52,18 +52,17 @@ window.onload = () => {
         return
     }
 
-    res.innerHTML = ""
-
     res.style.display = "flex"
     res.style.flexDirection = "row"
 
-    const content = document.createElement("div")
-    content.style.flexGrow = "1"
+    let root = res.querySelector("#wgui-root") as HTMLDivElement | null
 
-    res.appendChild(content)
-
-    const root = document.createElement("div")
-    content.appendChild(root)
+    if (!root) {
+        res.innerHTML = ""
+        root = document.createElement("div")
+        root.id = "wgui-root"
+        res.appendChild(root)
+    }
     const debouncer = new Deboncer()
 
     const {

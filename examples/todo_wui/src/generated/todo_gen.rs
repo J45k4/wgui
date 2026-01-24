@@ -19,7 +19,7 @@ pub fn render(state: &crate::TodoState) -> Item {
 	let mut children = Vec::new();
 	children.push({
 		let mut items = Vec::new();
-		items.push(wgui::text("Todo List JYRKI"));
+		items.push(wgui::text("Todo List"));
 		items.push({
 			let mut items = Vec::new();
 			items.push(wgui::text_input().svalue(&state.new_todo_name).placeholder("What needs to be done?").id(1342686741));

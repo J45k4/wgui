@@ -8,9 +8,12 @@ use hyper::Request;
 use hyper::Response;
 use hyper_util::rt::TokioIo;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
+use crate::gui::Item;
+use crate::ssr;
 use crate::types::{ClientEvent, Clients};
 use crate::ws::TungsteniteWs;
 use crate::WguiHandle;
@@ -22,6 +25,7 @@ const CSS_JS_BYTES: &[u8] = include_bytes!("../../dist/index.css");
 struct Ctx {
 	event_tx: mpsc::UnboundedSender<ClientEvent>,
 	clients: Clients,
+	ssr: Option<Arc<dyn Fn() -> Item + Send + Sync>>,
 }
 
 async fn handle_req(
@@ -54,7 +58,15 @@ async fn handle_req(
 	match req.uri().path() {
 		"/index.js" => Ok(Response::new(Full::new(Bytes::from(INDEX_JS_BYTES)))),
 		"/index.css" => Ok(Response::new(Full::new(Bytes::from(CSS_JS_BYTES)))),
-		_ => Ok(Response::new(Full::new(Bytes::from(INDEX_HTML_BYTES)))),
+		_ => {
+			if let Some(renderer) = ctx.ssr {
+				let item = (renderer)();
+				let html = ssr::render_document(&item);
+				Ok(Response::new(Full::new(Bytes::from(html))))
+			} else {
+				Ok(Response::new(Full::new(Bytes::from(INDEX_HTML_BYTES))))
+			}
+		}
 	}
 }
 
@@ -62,6 +74,7 @@ pub struct Server {
 	listener: TcpListener,
 	event_tx: mpsc::UnboundedSender<ClientEvent>,
 	clients: Clients,
+	ssr: Option<Arc<dyn Fn() -> Item + Send + Sync>>,
 }
 
 impl Server {
@@ -69,6 +82,7 @@ impl Server {
 		addr: SocketAddr,
 		event_tx: mpsc::UnboundedSender<ClientEvent>,
 		clients: Clients,
+		ssr: Option<Arc<dyn Fn() -> Item + Send + Sync>>,
 	) -> Self {
 		let listener = TcpListener::bind(addr).await.unwrap();
 		log::info!("listening on http://localhost:{}", addr.port());
@@ -77,6 +91,7 @@ impl Server {
 			listener,
 			event_tx,
 			clients,
+			ssr,
 		}
 	}
 
@@ -90,11 +105,13 @@ impl Server {
 							let io = TokioIo::new(socket);
 							let event_tx = self.event_tx.clone();
 							let clients = self.clients.clone();
+							let ssr = self.ssr.clone();
 							tokio::spawn(async move {
 								let service = service_fn(move |req| {
 									handle_req(req, Ctx {
 										event_tx: event_tx.clone(),
-										clients: clients.clone()
+										clients: clients.clone(),
+										ssr: ssr.clone(),
 									})
 								});
 

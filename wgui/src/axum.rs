@@ -12,7 +12,8 @@ use futures_util::{Sink, Stream};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::{WguiHandle, WsMessage};
+use crate::{gui::Item, ssr, WguiHandle, WsMessage};
+use std::sync::Arc;
 
 /// Convenience router that exposes WgUi-specific routes for axum applications.
 pub fn router(handle: WguiHandle) -> Router {
@@ -36,11 +37,49 @@ pub fn router(handle: WguiHandle) -> Router {
 		.route("/index.css", get(index_css))
 }
 
+/// Convenience router that serves a server-rendered HTML snapshot on first load.
+pub fn router_with_ssr(
+	handle: WguiHandle,
+	renderer: Arc<dyn Fn() -> Item + Send + Sync>,
+) -> Router {
+	let ws_handle = handle.clone();
+	let ssr_renderer = renderer.clone();
+
+	Router::new()
+		.route(
+			"/ws",
+			get(move |ws: WebSocketUpgrade| {
+				let handle = ws_handle.clone();
+				async move {
+					ws.on_upgrade(move |socket| async move {
+						let ws = AxumWs::new(socket);
+						handle.handle_ws(ws).await;
+					})
+				}
+			}),
+		)
+		.route(
+			"/",
+			get(move || {
+				let renderer = ssr_renderer.clone();
+				async move { index_html_ssr(renderer).await }
+			}),
+		)
+		.route("/index.js", get(index_js))
+		.route("/index.css", get(index_css))
+}
+
 async fn index_html() -> impl IntoResponse {
 	(
 		[(header::CONTENT_TYPE, "text/html")],
 		crate::dist::index_html(),
 	)
+}
+
+async fn index_html_ssr(renderer: Arc<dyn Fn() -> Item + Send + Sync>) -> impl IntoResponse {
+	let item = (renderer)();
+	let html = ssr::render_document(&item);
+	([(header::CONTENT_TYPE, "text/html")], html)
 }
 
 async fn index_js() -> impl IntoResponse {

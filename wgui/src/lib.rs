@@ -16,6 +16,7 @@ pub mod edit_distance;
 pub mod gui;
 #[cfg(feature = "hyper")]
 mod server;
+pub mod ssr;
 pub mod types;
 mod ui_client;
 pub mod ws;
@@ -103,7 +104,30 @@ impl Wgui {
 			let clients = clients.clone();
 			let event_tx = events_tx.clone();
 			tokio::spawn(async move {
-				Server::new(addr, event_tx, clients).await.run().await;
+				Server::new(addr, event_tx, clients, None).await.run().await;
+			});
+		}
+
+		Self {
+			events_rx,
+			handle: WguiHandle::new(events_tx, clients),
+		}
+	}
+
+	#[cfg(feature = "hyper")]
+	pub fn new_with_ssr(
+		addr: SocketAddr,
+		renderer: std::sync::Arc<dyn Fn() -> Item + Send + Sync>,
+	) -> Self {
+		let (events_tx, events_rx) = mpsc::unbounded_channel();
+		let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
+
+		{
+			let clients = clients.clone();
+			let event_tx = events_tx.clone();
+			let ssr = Some(renderer);
+			tokio::spawn(async move {
+				Server::new(addr, event_tx, clients, ssr).await.run().await;
 			});
 		}
 
