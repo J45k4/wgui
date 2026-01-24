@@ -11,6 +11,5 @@ name = "WUI LSP"
 languages = ["WUI"]
 
 [grammars.wui]
-repository = "https://github.com/J45k4/wgui.git"
-rev = "fc85818aa1e1c0cf703696b465e310e4d51f86d2"
-path = "tree-sitter-wui"
+repository = "https://github.com/J45k4/wui-tree-sitter.git"
+rev = "f66f51d430c2802f708cf8a46728a832e69ef563"
