@@ -19,6 +19,7 @@ mod server;
 pub mod types;
 mod ui_client;
 pub mod ws;
+pub mod wui;
 
 use crate::ui_client::UiWsWorker;
 

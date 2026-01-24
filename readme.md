@@ -42,6 +42,11 @@ async fn main() {
 
 - Todo list app (interactive text input + checkbox): `cargo run -p todo`
 - Component showcase (text input, select, slider, modal, table): `cargo run -p allcomponents`
+- WUI template example with hot reload: `cargo run -p todo_wui`
+
+## WUI templates
+
+See `docs/wui.md` for the WUI template language, compiler/runtime usage, and hot reload notes.
 
 ## API overview
 
