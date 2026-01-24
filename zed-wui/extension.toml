@@ -12,5 +12,5 @@ languages = ["WUI"]
 
 [grammars.wui]
 repository = "https://github.com/J45k4/wgui.git"
-path = "zed-wui"
+path = "zed-wui/grammars/wui"
 rev = "6b09b41bcc01a6a443d99985a5e39ca028d37419"
