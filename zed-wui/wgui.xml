@@ -1,0 +1,2235 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+grammars/
+  wui/
+    queries/
+      highlights.scm
+    src/
+      tree_sitter/
+        alloc.h
+        array.h
+        parser.h
+      grammar.json
+      node-types.json
+      parser.c
+    .gitignore
+    grammar.js
+    package.json
+languages/
+  wui/
+    config.toml
+src/
+  lib.rs
+tests/
+  grammar.rs
+Cargo.toml
+extension.toml
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="grammars/wui/queries/highlights.scm">
+(tag_name) @type
+(attribute_name) @property
+(string) @string
+(expr) @embedded
+(bare_literal) @constant
+(text) @text
+</file>
+
+<file path="grammars/wui/src/tree_sitter/alloc.h">
+#ifndef TREE_SITTER_ALLOC_H_
+#define TREE_SITTER_ALLOC_H_
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+// Allow clients to override allocation functions
+#ifdef TREE_SITTER_REUSE_ALLOCATOR
+
+extern void *(*ts_current_malloc)(size_t size);
+extern void *(*ts_current_calloc)(size_t count, size_t size);
+extern void *(*ts_current_realloc)(void *ptr, size_t size);
+extern void (*ts_current_free)(void *ptr);
+
+#ifndef ts_malloc
+#define ts_malloc  ts_current_malloc
+#endif
+#ifndef ts_calloc
+#define ts_calloc  ts_current_calloc
+#endif
+#ifndef ts_realloc
+#define ts_realloc ts_current_realloc
+#endif
+#ifndef ts_free
+#define ts_free    ts_current_free
+#endif
+
+#else
+
+#ifndef ts_malloc
+#define ts_malloc  malloc
+#endif
+#ifndef ts_calloc
+#define ts_calloc  calloc
+#endif
+#ifndef ts_realloc
+#define ts_realloc realloc
+#endif
+#ifndef ts_free
+#define ts_free    free
+#endif
+
+#endif
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // TREE_SITTER_ALLOC_H_
+</file>
+
+<file path="grammars/wui/src/tree_sitter/array.h">
+#ifndef TREE_SITTER_ARRAY_H_
+#define TREE_SITTER_ARRAY_H_
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include "./alloc.h"
+
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4101)
+#elif defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#endif
+
+#define Array(T)       \
+  struct {             \
+    T *contents;       \
+    uint32_t size;     \
+    uint32_t capacity; \
+  }
+
+/// Initialize an array.
+#define array_init(self) \
+  ((self)->size = 0, (self)->capacity = 0, (self)->contents = NULL)
+
+/// Create an empty array.
+#define array_new() \
+  { NULL, 0, 0 }
+
+/// Get a pointer to the element at a given `index` in the array.
+#define array_get(self, _index) \
+  (assert((uint32_t)(_index) < (self)->size), &(self)->contents[_index])
+
+/// Get a pointer to the first element in the array.
+#define array_front(self) array_get(self, 0)
+
+/// Get a pointer to the last element in the array.
+#define array_back(self) array_get(self, (self)->size - 1)
+
+/// Clear the array, setting its size to zero. Note that this does not free any
+/// memory allocated for the array's contents.
+#define array_clear(self) ((self)->size = 0)
+
+/// Reserve `new_capacity` elements of space in the array. If `new_capacity` is
+/// less than the array's current capacity, this function has no effect.
+#define array_reserve(self, new_capacity) \
+  _array__reserve((Array *)(self), array_elem_size(self), new_capacity)
+
+/// Free any memory allocated for this array. Note that this does not free any
+/// memory allocated for the array's contents.
+#define array_delete(self) _array__delete((Array *)(self))
+
+/// Push a new `element` onto the end of the array.
+#define array_push(self, element)                            \
+  (_array__grow((Array *)(self), 1, array_elem_size(self)), \
+   (self)->contents[(self)->size++] = (element))
+
+/// Increase the array's size by `count` elements.
+/// New elements are zero-initialized.
+#define array_grow_by(self, count) \
+  do { \
+    if ((count) == 0) break; \
+    _array__grow((Array *)(self), count, array_elem_size(self)); \
+    memset((self)->contents + (self)->size, 0, (count) * array_elem_size(self)); \
+    (self)->size += (count); \
+  } while (0)
+
+/// Append all elements from one array to the end of another.
+#define array_push_all(self, other)                                       \
+  array_extend((self), (other)->size, (other)->contents)
+
+/// Append `count` elements to the end of the array, reading their values from the
+/// `contents` pointer.
+#define array_extend(self, count, contents)                    \
+  _array__splice(                                               \
+    (Array *)(self), array_elem_size(self), (self)->size, \
+    0, count,  contents                                        \
+  )
+
+/// Remove `old_count` elements from the array starting at the given `index`. At
+/// the same index, insert `new_count` new elements, reading their values from the
+/// `new_contents` pointer.
+#define array_splice(self, _index, old_count, new_count, new_contents)  \
+  _array__splice(                                                       \
+    (Array *)(self), array_elem_size(self), _index,                \
+    old_count, new_count, new_contents                                 \
+  )
+
+/// Insert one `element` into the array at the given `index`.
+#define array_insert(self, _index, element) \
+  _array__splice((Array *)(self), array_elem_size(self), _index, 0, 1, &(element))
+
+/// Remove one element from the array at the given `index`.
+#define array_erase(self, _index) \
+  _array__erase((Array *)(self), array_elem_size(self), _index)
+
+/// Pop the last element off the array, returning the element by value.
+#define array_pop(self) ((self)->contents[--(self)->size])
+
+/// Assign the contents of one array to another, reallocating if necessary.
+#define array_assign(self, other) \
+  _array__assign((Array *)(self), (const Array *)(other), array_elem_size(self))
+
+/// Swap one array with another
+#define array_swap(self, other) \
+  _array__swap((Array *)(self), (Array *)(other))
+
+/// Get the size of the array contents
+#define array_elem_size(self) (sizeof *(self)->contents)
+
+/// Search a sorted array for a given `needle` value, using the given `compare`
+/// callback to determine the order.
+///
+/// If an existing element is found to be equal to `needle`, then the `index`
+/// out-parameter is set to the existing value's index, and the `exists`
+/// out-parameter is set to true. Otherwise, `index` is set to an index where
+/// `needle` should be inserted in order to preserve the sorting, and `exists`
+/// is set to false.
+#define array_search_sorted_with(self, compare, needle, _index, _exists) \
+  _array__search_sorted(self, 0, compare, , needle, _index, _exists)
+
+/// Search a sorted array for a given `needle` value, using integer comparisons
+/// of a given struct field (specified with a leading dot) to determine the order.
+///
+/// See also `array_search_sorted_with`.
+#define array_search_sorted_by(self, field, needle, _index, _exists) \
+  _array__search_sorted(self, 0, _compare_int, field, needle, _index, _exists)
+
+/// Insert a given `value` into a sorted array, using the given `compare`
+/// callback to determine the order.
+#define array_insert_sorted_with(self, compare, value) \
+  do { \
+    unsigned _index, _exists; \
+    array_search_sorted_with(self, compare, &(value), &_index, &_exists); \
+    if (!_exists) array_insert(self, _index, value); \
+  } while (0)
+
+/// Insert a given `value` into a sorted array, using integer comparisons of
+/// a given struct field (specified with a leading dot) to determine the order.
+///
+/// See also `array_search_sorted_by`.
+#define array_insert_sorted_by(self, field, value) \
+  do { \
+    unsigned _index, _exists; \
+    array_search_sorted_by(self, field, (value) field, &_index, &_exists); \
+    if (!_exists) array_insert(self, _index, value); \
+  } while (0)
+
+// Private
+
+typedef Array(void) Array;
+
+/// This is not what you're looking for, see `array_delete`.
+static inline void _array__delete(Array *self) {
+  if (self->contents) {
+    ts_free(self->contents);
+    self->contents = NULL;
+    self->size = 0;
+    self->capacity = 0;
+  }
+}
+
+/// This is not what you're looking for, see `array_erase`.
+static inline void _array__erase(Array *self, size_t element_size,
+                                uint32_t index) {
+  assert(index < self->size);
+  char *contents = (char *)self->contents;
+  memmove(contents + index * element_size, contents + (index + 1) * element_size,
+          (self->size - index - 1) * element_size);
+  self->size--;
+}
+
+/// This is not what you're looking for, see `array_reserve`.
+static inline void _array__reserve(Array *self, size_t element_size, uint32_t new_capacity) {
+  if (new_capacity > self->capacity) {
+    if (self->contents) {
+      self->contents = ts_realloc(self->contents, new_capacity * element_size);
+    } else {
+      self->contents = ts_malloc(new_capacity * element_size);
+    }
+    self->capacity = new_capacity;
+  }
+}
+
+/// This is not what you're looking for, see `array_assign`.
+static inline void _array__assign(Array *self, const Array *other, size_t element_size) {
+  _array__reserve(self, element_size, other->size);
+  self->size = other->size;
+  memcpy(self->contents, other->contents, self->size * element_size);
+}
+
+/// This is not what you're looking for, see `array_swap`.
+static inline void _array__swap(Array *self, Array *other) {
+  Array swap = *other;
+  *other = *self;
+  *self = swap;
+}
+
+/// This is not what you're looking for, see `array_push` or `array_grow_by`.
+static inline void _array__grow(Array *self, uint32_t count, size_t element_size) {
+  uint32_t new_size = self->size + count;
+  if (new_size > self->capacity) {
+    uint32_t new_capacity = self->capacity * 2;
+    if (new_capacity < 8) new_capacity = 8;
+    if (new_capacity < new_size) new_capacity = new_size;
+    _array__reserve(self, element_size, new_capacity);
+  }
+}
+
+/// This is not what you're looking for, see `array_splice`.
+static inline void _array__splice(Array *self, size_t element_size,
+                                 uint32_t index, uint32_t old_count,
+                                 uint32_t new_count, const void *elements) {
+  uint32_t new_size = self->size + new_count - old_count;
+  uint32_t old_end = index + old_count;
+  uint32_t new_end = index + new_count;
+  assert(old_end <= self->size);
+
+  _array__reserve(self, element_size, new_size);
+
+  char *contents = (char *)self->contents;
+  if (self->size > old_end) {
+    memmove(
+      contents + new_end * element_size,
+      contents + old_end * element_size,
+      (self->size - old_end) * element_size
+    );
+  }
+  if (new_count > 0) {
+    if (elements) {
+      memcpy(
+        (contents + index * element_size),
+        elements,
+        new_count * element_size
+      );
+    } else {
+      memset(
+        (contents + index * element_size),
+        0,
+        new_count * element_size
+      );
+    }
+  }
+  self->size += new_count - old_count;
+}
+
+/// A binary search routine, based on Rust's `std::slice::binary_search_by`.
+/// This is not what you're looking for, see `array_search_sorted_with` or `array_search_sorted_by`.
+#define _array__search_sorted(self, start, compare, suffix, needle, _index, _exists) \
+  do { \
+    *(_index) = start; \
+    *(_exists) = false; \
+    uint32_t size = (self)->size - *(_index); \
+    if (size == 0) break; \
+    int comparison; \
+    while (size > 1) { \
+      uint32_t half_size = size / 2; \
+      uint32_t mid_index = *(_index) + half_size; \
+      comparison = compare(&((self)->contents[mid_index] suffix), (needle)); \
+      if (comparison <= 0) *(_index) = mid_index; \
+      size -= half_size; \
+    } \
+    comparison = compare(&((self)->contents[*(_index)] suffix), (needle)); \
+    if (comparison == 0) *(_exists) = true; \
+    else if (comparison < 0) *(_index) += 1; \
+  } while (0)
+
+/// Helper macro for the `_sorted_by` routines below. This takes the left (existing)
+/// parameter by reference in order to work with the generic sorting function above.
+#define _compare_int(a, b) ((int)*(a) - (int)(b))
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#elif defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif  // TREE_SITTER_ARRAY_H_
+</file>
+
+<file path="grammars/wui/src/tree_sitter/parser.h">
+#ifndef TREE_SITTER_PARSER_H_
+#define TREE_SITTER_PARSER_H_
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+
+#define ts_builtin_sym_error ((TSSymbol)-1)
+#define ts_builtin_sym_end 0
+#define TREE_SITTER_SERIALIZATION_BUFFER_SIZE 1024
+
+#ifndef TREE_SITTER_API_H_
+typedef uint16_t TSStateId;
+typedef uint16_t TSSymbol;
+typedef uint16_t TSFieldId;
+typedef struct TSLanguage TSLanguage;
+typedef struct TSLanguageMetadata {
+  uint8_t major_version;
+  uint8_t minor_version;
+  uint8_t patch_version;
+} TSLanguageMetadata;
+#endif
+
+typedef struct {
+  TSFieldId field_id;
+  uint8_t child_index;
+  bool inherited;
+} TSFieldMapEntry;
+
+// Used to index the field and supertype maps.
+typedef struct {
+  uint16_t index;
+  uint16_t length;
+} TSMapSlice;
+
+typedef struct {
+  bool visible;
+  bool named;
+  bool supertype;
+} TSSymbolMetadata;
+
+typedef struct TSLexer TSLexer;
+
+struct TSLexer {
+  int32_t lookahead;
+  TSSymbol result_symbol;
+  void (*advance)(TSLexer *, bool);
+  void (*mark_end)(TSLexer *);
+  uint32_t (*get_column)(TSLexer *);
+  bool (*is_at_included_range_start)(const TSLexer *);
+  bool (*eof)(const TSLexer *);
+  void (*log)(const TSLexer *, const char *, ...);
+};
+
+typedef enum {
+  TSParseActionTypeShift,
+  TSParseActionTypeReduce,
+  TSParseActionTypeAccept,
+  TSParseActionTypeRecover,
+} TSParseActionType;
+
+typedef union {
+  struct {
+    uint8_t type;
+    TSStateId state;
+    bool extra;
+    bool repetition;
+  } shift;
+  struct {
+    uint8_t type;
+    uint8_t child_count;
+    TSSymbol symbol;
+    int16_t dynamic_precedence;
+    uint16_t production_id;
+  } reduce;
+  uint8_t type;
+} TSParseAction;
+
+typedef struct {
+  uint16_t lex_state;
+  uint16_t external_lex_state;
+} TSLexMode;
+
+typedef struct {
+  uint16_t lex_state;
+  uint16_t external_lex_state;
+  uint16_t reserved_word_set_id;
+} TSLexerMode;
+
+typedef union {
+  TSParseAction action;
+  struct {
+    uint8_t count;
+    bool reusable;
+  } entry;
+} TSParseActionEntry;
+
+typedef struct {
+  int32_t start;
+  int32_t end;
+} TSCharacterRange;
+
+struct TSLanguage {
+  uint32_t abi_version;
+  uint32_t symbol_count;
+  uint32_t alias_count;
+  uint32_t token_count;
+  uint32_t external_token_count;
+  uint32_t state_count;
+  uint32_t large_state_count;
+  uint32_t production_id_count;
+  uint32_t field_count;
+  uint16_t max_alias_sequence_length;
+  const uint16_t *parse_table;
+  const uint16_t *small_parse_table;
+  const uint32_t *small_parse_table_map;
+  const TSParseActionEntry *parse_actions;
+  const char * const *symbol_names;
+  const char * const *field_names;
+  const TSMapSlice *field_map_slices;
+  const TSFieldMapEntry *field_map_entries;
+  const TSSymbolMetadata *symbol_metadata;
+  const TSSymbol *public_symbol_map;
+  const uint16_t *alias_map;
+  const TSSymbol *alias_sequences;
+  const TSLexerMode *lex_modes;
+  bool (*lex_fn)(TSLexer *, TSStateId);
+  bool (*keyword_lex_fn)(TSLexer *, TSStateId);
+  TSSymbol keyword_capture_token;
+  struct {
+    const bool *states;
+    const TSSymbol *symbol_map;
+    void *(*create)(void);
+    void (*destroy)(void *);
+    bool (*scan)(void *, TSLexer *, const bool *symbol_whitelist);
+    unsigned (*serialize)(void *, char *);
+    void (*deserialize)(void *, const char *, unsigned);
+  } external_scanner;
+  const TSStateId *primary_state_ids;
+  const char *name;
+  const TSSymbol *reserved_words;
+  uint16_t max_reserved_word_set_size;
+  uint32_t supertype_count;
+  const TSSymbol *supertype_symbols;
+  const TSMapSlice *supertype_map_slices;
+  const TSSymbol *supertype_map_entries;
+  TSLanguageMetadata metadata;
+};
+
+static inline bool set_contains(const TSCharacterRange *ranges, uint32_t len, int32_t lookahead) {
+  uint32_t index = 0;
+  uint32_t size = len - index;
+  while (size > 1) {
+    uint32_t half_size = size / 2;
+    uint32_t mid_index = index + half_size;
+    const TSCharacterRange *range = &ranges[mid_index];
+    if (lookahead >= range->start && lookahead <= range->end) {
+      return true;
+    } else if (lookahead > range->end) {
+      index = mid_index;
+    }
+    size -= half_size;
+  }
+  const TSCharacterRange *range = &ranges[index];
+  return (lookahead >= range->start && lookahead <= range->end);
+}
+
+/*
+ *  Lexer Macros
+ */
+
+#ifdef _MSC_VER
+#define UNUSED __pragma(warning(suppress : 4101))
+#else
+#define UNUSED __attribute__((unused))
+#endif
+
+#define START_LEXER()           \
+  bool result = false;          \
+  bool skip = false;            \
+  UNUSED                        \
+  bool eof = false;             \
+  int32_t lookahead;            \
+  goto start;                   \
+  next_state:                   \
+  lexer->advance(lexer, skip);  \
+  start:                        \
+  skip = false;                 \
+  lookahead = lexer->lookahead;
+
+#define ADVANCE(state_value) \
+  {                          \
+    state = state_value;     \
+    goto next_state;         \
+  }
+
+#define ADVANCE_MAP(...)                                              \
+  {                                                                   \
+    static const uint16_t map[] = { __VA_ARGS__ };                    \
+    for (uint32_t i = 0; i < sizeof(map) / sizeof(map[0]); i += 2) {  \
+      if (map[i] == lookahead) {                                      \
+        state = map[i + 1];                                           \
+        goto next_state;                                              \
+      }                                                               \
+    }                                                                 \
+  }
+
+#define SKIP(state_value) \
+  {                       \
+    skip = true;          \
+    state = state_value;  \
+    goto next_state;      \
+  }
+
+#define ACCEPT_TOKEN(symbol_value)     \
+  result = true;                       \
+  lexer->result_symbol = symbol_value; \
+  lexer->mark_end(lexer);
+
+#define END_STATE() return result;
+
+/*
+ *  Parse Table Macros
+ */
+
+#define SMALL_STATE(id) ((id) - LARGE_STATE_COUNT)
+
+#define STATE(id) id
+
+#define ACTIONS(id) id
+
+#define SHIFT(state_value)            \
+  {{                                  \
+    .shift = {                        \
+      .type = TSParseActionTypeShift, \
+      .state = (state_value)          \
+    }                                 \
+  }}
+
+#define SHIFT_REPEAT(state_value)     \
+  {{                                  \
+    .shift = {                        \
+      .type = TSParseActionTypeShift, \
+      .state = (state_value),         \
+      .repetition = true              \
+    }                                 \
+  }}
+
+#define SHIFT_EXTRA()                 \
+  {{                                  \
+    .shift = {                        \
+      .type = TSParseActionTypeShift, \
+      .extra = true                   \
+    }                                 \
+  }}
+
+#define REDUCE(symbol_name, children, precedence, prod_id) \
+  {{                                                       \
+    .reduce = {                                            \
+      .type = TSParseActionTypeReduce,                     \
+      .symbol = symbol_name,                               \
+      .child_count = children,                             \
+      .dynamic_precedence = precedence,                    \
+      .production_id = prod_id                             \
+    },                                                     \
+  }}
+
+#define RECOVER()                    \
+  {{                                 \
+    .type = TSParseActionTypeRecover \
+  }}
+
+#define ACCEPT_INPUT()              \
+  {{                                \
+    .type = TSParseActionTypeAccept \
+  }}
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif  // TREE_SITTER_PARSER_H_
+</file>
+
+<file path="grammars/wui/src/grammar.json">
+{
+  "$schema": "https://tree-sitter.github.io/tree-sitter/assets/schemas/grammar.schema.json",
+  "name": "wui",
+  "rules": {
+    "source_file": {
+      "type": "REPEAT",
+      "content": {
+        "type": "SYMBOL",
+        "name": "_node"
+      }
+    },
+    "_node": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "element"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "text"
+        }
+      ]
+    },
+    "element": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "element_with_children"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "self_closing_element"
+        }
+      ]
+    },
+    "element_with_children": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "start_tag"
+        },
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_node"
+          }
+        },
+        {
+          "type": "SYMBOL",
+          "name": "end_tag"
+        }
+      ]
+    },
+    "start_tag": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "<"
+        },
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "tag_name"
+          }
+        },
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "SYMBOL",
+            "name": "attribute"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": ">"
+        }
+      ]
+    },
+    "end_tag": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "</"
+        },
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "tag_name"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": ">"
+        }
+      ]
+    },
+    "self_closing_element": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "<"
+        },
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "tag_name"
+          }
+        },
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "SYMBOL",
+            "name": "attribute"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "/>"
+        }
+      ]
+    },
+    "attribute": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "attribute_name"
+          }
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SEQ",
+              "members": [
+                {
+                  "type": "STRING",
+                  "value": "="
+                },
+                {
+                  "type": "FIELD",
+                  "name": "value",
+                  "content": {
+                    "type": "SYMBOL",
+                    "name": "attribute_value"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        }
+      ]
+    },
+    "attribute_value": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "string"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "expr"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "bare_literal"
+        }
+      ]
+    },
+    "string": {
+      "type": "PATTERN",
+      "value": "\"([^\"\\\\]|\\\\.)*\""
+    },
+    "expr": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "{"
+        },
+        {
+          "type": "PATTERN",
+          "value": "[^}]*"
+        },
+        {
+          "type": "STRING",
+          "value": "}"
+        }
+      ]
+    },
+    "bare_literal": {
+      "type": "PATTERN",
+      "value": "[A-Za-z0-9_.:-]+"
+    },
+    "tag_name": {
+      "type": "PATTERN",
+      "value": "[A-Za-z_][A-Za-z0-9_:\\-]*"
+    },
+    "attribute_name": {
+      "type": "PATTERN",
+      "value": "[A-Za-z_][A-Za-z0-9_:\\-]*"
+    },
+    "text": {
+      "type": "PATTERN",
+      "value": "[^<>{}]+"
+    }
+  },
+  "extras": [
+    {
+      "type": "PATTERN",
+      "value": "\\s"
+    }
+  ],
+  "conflicts": [],
+  "precedences": [],
+  "externals": [],
+  "inline": [],
+  "supertypes": [],
+  "reserved": {}
+}
+</file>
+
+<file path="grammars/wui/src/node-types.json">
+[
+  {
+    "type": "attribute",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "attribute_name",
+            "named": true
+          }
+        ]
+      },
+      "value": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "attribute_value",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "attribute_name",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "attribute_value",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "bare_literal",
+          "named": true
+        },
+        {
+          "type": "expr",
+          "named": true
+        },
+        {
+          "type": "string",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "element",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "element_with_children",
+          "named": true
+        },
+        {
+          "type": "self_closing_element",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "element_with_children",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "element",
+          "named": true
+        },
+        {
+          "type": "end_tag",
+          "named": true
+        },
+        {
+          "type": "start_tag",
+          "named": true
+        },
+        {
+          "type": "text",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "end_tag",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "tag_name",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "expr",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "self_closing_element",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "tag_name",
+            "named": true
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "attribute",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "source_file",
+    "named": true,
+    "root": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "element",
+          "named": true
+        },
+        {
+          "type": "text",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "start_tag",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "tag_name",
+            "named": true
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "attribute",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "tag_name",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "/>",
+    "named": false
+  },
+  {
+    "type": "<",
+    "named": false
+  },
+  {
+    "type": "</",
+    "named": false
+  },
+  {
+    "type": "=",
+    "named": false
+  },
+  {
+    "type": ">",
+    "named": false
+  },
+  {
+    "type": "bare_literal",
+    "named": true
+  },
+  {
+    "type": "string",
+    "named": true
+  },
+  {
+    "type": "text",
+    "named": true
+  },
+  {
+    "type": "{",
+    "named": false
+  },
+  {
+    "type": "}",
+    "named": false
+  }
+]
+</file>
+
+<file path="grammars/wui/src/parser.c">
+/* Automatically @generated by tree-sitter */
+
+#include "tree_sitter/parser.h"
+
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#endif
+
+#define LANGUAGE_VERSION 14
+#define STATE_COUNT 30
+#define LARGE_STATE_COUNT 2
+#define SYMBOL_COUNT 27
+#define ALIAS_COUNT 0
+#define TOKEN_COUNT 13
+#define EXTERNAL_TOKEN_COUNT 0
+#define FIELD_COUNT 2
+#define MAX_ALIAS_SEQUENCE_LENGTH 4
+#define MAX_RESERVED_WORD_SET_SIZE 0
+#define PRODUCTION_ID_COUNT 4
+#define SUPERTYPE_COUNT 0
+
+enum ts_symbol_identifiers {
+  anon_sym_LT = 1,
+  anon_sym_GT = 2,
+  anon_sym_LT_SLASH = 3,
+  anon_sym_SLASH_GT = 4,
+  anon_sym_EQ = 5,
+  sym_string = 6,
+  anon_sym_LBRACE = 7,
+  aux_sym_expr_token1 = 8,
+  anon_sym_RBRACE = 9,
+  sym_bare_literal = 10,
+  aux_sym_tag_name_token1 = 11,
+  sym_text = 12,
+  sym_source_file = 13,
+  sym__node = 14,
+  sym_element = 15,
+  sym_element_with_children = 16,
+  sym_start_tag = 17,
+  sym_end_tag = 18,
+  sym_self_closing_element = 19,
+  sym_attribute = 20,
+  sym_attribute_value = 21,
+  sym_expr = 22,
+  sym_tag_name = 23,
+  sym_attribute_name = 24,
+  aux_sym_source_file_repeat1 = 25,
+  aux_sym_start_tag_repeat1 = 26,
+};
+
+static const char * const ts_symbol_names[] = {
+  [ts_builtin_sym_end] = "end",
+  [anon_sym_LT] = "<",
+  [anon_sym_GT] = ">",
+  [anon_sym_LT_SLASH] = "</",
+  [anon_sym_SLASH_GT] = "/>",
+  [anon_sym_EQ] = "=",
+  [sym_string] = "string",
+  [anon_sym_LBRACE] = "{",
+  [aux_sym_expr_token1] = "expr_token1",
+  [anon_sym_RBRACE] = "}",
+  [sym_bare_literal] = "bare_literal",
+  [aux_sym_tag_name_token1] = "tag_name_token1",
+  [sym_text] = "text",
+  [sym_source_file] = "source_file",
+  [sym__node] = "_node",
+  [sym_element] = "element",
+  [sym_element_with_children] = "element_with_children",
+  [sym_start_tag] = "start_tag",
+  [sym_end_tag] = "end_tag",
+  [sym_self_closing_element] = "self_closing_element",
+  [sym_attribute] = "attribute",
+  [sym_attribute_value] = "attribute_value",
+  [sym_expr] = "expr",
+  [sym_tag_name] = "tag_name",
+  [sym_attribute_name] = "attribute_name",
+  [aux_sym_source_file_repeat1] = "source_file_repeat1",
+  [aux_sym_start_tag_repeat1] = "start_tag_repeat1",
+};
+
+static const TSSymbol ts_symbol_map[] = {
+  [ts_builtin_sym_end] = ts_builtin_sym_end,
+  [anon_sym_LT] = anon_sym_LT,
+  [anon_sym_GT] = anon_sym_GT,
+  [anon_sym_LT_SLASH] = anon_sym_LT_SLASH,
+  [anon_sym_SLASH_GT] = anon_sym_SLASH_GT,
+  [anon_sym_EQ] = anon_sym_EQ,
+  [sym_string] = sym_string,
+  [anon_sym_LBRACE] = anon_sym_LBRACE,
+  [aux_sym_expr_token1] = aux_sym_expr_token1,
+  [anon_sym_RBRACE] = anon_sym_RBRACE,
+  [sym_bare_literal] = sym_bare_literal,
+  [aux_sym_tag_name_token1] = aux_sym_tag_name_token1,
+  [sym_text] = sym_text,
+  [sym_source_file] = sym_source_file,
+  [sym__node] = sym__node,
+  [sym_element] = sym_element,
+  [sym_element_with_children] = sym_element_with_children,
+  [sym_start_tag] = sym_start_tag,
+  [sym_end_tag] = sym_end_tag,
+  [sym_self_closing_element] = sym_self_closing_element,
+  [sym_attribute] = sym_attribute,
+  [sym_attribute_value] = sym_attribute_value,
+  [sym_expr] = sym_expr,
+  [sym_tag_name] = sym_tag_name,
+  [sym_attribute_name] = sym_attribute_name,
+  [aux_sym_source_file_repeat1] = aux_sym_source_file_repeat1,
+  [aux_sym_start_tag_repeat1] = aux_sym_start_tag_repeat1,
+};
+
+static const TSSymbolMetadata ts_symbol_metadata[] = {
+  [ts_builtin_sym_end] = {
+    .visible = false,
+    .named = true,
+  },
+  [anon_sym_LT] = {
+    .visible = true,
+    .named = false,
+  },
+  [anon_sym_GT] = {
+    .visible = true,
+    .named = false,
+  },
+  [anon_sym_LT_SLASH] = {
+    .visible = true,
+    .named = false,
+  },
+  [anon_sym_SLASH_GT] = {
+    .visible = true,
+    .named = false,
+  },
+  [anon_sym_EQ] = {
+    .visible = true,
+    .named = false,
+  },
+  [sym_string] = {
+    .visible = true,
+    .named = true,
+  },
+  [anon_sym_LBRACE] = {
+    .visible = true,
+    .named = false,
+  },
+  [aux_sym_expr_token1] = {
+    .visible = false,
+    .named = false,
+  },
+  [anon_sym_RBRACE] = {
+    .visible = true,
+    .named = false,
+  },
+  [sym_bare_literal] = {
+    .visible = true,
+    .named = true,
+  },
+  [aux_sym_tag_name_token1] = {
+    .visible = false,
+    .named = false,
+  },
+  [sym_text] = {
+    .visible = true,
+    .named = true,
+  },
+  [sym_source_file] = {
+    .visible = true,
+    .named = true,
+  },
+  [sym__node] = {
+    .visible = false,
+    .named = true,
+  },
+  [sym_element] = {
+    .visible = true,
+    .named = true,
+  },
+  [sym_element_with_children] = {
+    .visible = true,
+    .named = true,
+  },
+  [sym_start_tag] = {
+    .visible = true,
+    .named = true,
+  },
+  [sym_end_tag] = {
+    .visible = true,
+    .named = true,
+  },
+  [sym_self_closing_element] = {
+    .visible = true,
+    .named = true,
+  },
+  [sym_attribute] = {
+    .visible = true,
+    .named = true,
+  },
+  [sym_attribute_value] = {
+    .visible = true,
+    .named = true,
+  },
+  [sym_expr] = {
+    .visible = true,
+    .named = true,
+  },
+  [sym_tag_name] = {
+    .visible = true,
+    .named = true,
+  },
+  [sym_attribute_name] = {
+    .visible = true,
+    .named = true,
+  },
+  [aux_sym_source_file_repeat1] = {
+    .visible = false,
+    .named = false,
+  },
+  [aux_sym_start_tag_repeat1] = {
+    .visible = false,
+    .named = false,
+  },
+};
+
+enum ts_field_identifiers {
+  field_name = 1,
+  field_value = 2,
+};
+
+static const char * const ts_field_names[] = {
+  [0] = NULL,
+  [field_name] = "name",
+  [field_value] = "value",
+};
+
+static const TSMapSlice ts_field_map_slices[PRODUCTION_ID_COUNT] = {
+  [1] = {.index = 0, .length = 1},
+  [2] = {.index = 1, .length = 1},
+  [3] = {.index = 2, .length = 2},
+};
+
+static const TSFieldMapEntry ts_field_map_entries[] = {
+  [0] =
+    {field_name, 1},
+  [1] =
+    {field_name, 0},
+  [2] =
+    {field_name, 0},
+    {field_value, 2},
+};
+
+static const TSSymbol ts_alias_sequences[PRODUCTION_ID_COUNT][MAX_ALIAS_SEQUENCE_LENGTH] = {
+  [0] = {0},
+};
+
+static const uint16_t ts_non_terminal_alias_map[] = {
+  0,
+};
+
+static const TSStateId ts_primary_state_ids[STATE_COUNT] = {
+  [0] = 0,
+  [1] = 1,
+  [2] = 2,
+  [3] = 3,
+  [4] = 4,
+  [5] = 5,
+  [6] = 6,
+  [7] = 7,
+  [8] = 8,
+  [9] = 9,
+  [10] = 10,
+  [11] = 11,
+  [12] = 12,
+  [13] = 13,
+  [14] = 14,
+  [15] = 15,
+  [16] = 16,
+  [17] = 17,
+  [18] = 18,
+  [19] = 19,
+  [20] = 20,
+  [21] = 21,
+  [22] = 22,
+  [23] = 23,
+  [24] = 24,
+  [25] = 25,
+  [26] = 26,
+  [27] = 27,
+  [28] = 28,
+  [29] = 29,
+};
+
+static bool ts_lex(TSLexer *lexer, TSStateId state) {
+  START_LEXER();
+  eof = lexer->eof(lexer);
+  switch (state) {
+    case 0:
+      if (eof) ADVANCE(7);
+      if (lookahead == '"') ADVANCE(2);
+      if (lookahead == '/') ADVANCE(4);
+      if (lookahead == '<') ADVANCE(8);
+      if (lookahead == '=') ADVANCE(12);
+      if (lookahead == '>') ADVANCE(9);
+      if (lookahead == '{') ADVANCE(14);
+      if (lookahead == '}') ADVANCE(17);
+      if (('\t' <= lookahead && lookahead <= '\r') ||
+          lookahead == ' ') SKIP(0);
+      if (('-' <= lookahead && lookahead <= ':')) ADVANCE(19);
+      if (('A' <= lookahead && lookahead <= 'Z') ||
+          lookahead == '_' ||
+          ('a' <= lookahead && lookahead <= 'z')) ADVANCE(18);
+      END_STATE();
+    case 1:
+      if (lookahead == '"') ADVANCE(2);
+      if (lookahead == '{') ADVANCE(14);
+      if (('\t' <= lookahead && lookahead <= '\r') ||
+          lookahead == ' ') SKIP(1);
+      if (lookahead == '-' ||
+          lookahead == '.' ||
+          ('0' <= lookahead && lookahead <= ':') ||
+          ('A' <= lookahead && lookahead <= 'Z') ||
+          lookahead == '_' ||
+          ('a' <= lookahead && lookahead <= 'z')) ADVANCE(19);
+      END_STATE();
+    case 2:
+      if (lookahead == '"') ADVANCE(13);
+      if (lookahead == '\\') ADVANCE(5);
+      if (lookahead != 0) ADVANCE(2);
+      END_STATE();
+    case 3:
+      if (lookahead == '/') ADVANCE(4);
+      if (lookahead == '=') ADVANCE(12);
+      if (lookahead == '>') ADVANCE(9);
+      if (('\t' <= lookahead && lookahead <= '\r') ||
+          lookahead == ' ') SKIP(3);
+      if (('A' <= lookahead && lookahead <= 'Z') ||
+          lookahead == '_' ||
+          ('a' <= lookahead && lookahead <= 'z')) ADVANCE(20);
+      END_STATE();
+    case 4:
+      if (lookahead == '>') ADVANCE(11);
+      END_STATE();
+    case 5:
+      if (lookahead != 0 &&
+          lookahead != '\n') ADVANCE(2);
+      END_STATE();
+    case 6:
+      if (eof) ADVANCE(7);
+      if (lookahead == '<') ADVANCE(8);
+      if (('\t' <= lookahead && lookahead <= '\r') ||
+          lookahead == ' ') ADVANCE(21);
+      if (lookahead != 0 &&
+          lookahead != '>' &&
+          lookahead != '{' &&
+          lookahead != '}') ADVANCE(22);
+      END_STATE();
+    case 7:
+      ACCEPT_TOKEN(ts_builtin_sym_end);
+      END_STATE();
+    case 8:
+      ACCEPT_TOKEN(anon_sym_LT);
+      if (lookahead == '/') ADVANCE(10);
+      END_STATE();
+    case 9:
+      ACCEPT_TOKEN(anon_sym_GT);
+      END_STATE();
+    case 10:
+      ACCEPT_TOKEN(anon_sym_LT_SLASH);
+      END_STATE();
+    case 11:
+      ACCEPT_TOKEN(anon_sym_SLASH_GT);
+      END_STATE();
+    case 12:
+      ACCEPT_TOKEN(anon_sym_EQ);
+      END_STATE();
+    case 13:
+      ACCEPT_TOKEN(sym_string);
+      END_STATE();
+    case 14:
+      ACCEPT_TOKEN(anon_sym_LBRACE);
+      END_STATE();
+    case 15:
+      ACCEPT_TOKEN(aux_sym_expr_token1);
+      if (('\t' <= lookahead && lookahead <= '\r') ||
+          lookahead == ' ') ADVANCE(15);
+      if (lookahead != 0 &&
+          lookahead != '}') ADVANCE(16);
+      END_STATE();
+    case 16:
+      ACCEPT_TOKEN(aux_sym_expr_token1);
+      if (lookahead != 0 &&
+          lookahead != '}') ADVANCE(16);
+      END_STATE();
+    case 17:
+      ACCEPT_TOKEN(anon_sym_RBRACE);
+      END_STATE();
+    case 18:
+      ACCEPT_TOKEN(sym_bare_literal);
+      if (lookahead == '.') ADVANCE(19);
+      if (lookahead == '-' ||
+          ('0' <= lookahead && lookahead <= ':') ||
+          ('A' <= lookahead && lookahead <= 'Z') ||
+          lookahead == '_' ||
+          ('a' <= lookahead && lookahead <= 'z')) ADVANCE(18);
+      END_STATE();
+    case 19:
+      ACCEPT_TOKEN(sym_bare_literal);
+      if (lookahead == '-' ||
+          lookahead == '.' ||
+          ('0' <= lookahead && lookahead <= ':') ||
+          ('A' <= lookahead && lookahead <= 'Z') ||
+          lookahead == '_' ||
+          ('a' <= lookahead && lookahead <= 'z')) ADVANCE(19);
+      END_STATE();
+    case 20:
+      ACCEPT_TOKEN(aux_sym_tag_name_token1);
+      if (lookahead == '-' ||
+          ('0' <= lookahead && lookahead <= ':') ||
+          ('A' <= lookahead && lookahead <= 'Z') ||
+          lookahead == '_' ||
+          ('a' <= lookahead && lookahead <= 'z')) ADVANCE(20);
+      END_STATE();
+    case 21:
+      ACCEPT_TOKEN(sym_text);
+      if (('\t' <= lookahead && lookahead <= '\r') ||
+          lookahead == ' ') ADVANCE(21);
+      if (lookahead != 0 &&
+          lookahead != '<' &&
+          lookahead != '>' &&
+          lookahead != '{' &&
+          lookahead != '}') ADVANCE(22);
+      END_STATE();
+    case 22:
+      ACCEPT_TOKEN(sym_text);
+      if (lookahead != 0 &&
+          lookahead != '<' &&
+          lookahead != '>' &&
+          lookahead != '{' &&
+          lookahead != '}') ADVANCE(22);
+      END_STATE();
+    default:
+      return false;
+  }
+}
+
+static const TSLexMode ts_lex_modes[STATE_COUNT] = {
+  [0] = {.lex_state = 0},
+  [1] = {.lex_state = 6},
+  [2] = {.lex_state = 6},
+  [3] = {.lex_state = 6},
+  [4] = {.lex_state = 6},
+  [5] = {.lex_state = 6},
+  [6] = {.lex_state = 3},
+  [7] = {.lex_state = 3},
+  [8] = {.lex_state = 3},
+  [9] = {.lex_state = 1},
+  [10] = {.lex_state = 6},
+  [11] = {.lex_state = 6},
+  [12] = {.lex_state = 6},
+  [13] = {.lex_state = 6},
+  [14] = {.lex_state = 6},
+  [15] = {.lex_state = 3},
+  [16] = {.lex_state = 3},
+  [17] = {.lex_state = 6},
+  [18] = {.lex_state = 3},
+  [19] = {.lex_state = 6},
+  [20] = {.lex_state = 6},
+  [21] = {.lex_state = 3},
+  [22] = {.lex_state = 3},
+  [23] = {.lex_state = 3},
+  [24] = {.lex_state = 3},
+  [25] = {.lex_state = 3},
+  [26] = {.lex_state = 0},
+  [27] = {.lex_state = 0},
+  [28] = {.lex_state = 15},
+  [29] = {.lex_state = 0},
+};
+
+static const uint16_t ts_parse_table[LARGE_STATE_COUNT][SYMBOL_COUNT] = {
+  [STATE(0)] = {
+    [ts_builtin_sym_end] = ACTIONS(1),
+    [anon_sym_LT] = ACTIONS(1),
+    [anon_sym_GT] = ACTIONS(1),
+    [anon_sym_LT_SLASH] = ACTIONS(1),
+    [anon_sym_SLASH_GT] = ACTIONS(1),
+    [anon_sym_EQ] = ACTIONS(1),
+    [sym_string] = ACTIONS(1),
+    [anon_sym_LBRACE] = ACTIONS(1),
+    [anon_sym_RBRACE] = ACTIONS(1),
+    [sym_bare_literal] = ACTIONS(1),
+    [aux_sym_tag_name_token1] = ACTIONS(1),
+  },
+  [STATE(1)] = {
+    [sym_source_file] = STATE(26),
+    [sym__node] = STATE(5),
+    [sym_element] = STATE(5),
+    [sym_element_with_children] = STATE(11),
+    [sym_start_tag] = STATE(2),
+    [sym_self_closing_element] = STATE(11),
+    [aux_sym_source_file_repeat1] = STATE(5),
+    [ts_builtin_sym_end] = ACTIONS(3),
+    [anon_sym_LT] = ACTIONS(5),
+    [sym_text] = ACTIONS(7),
+  },
+};
+
+static const uint16_t ts_small_parse_table[] = {
+  [0] = 7,
+    ACTIONS(5), 1,
+      anon_sym_LT,
+    ACTIONS(9), 1,
+      anon_sym_LT_SLASH,
+    ACTIONS(11), 1,
+      sym_text,
+    STATE(2), 1,
+      sym_start_tag,
+    STATE(10), 1,
+      sym_end_tag,
+    STATE(11), 2,
+      sym_element_with_children,
+      sym_self_closing_element,
+    STATE(4), 3,
+      sym__node,
+      sym_element,
+      aux_sym_source_file_repeat1,
+  [25] = 7,
+    ACTIONS(13), 1,
+      ts_builtin_sym_end,
+    ACTIONS(15), 1,
+      anon_sym_LT,
+    ACTIONS(18), 1,
+      anon_sym_LT_SLASH,
+    ACTIONS(20), 1,
+      sym_text,
+    STATE(2), 1,
+      sym_start_tag,
+    STATE(11), 2,
+      sym_element_with_children,
+      sym_self_closing_element,
+    STATE(3), 3,
+      sym__node,
+      sym_element,
+      aux_sym_source_file_repeat1,
+  [50] = 7,
+    ACTIONS(5), 1,
+      anon_sym_LT,
+    ACTIONS(9), 1,
+      anon_sym_LT_SLASH,
+    ACTIONS(23), 1,
+      sym_text,
+    STATE(2), 1,
+      sym_start_tag,
+    STATE(14), 1,
+      sym_end_tag,
+    STATE(11), 2,
+      sym_element_with_children,
+      sym_self_closing_element,
+    STATE(3), 3,
+      sym__node,
+      sym_element,
+      aux_sym_source_file_repeat1,
+  [75] = 6,
+    ACTIONS(5), 1,
+      anon_sym_LT,
+    ACTIONS(23), 1,
+      sym_text,
+    ACTIONS(25), 1,
+      ts_builtin_sym_end,
+    STATE(2), 1,
+      sym_start_tag,
+    STATE(11), 2,
+      sym_element_with_children,
+      sym_self_closing_element,
+    STATE(3), 3,
+      sym__node,
+      sym_element,
+      aux_sym_source_file_repeat1,
+  [97] = 5,
+    ACTIONS(27), 1,
+      anon_sym_GT,
+    ACTIONS(29), 1,
+      anon_sym_SLASH_GT,
+    ACTIONS(31), 1,
+      aux_sym_tag_name_token1,
+    STATE(16), 1,
+      sym_attribute_name,
+    STATE(8), 2,
+      sym_attribute,
+      aux_sym_start_tag_repeat1,
+  [114] = 4,
+    ACTIONS(35), 1,
+      aux_sym_tag_name_token1,
+    STATE(16), 1,
+      sym_attribute_name,
+    ACTIONS(33), 2,
+      anon_sym_GT,
+      anon_sym_SLASH_GT,
+    STATE(7), 2,
+      sym_attribute,
+      aux_sym_start_tag_repeat1,
+  [129] = 5,
+    ACTIONS(31), 1,
+      aux_sym_tag_name_token1,
+    ACTIONS(38), 1,
+      anon_sym_GT,
+    ACTIONS(40), 1,
+      anon_sym_SLASH_GT,
+    STATE(16), 1,
+      sym_attribute_name,
+    STATE(7), 2,
+      sym_attribute,
+      aux_sym_start_tag_repeat1,
+  [146] = 4,
+    ACTIONS(44), 1,
+      anon_sym_LBRACE,
+    STATE(21), 1,
+      sym_expr,
+    STATE(22), 1,
+      sym_attribute_value,
+    ACTIONS(42), 2,
+      sym_string,
+      sym_bare_literal,
+  [160] = 2,
+    ACTIONS(46), 2,
+      ts_builtin_sym_end,
+      sym_text,
+    ACTIONS(48), 2,
+      anon_sym_LT,
+      anon_sym_LT_SLASH,
+  [169] = 2,
+    ACTIONS(50), 2,
+      ts_builtin_sym_end,
+      sym_text,
+    ACTIONS(52), 2,
+      anon_sym_LT,
+      anon_sym_LT_SLASH,
+  [178] = 2,
+    ACTIONS(54), 2,
+      ts_builtin_sym_end,
+      sym_text,
+    ACTIONS(56), 2,
+      anon_sym_LT,
+      anon_sym_LT_SLASH,
+  [187] = 2,
+    ACTIONS(58), 2,
+      ts_builtin_sym_end,
+      sym_text,
+    ACTIONS(60), 2,
+      anon_sym_LT,
+      anon_sym_LT_SLASH,
+  [196] = 2,
+    ACTIONS(62), 2,
+      ts_builtin_sym_end,
+      sym_text,
+    ACTIONS(64), 2,
+      anon_sym_LT,
+      anon_sym_LT_SLASH,
+  [205] = 1,
+    ACTIONS(66), 4,
+      anon_sym_GT,
+      anon_sym_SLASH_GT,
+      anon_sym_EQ,
+      aux_sym_tag_name_token1,
+  [212] = 2,
+    ACTIONS(70), 1,
+      anon_sym_EQ,
+    ACTIONS(68), 3,
+      anon_sym_GT,
+      anon_sym_SLASH_GT,
+      aux_sym_tag_name_token1,
+  [221] = 2,
+    ACTIONS(72), 2,
+      ts_builtin_sym_end,
+      sym_text,
+    ACTIONS(74), 2,
+      anon_sym_LT,
+      anon_sym_LT_SLASH,
+  [230] = 1,
+    ACTIONS(76), 3,
+      anon_sym_GT,
+      anon_sym_SLASH_GT,
+      aux_sym_tag_name_token1,
+  [236] = 2,
+    ACTIONS(80), 1,
+      sym_text,
+    ACTIONS(78), 2,
+      anon_sym_LT,
+      anon_sym_LT_SLASH,
+  [244] = 2,
+    ACTIONS(84), 1,
+      sym_text,
+    ACTIONS(82), 2,
+      anon_sym_LT,
+      anon_sym_LT_SLASH,
+  [252] = 1,
+    ACTIONS(86), 3,
+      anon_sym_GT,
+      anon_sym_SLASH_GT,
+      aux_sym_tag_name_token1,
+  [258] = 1,
+    ACTIONS(88), 3,
+      anon_sym_GT,
+      anon_sym_SLASH_GT,
+      aux_sym_tag_name_token1,
+  [264] = 1,
+    ACTIONS(90), 3,
+      anon_sym_GT,
+      anon_sym_SLASH_GT,
+      aux_sym_tag_name_token1,
+  [270] = 2,
+    ACTIONS(92), 1,
+      aux_sym_tag_name_token1,
+    STATE(6), 1,
+      sym_tag_name,
+  [277] = 2,
+    ACTIONS(92), 1,
+      aux_sym_tag_name_token1,
+    STATE(27), 1,
+      sym_tag_name,
+  [284] = 1,
+    ACTIONS(94), 1,
+      ts_builtin_sym_end,
+  [288] = 1,
+    ACTIONS(96), 1,
+      anon_sym_GT,
+  [292] = 1,
+    ACTIONS(98), 1,
+      aux_sym_expr_token1,
+  [296] = 1,
+    ACTIONS(100), 1,
+      anon_sym_RBRACE,
+};
+
+static const uint32_t ts_small_parse_table_map[] = {
+  [SMALL_STATE(2)] = 0,
+  [SMALL_STATE(3)] = 25,
+  [SMALL_STATE(4)] = 50,
+  [SMALL_STATE(5)] = 75,
+  [SMALL_STATE(6)] = 97,
+  [SMALL_STATE(7)] = 114,
+  [SMALL_STATE(8)] = 129,
+  [SMALL_STATE(9)] = 146,
+  [SMALL_STATE(10)] = 160,
+  [SMALL_STATE(11)] = 169,
+  [SMALL_STATE(12)] = 178,
+  [SMALL_STATE(13)] = 187,
+  [SMALL_STATE(14)] = 196,
+  [SMALL_STATE(15)] = 205,
+  [SMALL_STATE(16)] = 212,
+  [SMALL_STATE(17)] = 221,
+  [SMALL_STATE(18)] = 230,
+  [SMALL_STATE(19)] = 236,
+  [SMALL_STATE(20)] = 244,
+  [SMALL_STATE(21)] = 252,
+  [SMALL_STATE(22)] = 258,
+  [SMALL_STATE(23)] = 264,
+  [SMALL_STATE(24)] = 270,
+  [SMALL_STATE(25)] = 277,
+  [SMALL_STATE(26)] = 284,
+  [SMALL_STATE(27)] = 288,
+  [SMALL_STATE(28)] = 292,
+  [SMALL_STATE(29)] = 296,
+};
+
+static const TSParseActionEntry ts_parse_actions[] = {
+  [0] = {.entry = {.count = 0, .reusable = false}},
+  [1] = {.entry = {.count = 1, .reusable = false}}, RECOVER(),
+  [3] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_source_file, 0, 0, 0),
+  [5] = {.entry = {.count = 1, .reusable = false}}, SHIFT(24),
+  [7] = {.entry = {.count = 1, .reusable = true}}, SHIFT(5),
+  [9] = {.entry = {.count = 1, .reusable = false}}, SHIFT(25),
+  [11] = {.entry = {.count = 1, .reusable = true}}, SHIFT(4),
+  [13] = {.entry = {.count = 1, .reusable = true}}, REDUCE(aux_sym_source_file_repeat1, 2, 0, 0),
+  [15] = {.entry = {.count = 2, .reusable = false}}, REDUCE(aux_sym_source_file_repeat1, 2, 0, 0), SHIFT_REPEAT(24),
+  [18] = {.entry = {.count = 1, .reusable = false}}, REDUCE(aux_sym_source_file_repeat1, 2, 0, 0),
+  [20] = {.entry = {.count = 2, .reusable = true}}, REDUCE(aux_sym_source_file_repeat1, 2, 0, 0), SHIFT_REPEAT(3),
+  [23] = {.entry = {.count = 1, .reusable = true}}, SHIFT(3),
+  [25] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_source_file, 1, 0, 0),
+  [27] = {.entry = {.count = 1, .reusable = true}}, SHIFT(19),
+  [29] = {.entry = {.count = 1, .reusable = true}}, SHIFT(12),
+  [31] = {.entry = {.count = 1, .reusable = true}}, SHIFT(15),
+  [33] = {.entry = {.count = 1, .reusable = true}}, REDUCE(aux_sym_start_tag_repeat1, 2, 0, 0),
+  [35] = {.entry = {.count = 2, .reusable = true}}, REDUCE(aux_sym_start_tag_repeat1, 2, 0, 0), SHIFT_REPEAT(15),
+  [38] = {.entry = {.count = 1, .reusable = true}}, SHIFT(20),
+  [40] = {.entry = {.count = 1, .reusable = true}}, SHIFT(13),
+  [42] = {.entry = {.count = 1, .reusable = true}}, SHIFT(21),
+  [44] = {.entry = {.count = 1, .reusable = true}}, SHIFT(28),
+  [46] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_element_with_children, 2, 0, 0),
+  [48] = {.entry = {.count = 1, .reusable = false}}, REDUCE(sym_element_with_children, 2, 0, 0),
+  [50] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_element, 1, 0, 0),
+  [52] = {.entry = {.count = 1, .reusable = false}}, REDUCE(sym_element, 1, 0, 0),
+  [54] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_self_closing_element, 3, 0, 1),
+  [56] = {.entry = {.count = 1, .reusable = false}}, REDUCE(sym_self_closing_element, 3, 0, 1),
+  [58] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_self_closing_element, 4, 0, 1),
+  [60] = {.entry = {.count = 1, .reusable = false}}, REDUCE(sym_self_closing_element, 4, 0, 1),
+  [62] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_element_with_children, 3, 0, 0),
+  [64] = {.entry = {.count = 1, .reusable = false}}, REDUCE(sym_element_with_children, 3, 0, 0),
+  [66] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_attribute_name, 1, 0, 0),
+  [68] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_attribute, 1, 0, 2),
+  [70] = {.entry = {.count = 1, .reusable = true}}, SHIFT(9),
+  [72] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_end_tag, 3, 0, 1),
+  [74] = {.entry = {.count = 1, .reusable = false}}, REDUCE(sym_end_tag, 3, 0, 1),
+  [76] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_tag_name, 1, 0, 0),
+  [78] = {.entry = {.count = 1, .reusable = false}}, REDUCE(sym_start_tag, 3, 0, 1),
+  [80] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_start_tag, 3, 0, 1),
+  [82] = {.entry = {.count = 1, .reusable = false}}, REDUCE(sym_start_tag, 4, 0, 1),
+  [84] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_start_tag, 4, 0, 1),
+  [86] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_attribute_value, 1, 0, 0),
+  [88] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_attribute, 3, 0, 3),
+  [90] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_expr, 3, 0, 0),
+  [92] = {.entry = {.count = 1, .reusable = true}}, SHIFT(18),
+  [94] = {.entry = {.count = 1, .reusable = true}},  ACCEPT_INPUT(),
+  [96] = {.entry = {.count = 1, .reusable = true}}, SHIFT(17),
+  [98] = {.entry = {.count = 1, .reusable = true}}, SHIFT(29),
+  [100] = {.entry = {.count = 1, .reusable = true}}, SHIFT(23),
+};
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+#ifdef TREE_SITTER_HIDE_SYMBOLS
+#define TS_PUBLIC
+#elif defined(_WIN32)
+#define TS_PUBLIC __declspec(dllexport)
+#else
+#define TS_PUBLIC __attribute__((visibility("default")))
+#endif
+
+TS_PUBLIC const TSLanguage *tree_sitter_wui(void) {
+  static const TSLanguage language = {
+    .abi_version = LANGUAGE_VERSION,
+    .symbol_count = SYMBOL_COUNT,
+    .alias_count = ALIAS_COUNT,
+    .token_count = TOKEN_COUNT,
+    .external_token_count = EXTERNAL_TOKEN_COUNT,
+    .state_count = STATE_COUNT,
+    .large_state_count = LARGE_STATE_COUNT,
+    .production_id_count = PRODUCTION_ID_COUNT,
+    .field_count = FIELD_COUNT,
+    .max_alias_sequence_length = MAX_ALIAS_SEQUENCE_LENGTH,
+    .parse_table = &ts_parse_table[0][0],
+    .small_parse_table = ts_small_parse_table,
+    .small_parse_table_map = ts_small_parse_table_map,
+    .parse_actions = ts_parse_actions,
+    .symbol_names = ts_symbol_names,
+    .field_names = ts_field_names,
+    .field_map_slices = ts_field_map_slices,
+    .field_map_entries = ts_field_map_entries,
+    .symbol_metadata = ts_symbol_metadata,
+    .public_symbol_map = ts_symbol_map,
+    .alias_map = ts_non_terminal_alias_map,
+    .alias_sequences = &ts_alias_sequences[0][0],
+    .lex_modes = (const void*)ts_lex_modes,
+    .lex_fn = ts_lex,
+    .primary_state_ids = ts_primary_state_ids,
+  };
+  return &language;
+}
+#ifdef __cplusplus
+}
+#endif
+</file>
+
+<file path="grammars/wui/.gitignore">
+/grammar.json
+/node_modules/
+</file>
+
+<file path="grammars/wui/grammar.js">
+module.exports = grammar({
+  name: "wui",
+
+  extras: $ => [/\s/],
+
+  rules: {
+    source_file: $ => repeat($._node),
+
+    _node: $ => choice($.element, $.text),
+
+    element: $ => choice($.element_with_children, $.self_closing_element),
+
+    element_with_children: $ => seq($.start_tag, repeat($._node), $.end_tag),
+
+    start_tag: $ => seq("<", field("name", $.tag_name), repeat($.attribute), ">"),
+
+    end_tag: $ => seq("</", field("name", $.tag_name), ">"),
+
+    self_closing_element: $ => seq(
+      "<",
+      field("name", $.tag_name),
+      repeat($.attribute),
+      "/>"
+    ),
+
+    attribute: $ => seq(
+      field("name", $.attribute_name),
+      optional(seq("=", field("value", $.attribute_value)))
+    ),
+
+    attribute_value: $ => choice($.string, $.expr, $.bare_literal),
+
+    string: $ => /"([^"\\]|\\.)*"/,
+
+    expr: $ => seq("{", /[^}]*/, "}"),
+
+    bare_literal: $ => /[A-Za-z0-9_.:-]+/,
+
+    tag_name: $ => /[A-Za-z_][A-Za-z0-9_:\-]*/,
+
+    attribute_name: $ => /[A-Za-z_][A-Za-z0-9_:\-]*/,
+
+    text: $ => /[^<>{}]+/,
+  },
+});
+</file>
+
+<file path="grammars/wui/package.json">
+{
+  "name": "tree-sitter-wui",
+  "version": "0.0.1",
+  "main": "grammar.js",
+  "license": "MIT"
+}
+</file>
+
+<file path="languages/wui/config.toml">
+name = "WUI"
+grammar = "wui"
+path_suffixes = ["wui"]
+line_comments = ["// "]
+</file>
+
+<file path="src/lib.rs">
+use zed_extension_api::{self as zed, Command, LanguageServerId, Result, Worktree};
+
+struct WuiExt;
+
+impl zed::Extension for WuiExt {
+	fn new() -> Self {
+		Self
+	}
+
+	fn language_server_command(
+		&mut self,
+		_language_server_id: &LanguageServerId,
+		worktree: &Worktree,
+	) -> Result<Command> {
+		let mut path = std::path::PathBuf::from(worktree.root_path());
+		path = path.join("target").join("debug").join("wui-lsp");
+		if cfg!(windows) {
+			path.set_extension("exe");
+		}
+
+		Ok(Command {
+			command: path.to_string_lossy().to_string(),
+			args: vec!["--stdio".into()],
+			env: Default::default(),
+		})
+	}
+}
+
+zed::register_extension!(WuiExt);
+</file>
+
+<file path="tests/grammar.rs">
+use std::path::PathBuf;
+use std::process::Command;
+
+#[test]
+fn grammar_generates() {
+	let Some(tree_sitter) = find_tree_sitter() else {
+		eprintln!("tree-sitter not installed; skipping grammar generation test");
+		return;
+	};
+
+	let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+	let grammar_dir = root.join("grammars/wui");
+	let status = Command::new(tree_sitter)
+		.current_dir(&grammar_dir)
+		.arg("generate")
+		.status()
+		.expect("failed to run tree-sitter generate");
+
+	assert!(status.success(), "tree-sitter generate failed");
+}
+
+fn find_tree_sitter() -> Option<String> {
+	if let Ok(path) = std::env::var("TREE_SITTER") {
+		return Some(path);
+	}
+	let status = Command::new("tree-sitter").arg("--version").status();
+	match status {
+		Ok(status) if status.success() => Some("tree-sitter".to_string()),
+		_ => None,
+	}
+}
+</file>
+
+<file path="Cargo.toml">
+[package]
+name = "zed-wui"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+zed_extension_api = "0.1"
+</file>
+
+<file path="extension.toml">
+schema_version = 1
+id = "wui"
+name = "WUI"
+version = "0.0.1"
+description = "WUI language support"
+authors = ["You"]
+repository = ""
+
+[language_servers.wui-lsp]
+name = "WUI LSP"
+languages = ["WUI"]
+
+[grammars.wui]
+repository = "https://github.com/J45k4/wgui.git"
+rev = "8514678e07db56cb2f5ca4e61f152b9600fc699c"
+</file>
+
+</files>
