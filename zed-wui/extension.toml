@@ -1,0 +1,15 @@
+schema_version = 1
+id = "wui"
+name = "WUI"
+version = "0.0.1"
+description = "WUI language support"
+authors = ["You"]
+repository = ""
+
+[language_servers.wui-lsp]
+name = "WUI LSP"
+languages = ["WUI"]
+
+[grammars.wui]
+repository = "file:///Users/puppy/work/my/wgui/zed-wui/grammars/wui"
+rev = "local"

@@ -1,0 +1,4 @@
+name = "WUI"
+grammar = "wui"
+path_suffixes = ["wui"]
+line_comments = ["// "]
