@@ -1,0 +1,1 @@
+repomix -o ./wgui.xml
