@@ -12,5 +12,5 @@ languages = ["WUI"]
 
 [grammars.wui]
 repository = "https://github.com/J45k4/wgui.git"
-rev = "8514678e07db56cb2f5ca4e61f152b9600fc699c"
+rev = "fc85818aa1e1c0cf703696b465e310e4d51f86d2"
 path = "tree-sitter-wui"
