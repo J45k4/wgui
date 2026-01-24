@@ -48,6 +48,10 @@ async fn main() {
 
 See `docs/wui.md` for the WUI template language, compiler/runtime usage, and hot reload notes.
 
+## LSP
+
+See `docs/lsp.md` for setting up the `wui-lsp` server in Zed or other editors.
+
 ## API overview
 
 - Core runtime: `Wgui::new(addr)`, `wgui.next().await`, `wgui.render(client_id, item)`

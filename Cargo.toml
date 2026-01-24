@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "wgui",
+    "wui-lsp",
     "examples/*"
 ]
 

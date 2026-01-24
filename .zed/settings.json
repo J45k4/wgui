@@ -1,0 +1,18 @@
+{
+  "file_types": {
+    "WUI": ["wui"]
+  },
+  "languages": {
+    "WUI": {
+      "language_servers": ["wui-lsp"]
+    }
+  },
+  "lsp": {
+    "wui-lsp": {
+      "binary": {
+        "path": "target/debug/wui-lsp",
+        "arguments": ["--stdio"]
+      }
+    }
+  }
+}
