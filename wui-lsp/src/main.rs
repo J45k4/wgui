@@ -197,6 +197,28 @@ impl LanguageServer for Backend {
 			change_annotations: None,
 		}))
 	}
+
+	async fn diagnostic(
+		&self,
+		params: DocumentDiagnosticParams,
+	) -> LspResult<DocumentDiagnosticReportResult> {
+		let uri = params.text_document.uri;
+		let text = self.get_text(&uri).await?;
+		let diagnostics = analyze(&text)
+			.into_iter()
+			.map(|diag| to_lsp_diagnostic(&text, diag))
+			.collect::<Vec<_>>();
+
+		Ok(DocumentDiagnosticReportResult::Report(
+			DocumentDiagnosticReport::Full(RelatedFullDocumentDiagnosticReport {
+				related_documents: None,
+				full_document_diagnostic_report: FullDocumentDiagnosticReport {
+					result_id: None,
+					items: diagnostics,
+				},
+			}),
+		))
+	}
 }
 
 impl Backend {

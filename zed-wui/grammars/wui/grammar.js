@@ -1,7 +1,7 @@
 module.exports = grammar({
   name: "wui",
 
-  extras: $ => [\s],
+  extras: $ => [/\s/],
 
   rules: {
     source_file: $ => repeat($._node),
