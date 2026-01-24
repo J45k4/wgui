@@ -11,7 +11,11 @@ fn main() {
 		panic!("wui input directory not found: {}", input_dir.display());
 	}
 	if let Err(err) = fs::create_dir_all(output_dir) {
-		panic!("failed to create output dir {}: {}", output_dir.display(), err);
+		panic!(
+			"failed to create output dir {}: {}",
+			output_dir.display(),
+			err
+		);
 	}
 
 	let mut routes = Vec::new();

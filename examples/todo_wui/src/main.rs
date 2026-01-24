@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, SystemTime};
 use tokio::sync::mpsc;
-use wgui::*;
 use wgui::wui::runtime::{RuntimeAction, Template, WuiValue, WuiValueProvider};
+use wgui::*;
 
 #[derive(Debug, Clone)]
 struct TodoItem {
@@ -20,10 +20,7 @@ impl TodoItem {
 		WuiValue::object(vec![
 			("id".to_string(), WuiValue::Number(self.id as f64)),
 			("name".to_string(), WuiValue::String(self.name.clone())),
-			(
-				"completed".to_string(),
-				WuiValue::Bool(self.completed),
-			),
+			("completed".to_string(), WuiValue::Bool(self.completed)),
 		])
 	}
 }

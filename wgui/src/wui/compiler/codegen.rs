@@ -396,7 +396,9 @@ fn should_emit_prop(tag: &str, prop: &IrProp) -> bool {
 }
 
 fn state_type_path(state_type: &str) -> String {
-	if state_type.contains("::") || state_type.starts_with("crate::") || state_type.starts_with("super::")
+	if state_type.contains("::")
+		|| state_type.starts_with("crate::")
+		|| state_type.starts_with("super::")
 	{
 		state_type.to_string()
 	} else {

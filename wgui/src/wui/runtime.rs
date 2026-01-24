@@ -383,7 +383,9 @@ fn eval_expr(expr: &Expr, ctx: &EvalContext) -> WuiValue {
 			UnaryOp::Not => WuiValue::Bool(!value_as_bool(&eval_expr(expr, ctx))),
 			UnaryOp::Neg => WuiValue::Number(-value_as_number(&eval_expr(expr, ctx))),
 		},
-		Expr::Binary { left, op, right, .. } => {
+		Expr::Binary {
+			left, op, right, ..
+		} => {
 			let left = eval_expr(left, ctx);
 			let right = eval_expr(right, ctx);
 			match op {
@@ -402,7 +404,12 @@ fn eval_expr(expr: &Expr, ctx: &EvalContext) -> WuiValue {
 				BinaryOp::Or => WuiValue::Bool(value_as_bool(&left) || value_as_bool(&right)),
 			}
 		}
-		Expr::Ternary { cond, then_expr, else_expr, .. } => {
+		Expr::Ternary {
+			cond,
+			then_expr,
+			else_expr,
+			..
+		} => {
 			if value_as_bool(&eval_expr(cond, ctx)) {
 				eval_expr(then_expr, ctx)
 			} else {
@@ -482,5 +489,9 @@ fn action_id(name: &str) -> u32 {
 		hash ^= *byte as u32;
 		hash = hash.wrapping_mul(0x01000193);
 	}
-	if hash == 0 { 1 } else { hash }
+	if hash == 0 {
+		1
+	} else {
+		hash
+	}
 }
