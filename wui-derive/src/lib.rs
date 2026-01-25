@@ -9,24 +9,18 @@ pub fn derive_wui_value(input: TokenStream) -> TokenStream {
 	let fields = match input.data {
 		Data::Struct(data) => data.fields,
 		_ => {
-			return syn::Error::new_spanned(
-				name,
-				"WuiValue can only be derived for structs",
-			)
-			.to_compile_error()
-			.into();
+			return syn::Error::new_spanned(name, "WuiValue can only be derived for structs")
+				.to_compile_error()
+				.into();
 		}
 	};
 
 	let named = match fields {
 		Fields::Named(named) => named.named,
 		_ => {
-			return syn::Error::new_spanned(
-				name,
-				"WuiValue requires named fields",
-			)
-			.to_compile_error()
-			.into();
+			return syn::Error::new_spanned(name, "WuiValue requires named fields")
+				.to_compile_error()
+				.into();
 		}
 	};
 

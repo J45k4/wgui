@@ -32,9 +32,7 @@ async fn main() {
 							state.client_ids.insert(client_id);
 							state.count
 						};
-						render_handle
-							.render(client_id, render_counter(count))
-							.await;
+						render_handle.render(client_id, render_counter(count)).await;
 					}
 					ClientEvent::Disconnected { id: _ } => {
 						ui_state.lock().await.client_ids.remove(&client_id);

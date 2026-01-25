@@ -22,11 +22,18 @@ pub fn render_item(item: &Item) -> String {
 	match &item.payload {
 		ItemPayload::Layout(layout) => render_layout(item, layout),
 		ItemPayload::Text { value } => render_text(item, value),
-		ItemPayload::TextInput { value, placeholder } => render_text_input(item, value, placeholder),
+		ItemPayload::TextInput { value, placeholder } => {
+			render_text_input(item, value, placeholder)
+		}
 		ItemPayload::Textarea { value, placeholder } => render_textarea(item, value, placeholder),
 		ItemPayload::Select { value, options } => render_select(item, value, options),
 		ItemPayload::Checkbox { checked } => render_checkbox(item, *checked),
-		ItemPayload::Slider { min, max, value, step } => render_slider(item, *min, *max, *value, *step),
+		ItemPayload::Slider {
+			min,
+			max,
+			value,
+			step,
+		} => render_slider(item, *min, *max, *value, *step),
 		ItemPayload::Button { title } => render_button(item, title),
 		ItemPayload::Table { items } => render_table(item, items),
 		ItemPayload::Thead { items } => render_section(item, "thead", items),
@@ -34,11 +41,18 @@ pub fn render_item(item: &Item) -> String {
 		ItemPayload::Tr { items } => render_section(item, "tr", items),
 		ItemPayload::Th { item: cell } => render_cell(item, "th", cell),
 		ItemPayload::Td { item: cell } => render_cell(item, "td", cell),
-		ItemPayload::Img { src, alt, object_fit } => render_image(item, src, alt, object_fit.as_deref()),
+		ItemPayload::Img {
+			src,
+			alt,
+			object_fit,
+		} => render_image(item, src, alt, object_fit.as_deref()),
 		ItemPayload::FolderPicker => render_folder_picker(item),
-		ItemPayload::FloatingLayout { x, y, width, height } => {
-			render_floating_layout(item, *x, *y, *width, *height)
-		}
+		ItemPayload::FloatingLayout {
+			x,
+			y,
+			width,
+			height,
+		} => render_floating_layout(item, *x, *y, *width, *height),
 		ItemPayload::Modal { body, open } => render_modal(item, body, *open),
 		ItemPayload::None => String::new(),
 	}
@@ -47,10 +61,13 @@ pub fn render_item(item: &Item) -> String {
 fn render_layout(item: &Item, layout: &Layout) -> String {
 	let mut style = StyleBuilder::new();
 	style.push("display", "flex");
-	style.push("flex-direction", match layout.flex {
-		FlexDirection::Row => "row",
-		FlexDirection::Column => "column",
-	});
+	style.push(
+		"flex-direction",
+		match layout.flex {
+			FlexDirection::Row => "row",
+			FlexDirection::Column => "column",
+		},
+	);
 	if layout.spacing > 0 {
 		style.push("gap", &format!("{}px", layout.spacing));
 	}
@@ -256,7 +273,14 @@ fn render_modal(item: &Item, body: &[Item], open: bool) -> String {
 		("data-modal".to_string(), "overlay".to_string()),
 		("role".to_string(), "dialog".to_string()),
 		("aria-modal".to_string(), "true".to_string()),
-		("aria-hidden".to_string(), if open { "false".to_string() } else { "true".to_string() }),
+		(
+			"aria-hidden".to_string(),
+			if open {
+				"false".to_string()
+			} else {
+				"true".to_string()
+			},
+		),
 	]);
 	render_element("div", &[], style, &attrs, &children)
 }
@@ -427,7 +451,9 @@ struct StyleBuilder {
 
 impl StyleBuilder {
 	fn new() -> Self {
-		Self { entries: Vec::new() }
+		Self {
+			entries: Vec::new(),
+		}
 	}
 
 	fn push(&mut self, name: &str, value: &str) {

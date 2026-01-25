@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex};
 use crate::context::SharedContext;
+use std::sync::{Arc, Mutex};
 
 pub struct TodoController {
 	shared: Arc<Mutex<SharedContext>>,

@@ -38,17 +38,13 @@ struct ActionRef {
 impl LanguageServer for Backend {
 	async fn initialize(&self, params: InitializeParams) -> LspResult<InitializeResult> {
 		let capabilities = ServerCapabilities {
-			text_document_sync: Some(TextDocumentSyncCapability::Kind(
-				TextDocumentSyncKind::FULL,
-			)),
-			diagnostic_provider: Some(DiagnosticServerCapabilities::Options(
-				DiagnosticOptions {
-					identifier: Some("wui".to_string()),
-					inter_file_dependencies: false,
-					workspace_diagnostics: false,
-					work_done_progress_options: Default::default(),
-				},
-			)),
+			text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
+			diagnostic_provider: Some(DiagnosticServerCapabilities::Options(DiagnosticOptions {
+				identifier: Some("wui".to_string()),
+				inter_file_dependencies: false,
+				workspace_diagnostics: false,
+				work_done_progress_options: Default::default(),
+			})),
 			completion_provider: Some(CompletionOptions {
 				resolve_provider: Some(false),
 				trigger_characters: Some(vec![
@@ -257,11 +253,7 @@ fn analyze(text: &str) -> Vec<WuiDiagnostic> {
 	if validated.is_none() {
 		return diags;
 	}
-	let _ = wgui::wui::compiler::lower::lower(
-		validated.as_ref().unwrap(),
-		"main",
-		&mut diags,
-	);
+	let _ = wgui::wui::compiler::lower::lower(validated.as_ref().unwrap(), "main", &mut diags);
 	diags
 }
 
@@ -433,15 +425,7 @@ fn action_completions(actions: &[ActionRef]) -> Vec<CompletionItem> {
 
 fn expr_completions() -> Vec<CompletionItem> {
 	let labels = [
-		"state",
-		"item",
-		"true",
-		"false",
-		"null",
-		"len(",
-		"trim(",
-		"lower(",
-		"upper(",
+		"state", "item", "true", "false", "null", "len(", "trim(", "lower(", "upper(",
 	];
 	labels
 		.iter()
@@ -494,7 +478,10 @@ fn action_at_offset(actions: &[ActionRef], offset: usize) -> Option<String> {
 }
 
 fn is_event_prop(name: &str) -> bool {
-	matches!(name, "onClick" | "onTextChanged" | "onSliderChange" | "onSelect")
+	matches!(
+		name,
+		"onClick" | "onTextChanged" | "onSliderChange" | "onSelect"
+	)
 }
 
 fn is_ident_char(ch: char) -> bool {
@@ -658,7 +645,10 @@ fn offset_to_position(text: &str, offset: usize) -> Position {
 		}
 		idx = next;
 	}
-	Position { line, character: col }
+	Position {
+		line,
+		character: col,
+	}
 }
 
 fn position_to_offset(text: &str, position: Position) -> usize {

@@ -1,11 +1,11 @@
+use ::axum::Router;
 use log::Level;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use ::axum::Router;
 use wgui::WuiValue;
 
-mod controllers;
 mod context;
+mod controllers;
 mod generated;
 
 #[derive(Debug, Clone, WuiValue)]
