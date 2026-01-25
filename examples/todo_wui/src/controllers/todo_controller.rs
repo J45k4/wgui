@@ -2,16 +2,12 @@ use std::sync::{Arc, Mutex};
 use crate::context::SharedContext;
 
 pub struct TodoController {
-	next_id: u32,
 	shared: Arc<Mutex<SharedContext>>,
 }
 
 impl TodoController {
 	pub fn new(shared: Arc<Mutex<SharedContext>>) -> Self {
-		Self {
-			next_id: 1,
-			shared,
-		}
+		Self { shared }
 	}
 
 	pub fn state(&self) -> crate::TodoState {
@@ -27,14 +23,18 @@ impl TodoController {
 
 	pub(crate) fn add_todo(&mut self) {
 		let mut shared = self.shared.lock().unwrap();
+		if shared.next_id == 0 {
+			shared.next_id = 1;
+		}
 		let name = shared.state.new_todo_name.trim().to_string();
 		if !name.is_empty() {
+			let id = shared.next_id;
 			shared.state.items.push(crate::TodoItem {
-				id: self.next_id,
+				id,
 				name,
 				completed: false,
 			});
-			self.next_id += 1;
+			shared.next_id += 1;
 		}
 		shared.state.new_todo_name.clear();
 	}
