@@ -5,46 +5,21 @@ use std::path::Path;
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
 use wgui::wui::runtime::{
-	load_template, spawn_template_watcher, RuntimeAction, TemplateLoadError, WuiValue, WuiValueProvider,
+	load_template, spawn_template_watcher, RuntimeAction, Template, TemplateLoadError,
 };
 use wgui::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, WuiValue)]
 struct TodoItem {
 	id: u32,
 	name: String,
 	completed: bool,
 }
 
-impl TodoItem {
-	fn to_wui_value(&self) -> WuiValue {
-		WuiValue::object(vec![
-			("id".to_string(), WuiValue::Number(self.id as f64)),
-			("name".to_string(), WuiValue::String(self.name.clone())),
-			("completed".to_string(), WuiValue::Bool(self.completed)),
-		])
-	}
-}
-
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, WuiValue)]
 struct TodoState {
 	new_todo_name: String,
 	items: Vec<TodoItem>,
-}
-
-impl WuiValueProvider for TodoState {
-	fn wui_value(&self) -> WuiValue {
-		WuiValue::object(vec![
-			(
-				"new_todo_name".to_string(),
-				WuiValue::String(self.new_todo_name.clone()),
-			),
-			(
-				"items".to_string(),
-				WuiValue::List(self.items.iter().map(|item| item.to_wui_value()).collect()),
-			),
-		])
-	}
 }
 
 fn load_template_or_panic(path: &Path, module_name: &str) -> Template {

@@ -37,6 +37,85 @@ pub trait WuiValueProvider {
 	fn wui_value(&self) -> WuiValue;
 }
 
+pub trait WuiValueConvert {
+	fn to_wui_value(&self) -> WuiValue;
+}
+
+impl<T: WuiValueConvert + ?Sized> WuiValueProvider for T {
+	fn wui_value(&self) -> WuiValue {
+		self.to_wui_value()
+	}
+}
+
+impl WuiValueConvert for WuiValue {
+	fn to_wui_value(&self) -> WuiValue {
+		self.clone()
+	}
+}
+
+impl WuiValueConvert for String {
+	fn to_wui_value(&self) -> WuiValue {
+		WuiValue::String(self.clone())
+	}
+}
+
+impl WuiValueConvert for &str {
+	fn to_wui_value(&self) -> WuiValue {
+		WuiValue::String(self.to_string())
+	}
+}
+
+impl WuiValueConvert for bool {
+	fn to_wui_value(&self) -> WuiValue {
+		WuiValue::Bool(*self)
+	}
+}
+
+impl WuiValueConvert for u32 {
+	fn to_wui_value(&self) -> WuiValue {
+		WuiValue::Number(*self as f64)
+	}
+}
+
+impl WuiValueConvert for i32 {
+	fn to_wui_value(&self) -> WuiValue {
+		WuiValue::Number(*self as f64)
+	}
+}
+
+impl WuiValueConvert for usize {
+	fn to_wui_value(&self) -> WuiValue {
+		WuiValue::Number(*self as f64)
+	}
+}
+
+impl WuiValueConvert for f32 {
+	fn to_wui_value(&self) -> WuiValue {
+		WuiValue::Number(*self as f64)
+	}
+}
+
+impl WuiValueConvert for f64 {
+	fn to_wui_value(&self) -> WuiValue {
+		WuiValue::Number(*self)
+	}
+}
+
+impl<T: WuiValueConvert> WuiValueConvert for Vec<T> {
+	fn to_wui_value(&self) -> WuiValue {
+		WuiValue::List(self.iter().map(|item| item.to_wui_value()).collect())
+	}
+}
+
+impl<T: WuiValueConvert> WuiValueConvert for Option<T> {
+	fn to_wui_value(&self) -> WuiValue {
+		match self {
+			Some(value) => value.to_wui_value(),
+			None => WuiValue::Null,
+		}
+	}
+}
+
 #[derive(Debug)]
 pub enum TemplateLoadError {
 	Io(std::io::Error),

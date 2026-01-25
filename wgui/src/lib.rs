@@ -22,6 +22,8 @@ mod ui_client;
 pub mod ws;
 pub mod wui;
 
+pub use wui_derive::WuiValue;
+
 use crate::ui_client::UiWsWorker;
 
 #[cfg(feature = "axum")]

@@ -2,6 +2,7 @@
 members = [
     "wgui",
     "wui-lsp",
+    "wui-derive",
     "zed-wui",
     "examples/*"
 ]

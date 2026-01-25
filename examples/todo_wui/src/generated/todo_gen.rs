@@ -39,6 +39,6 @@ pub fn render(state: &crate::TodoState) -> Item {
 			wgui::vstack(items)
 			}.spacing(4));
 		wgui::vstack(items)
-		}.spacing(8).padding(8));
+		}.spacing(8).padding(2));
 	wgui::vstack(children)
 }
