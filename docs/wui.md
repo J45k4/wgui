@@ -114,6 +114,7 @@ There are two ways to use WUI today:
 1) Compile-time codegen
 - Use `wgui/src/bin/wui_gen.rs` or a build script that calls `wgui::wui::compiler::compile`.
 - Emits `*_gen.rs` modules with `render()` and `decode()` helpers.
+- Optionally generates a controller stub under `src/controllers/*_controller.rs` once (not overwritten).
 
 2) Runtime templates (hot reload)
 - Use `wgui::wui::runtime::Template` to parse and render at runtime.

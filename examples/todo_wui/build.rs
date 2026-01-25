@@ -55,10 +55,23 @@ fn main() {
 		let out_path = output_dir.join(format!("{}_gen.rs", module_name));
 		fs::write(&out_path, generated.code)
 			.unwrap_or_else(|err| panic!("failed to write {}: {}", out_path.display(), err));
+		if let Some(stub) = generated.controller_stub.as_ref() {
+			let controllers_dir = Path::new("src/controllers");
+			let controller_path = controllers_dir.join(format!("{}_controller.rs", module_name));
+			if !controller_path.exists() {
+				fs::create_dir_all(controllers_dir).unwrap_or_else(|err| {
+					panic!("failed to create {}: {}", controllers_dir.display(), err);
+				});
+				fs::write(&controller_path, stub).unwrap_or_else(|err| {
+					panic!("failed to write {}: {}", controller_path.display(), err);
+				});
+			}
+		}
 		modules.push(module_name);
 	}
 
 	write_mod_rs(output_dir, &modules);
+	write_controllers_mod(output_dir, &modules);
 	write_routes(output_dir, &routes);
 }
 
@@ -88,4 +101,23 @@ fn write_routes(dir: &Path, routes: &[(String, String)]) {
 	let out_path = dir.join("routes.gen.rs");
 	fs::write(&out_path, contents)
 		.unwrap_or_else(|err| panic!("failed to write {}: {}", out_path.display(), err));
+}
+
+fn write_controllers_mod(dir: &Path, modules: &[String]) {
+	let controllers_dir = dir
+		.parent()
+		.unwrap_or_else(|| Path::new("src"))
+		.join("controllers");
+	let mod_path = controllers_dir.join("mod.rs");
+	if mod_path.exists() {
+		return;
+	}
+	fs::create_dir_all(&controllers_dir)
+		.unwrap_or_else(|err| panic!("failed to create {}: {}", controllers_dir.display(), err));
+	let mut contents = String::new();
+	for module in modules {
+		contents.push_str(&format!("pub mod {}_controller;\n", module));
+	}
+	fs::write(&mod_path, contents)
+		.unwrap_or_else(|err| panic!("failed to write {}: {}", mod_path.display(), err));
 }

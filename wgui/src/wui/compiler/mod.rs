@@ -10,6 +10,7 @@ use crate::wui::diagnostic::Diagnostic;
 pub struct GeneratedModule {
 	pub code: String,
 	pub routes: Vec<(String, String)>,
+	pub controller_stub: Option<String>,
 }
 
 pub fn compile(source: &str, module_name: &str) -> Result<GeneratedModule, Vec<Diagnostic>> {
@@ -24,12 +25,17 @@ pub fn compile(source: &str, module_name: &str) -> Result<GeneratedModule, Vec<D
 		return Err(diags);
 	}
 	let code = codegen::generate(&lowered);
+	let controller_stub = codegen::generate_controller_stub(&lowered, module_name);
 	let routes = lowered
 		.pages
 		.iter()
 		.filter_map(|page| page.route.clone().map(|route| (page.module.clone(), route)))
 		.collect();
-	Ok(GeneratedModule { code, routes })
+	Ok(GeneratedModule {
+		code,
+		routes,
+		controller_stub,
+	})
 }
 
 #[cfg(test)]

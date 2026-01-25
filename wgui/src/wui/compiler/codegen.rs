@@ -5,7 +5,15 @@ use crate::wui::compiler::ir::{
 
 pub fn generate(doc: &IrDocument) -> String {
 	let mut out = String::new();
-	out.push_str("use wgui::*;\n\n");
+	out.push_str("use wgui::*;\n");
+	if let Some(page) = doc.pages.first() {
+		let controller_name = format!("{}Controller", pascal_case(&page.module));
+		out.push_str(&format!(
+			"use crate::controllers::{}_controller::{};\n",
+			page.module, controller_name
+		));
+	}
+	out.push('\n');
 	out.push_str("pub enum Action {\n");
 	for action in &doc.actions {
 		out.push_str(&format!(
@@ -33,7 +41,107 @@ pub fn generate(doc: &IrDocument) -> String {
 	));
 	out.push_str(&emit_nodes(&doc.nodes, 1));
 	out.push_str("}\n");
+	if let Some(controller_impl) = generate_controller_impl(doc) {
+		out.push('\n');
+		out.push_str(&controller_impl);
+	}
 	out
+}
+
+pub fn generate_controller_stub(doc: &IrDocument, module_name: &str) -> Option<String> {
+	let state_type = doc
+		.pages
+		.first()
+		.and_then(|page| page.state_type.clone())
+		.unwrap_or_else(|| "State".to_string());
+	let state_type_path = state_type_path(&state_type);
+	let controller_name = format!("{}Controller", pascal_case(module_name));
+	let mut out = String::new();
+	out.push_str(&format!(
+		"pub struct {} {{\n\tpub state: {},\n}}\n\n",
+		controller_name, state_type_path
+	));
+	out.push_str(&format!(
+		"impl {} {{\n\tpub fn new(state: {}) -> Self {{\n\t\tSelf {{ state }}\n\t}}\n\n",
+		controller_name, state_type_path
+	));
+	out.push_str("\t// <wui:handlers>\n");
+	for action in &doc.actions {
+		let method = action_method_name(&action.name);
+		match action.payload {
+			ActionPayload::None => {
+				out.push_str(&format!(
+					"\tpub(crate) fn {}(&mut self) {{\n\t\t// TODO\n\t}}\n\n",
+					method
+				));
+			}
+			ActionPayload::U32 => {
+				out.push_str(&format!(
+					"\tpub(crate) fn {}(&mut self, _arg: u32) {{\n\t\t// TODO\n\t}}\n\n",
+					method
+				));
+			}
+			ActionPayload::String => {
+				out.push_str(&format!(
+					"\tpub(crate) fn {}(&mut self, _value: String) {{\n\t\t// TODO\n\t}}\n\n",
+					method
+				));
+			}
+			ActionPayload::I32 => {
+				out.push_str(&format!(
+					"\tpub(crate) fn {}(&mut self, _value: i32) {{\n\t\t// TODO\n\t}}\n\n",
+					method
+				));
+			}
+		}
+	}
+	out.push_str("\t// </wui:handlers>\n}\n");
+	Some(out)
+}
+
+fn generate_controller_impl(doc: &IrDocument) -> Option<String> {
+	let page = doc.pages.first()?;
+	let module_name = &page.module;
+	let controller_name = format!("{}Controller", pascal_case(module_name));
+	let mut out = String::new();
+	out.push_str(&format!("impl {} {{\n", controller_name));
+	out.push_str("\tpub fn render(&self) -> Item {\n\t\trender(&self.state)\n\t}\n\n");
+	out.push_str(
+		"\tpub fn handle(&mut self, event: &ClientEvent) -> bool {\n\t\tif let Some(action) = decode(event) {\n\t\t\tself.reduce(action);\n\t\t\ttrue\n\t\t} else {\n\t\t\tfalse\n\t\t}\n\t}\n\n",
+	);
+	out.push_str("\tfn reduce(&mut self, action: Action) {\n\t\tmatch action {\n");
+	for action in &doc.actions {
+		let variant = action_variant(&action.name);
+		let method = action_method_name(&action.name);
+		match action.payload {
+			ActionPayload::None => {
+				out.push_str(&format!(
+					"\t\t\tAction::{} => self.{}(),\n",
+					variant, method
+				));
+			}
+			ActionPayload::U32 => {
+				out.push_str(&format!(
+					"\t\t\tAction::{} {{ arg }} => self.{}(arg),\n",
+					variant, method
+				));
+			}
+			ActionPayload::String => {
+				out.push_str(&format!(
+					"\t\t\tAction::{} {{ value }} => self.{}(value),\n",
+					variant, method
+				));
+			}
+			ActionPayload::I32 => {
+				out.push_str(&format!(
+					"\t\t\tAction::{} {{ value }} => self.{}(value),\n",
+					variant, method
+				));
+			}
+		}
+	}
+	out.push_str("\t\t}\n\t}\n}\n");
+	Some(out)
 }
 
 fn action_payload(action: &ActionDef) -> String {
@@ -438,5 +546,57 @@ fn action_id(name: &str) -> u32 {
 		1
 	} else {
 		hash
+	}
+}
+
+fn pascal_case(input: &str) -> String {
+	let mut out = String::new();
+	let mut upper_next = true;
+	for ch in input.chars() {
+		if ch.is_ascii_alphanumeric() {
+			if upper_next {
+				out.push(ch.to_ascii_uppercase());
+				upper_next = false;
+			} else {
+				out.push(ch);
+			}
+		} else {
+			upper_next = true;
+		}
+	}
+	if out.is_empty() {
+		"Controller".to_string()
+	} else {
+		out
+	}
+}
+
+fn action_method_name(name: &str) -> String {
+	let mut out = String::new();
+	let mut prev_underscore = false;
+	for (i, ch) in name.chars().enumerate() {
+		if ch.is_ascii_alphanumeric() {
+			if ch.is_ascii_uppercase() {
+				if i != 0 && !prev_underscore {
+					out.push('_');
+				}
+				out.push(ch.to_ascii_lowercase());
+				prev_underscore = false;
+			} else {
+				out.push(ch.to_ascii_lowercase());
+				prev_underscore = false;
+			}
+		} else if !prev_underscore {
+			out.push('_');
+			prev_underscore = true;
+		}
+	}
+	if out.ends_with('_') {
+		out.pop();
+	}
+	if out.is_empty() {
+		"action".to_string()
+	} else {
+		out
 	}
 }

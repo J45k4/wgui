@@ -1,4 +1,5 @@
 use wgui::*;
+use crate::controllers::todo_controller::TodoController;
 
 pub enum Action {
 	EditNewTodo { value: String },
@@ -39,6 +40,29 @@ pub fn render(state: &crate::TodoState) -> Item {
 			wgui::vstack(items)
 			}.spacing(4));
 		wgui::vstack(items)
-		}.spacing(8).padding(2));
+		}.spacing(8).padding(8));
 	wgui::vstack(children)
+}
+
+impl TodoController {
+	pub fn render(&self) -> Item {
+		render(&self.state)
+	}
+
+	pub fn handle(&mut self, event: &ClientEvent) -> bool {
+		if let Some(action) = decode(event) {
+			self.reduce(action);
+			true
+		} else {
+			false
+		}
+	}
+
+	fn reduce(&mut self, action: Action) {
+		match action {
+			Action::EditNewTodo { value } => self.edit_new_todo(value),
+			Action::AddTodo => self.add_todo(),
+			Action::ToggleTodo { arg } => self.toggle_todo(arg),
+		}
+	}
 }
