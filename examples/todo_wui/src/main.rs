@@ -1,12 +1,12 @@
 use log::Level;
 use std::collections::HashSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, RwLock};
-use std::thread;
-use std::time::{Duration, SystemTime};
 use tokio::sync::mpsc;
-use wgui::wui::runtime::{RuntimeAction, Template, WuiValue, WuiValueProvider};
+use wgui::wui::runtime::{
+	load_template, spawn_template_watcher, RuntimeAction, TemplateLoadError, WuiValue, WuiValueProvider,
+};
 use wgui::*;
 
 #[derive(Debug, Clone)]
@@ -47,13 +47,13 @@ impl WuiValueProvider for TodoState {
 	}
 }
 
-fn load_template(path: &Path, module_name: &str) -> Template {
-	let source = fs::read_to_string(path).unwrap_or_else(|err| {
-		panic!("failed to read {}: {}", path.display(), err);
-	});
-	match Template::parse(&source, module_name) {
+fn load_template_or_panic(path: &Path, module_name: &str) -> Template {
+	match load_template(path, module_name) {
 		Ok(template) => template,
-		Err(diags) => {
+		Err(TemplateLoadError::Io(err)) => {
+			panic!("failed to read {}: {}", path.display(), err);
+		}
+		Err(TemplateLoadError::Diagnostics(diags)) => {
 			for diag in diags {
 				eprintln!(
 					"template error: {} at {}..{}",
@@ -61,24 +61,6 @@ fn load_template(path: &Path, module_name: &str) -> Template {
 				);
 			}
 			panic!("failed to parse template");
-		}
-	}
-}
-
-fn file_mtime(path: &Path) -> SystemTime {
-	fs::metadata(path)
-		.and_then(|meta| meta.modified())
-		.unwrap_or(SystemTime::UNIX_EPOCH)
-}
-
-fn watch_template(path: PathBuf, tx: mpsc::UnboundedSender<()>) {
-	let mut last_mtime = file_mtime(&path);
-	loop {
-		thread::sleep(Duration::from_millis(250));
-		let mtime = file_mtime(&path);
-		if mtime > last_mtime {
-			last_mtime = mtime;
-			let _ = tx.send(());
 		}
 	}
 }
@@ -93,12 +75,9 @@ async fn main() {
 
 	let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
 	let template_path = Path::new(&manifest_dir).join("wui/pages/todo.wui");
-	let template = Arc::new(RwLock::new(load_template(&template_path, "todo")));
+	let template = Arc::new(RwLock::new(load_template_or_panic(&template_path, "todo")));
 	let (reload_tx, mut reload_rx) = mpsc::unbounded_channel();
-	thread::spawn({
-		let path = template_path.clone();
-		move || watch_template(path, reload_tx)
-	});
+	let _watcher = spawn_template_watcher(template_path.clone(), reload_tx);
 
 	let ssr_state = state.clone();
 	let ssr_template = template.clone();

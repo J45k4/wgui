@@ -4,6 +4,11 @@ use crate::wui::compiler::ir::{ActionDef, ActionPayload, EventKind, IrNode, IrPr
 use crate::wui::diagnostic::Diagnostic;
 
 use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::{Duration, SystemTime};
+use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
 pub struct Template {
@@ -30,6 +35,12 @@ pub enum WuiValue {
 
 pub trait WuiValueProvider {
 	fn wui_value(&self) -> WuiValue;
+}
+
+#[derive(Debug)]
+pub enum TemplateLoadError {
+	Io(std::io::Error),
+	Diagnostics(Vec<Diagnostic>),
 }
 
 impl Template {
@@ -62,6 +73,34 @@ impl Template {
 		}
 		None
 	}
+}
+
+pub fn load_template(path: &Path, module_name: &str) -> Result<Template, TemplateLoadError> {
+	let source = fs::read_to_string(path).map_err(TemplateLoadError::Io)?;
+	Template::parse(&source, module_name).map_err(TemplateLoadError::Diagnostics)
+}
+
+pub fn spawn_template_watcher(
+	path: PathBuf,
+	tx: mpsc::UnboundedSender<()>,
+) -> thread::JoinHandle<()> {
+	thread::spawn(move || {
+		let mut last_mtime = file_mtime(&path);
+		loop {
+			thread::sleep(Duration::from_millis(250));
+			let mtime = file_mtime(&path);
+			if mtime > last_mtime {
+				last_mtime = mtime;
+				let _ = tx.send(());
+			}
+		}
+	})
+}
+
+fn file_mtime(path: &Path) -> SystemTime {
+	fs::metadata(path)
+		.and_then(|meta| meta.modified())
+		.unwrap_or(SystemTime::UNIX_EPOCH)
 }
 
 impl WuiValue {
