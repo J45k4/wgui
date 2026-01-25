@@ -101,16 +101,17 @@ async fn main() {
 	let mut client_ids = HashSet::new();
 	let mut state = State::default();
 
-	while let Some(event) = wgui.next().await {
-		log::info!("{:?}", event);
+	while let Some(message) = wgui.next().await {
+		log::info!("{:?}", message.event);
 
-		match event {
-			ClientEvent::Disconnected { id } => {
-				client_ids.remove(&id);
+		let client_id = message.client_id;
+		match message.event {
+			ClientEvent::Disconnected { id: _ } => {
+				client_ids.remove(&client_id);
 			}
-			ClientEvent::Connected { id } => {
-				wgui.render(id, render(&state)).await;
-				client_ids.insert(id);
+			ClientEvent::Connected { id: _ } => {
+				wgui.render(client_id, render(&state)).await;
+				client_ids.insert(client_id);
 			}
 			ClientEvent::PathChanged(_) => {}
 			ClientEvent::Input(q) => {}

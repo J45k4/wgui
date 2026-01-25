@@ -42,10 +42,20 @@ pub fn router_with_ssr(
 	handle: WguiHandle,
 	renderer: Arc<dyn Fn() -> Item + Send + Sync>,
 ) -> Router {
+	router_with_ssr_routes(handle, renderer, &["/"])
+}
+
+/// Convenience router that serves a server-rendered HTML snapshot on first load.
+/// Additional routes receive the same HTML shell so client routing can take over.
+pub fn router_with_ssr_routes(
+	handle: WguiHandle,
+	renderer: Arc<dyn Fn() -> Item + Send + Sync>,
+	routes: &[&str],
+) -> Router {
 	let ws_handle = handle.clone();
 	let ssr_renderer = renderer.clone();
 
-	Router::new()
+	let mut router = Router::new()
 		.route(
 			"/ws",
 			get(move |ws: WebSocketUpgrade| {
@@ -58,15 +68,20 @@ pub fn router_with_ssr(
 				}
 			}),
 		)
-		.route(
-			"/",
+		.route("/index.js", get(index_js))
+		.route("/index.css", get(index_css));
+
+	for route in routes {
+		let renderer = ssr_renderer.clone();
+		router = router.route(
+			route,
 			get(move || {
-				let renderer = ssr_renderer.clone();
+				let renderer = renderer.clone();
 				async move { index_html_ssr(renderer).await }
 			}),
-		)
-		.route("/index.js", get(index_js))
-		.route("/index.css", get(index_css))
+		);
+	}
+	router
 }
 
 async fn index_html() -> impl IntoResponse {

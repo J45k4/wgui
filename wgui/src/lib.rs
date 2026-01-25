@@ -40,12 +40,12 @@ pub use ws::{next_client_id, WsMessage, WsStream};
 
 #[derive(Clone)]
 pub struct WguiHandle {
-	event_tx: mpsc::UnboundedSender<ClientEvent>,
+	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	clients: Clients,
 }
 
 impl WguiHandle {
-	pub(crate) fn new(event_tx: mpsc::UnboundedSender<ClientEvent>, clients: Clients) -> Self {
+	pub(crate) fn new(event_tx: mpsc::UnboundedSender<ClientMessage>, clients: Clients) -> Self {
 		Self { event_tx, clients }
 	}
 
@@ -92,7 +92,7 @@ impl WguiHandle {
 }
 
 pub struct Wgui {
-	events_rx: mpsc::UnboundedReceiver<ClientEvent>,
+	events_rx: mpsc::UnboundedReceiver<ClientMessage>,
 	handle: WguiHandle,
 }
 
@@ -158,7 +158,7 @@ impl Wgui {
 		axum_router(self.handle.clone())
 	}
 
-	pub async fn next(&mut self) -> Option<ClientEvent> {
+	pub async fn next(&mut self) -> Option<ClientMessage> {
 		self.events_rx.recv().await
 	}
 

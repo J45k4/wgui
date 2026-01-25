@@ -23,18 +23,21 @@ async fn main() {
 		let ui_state = ui_state.clone();
 		let render_handle = handle.clone();
 		async move {
-			while let Some(event) = wgui.next().await {
-				match event {
-					ClientEvent::Connected { id } => {
+			while let Some(message) = wgui.next().await {
+				let client_id = message.client_id;
+				match message.event {
+					ClientEvent::Connected { id: _ } => {
 						let count = {
 							let mut state = ui_state.lock().await;
-							state.client_ids.insert(id);
+							state.client_ids.insert(client_id);
 							state.count
 						};
-						render_handle.render(id, render_counter(count)).await;
+						render_handle
+							.render(client_id, render_counter(count))
+							.await;
 					}
-					ClientEvent::Disconnected { id } => {
-						ui_state.lock().await.client_ids.remove(&id);
+					ClientEvent::Disconnected { id: _ } => {
+						ui_state.lock().await.client_ids.remove(&client_id);
 					}
 					ClientEvent::OnClick(_) => {
 						let (count, ids) = {

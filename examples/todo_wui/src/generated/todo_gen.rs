@@ -46,7 +46,8 @@ pub fn render(state: &crate::TodoState) -> Item {
 
 impl TodoController {
 	pub fn render(&self) -> Item {
-		render(&self.state)
+		let state = self.state();
+		render(&state)
 	}
 
 	pub fn handle(&mut self, event: &ClientEvent) -> bool {
@@ -64,5 +65,15 @@ impl TodoController {
 			Action::AddTodo => self.add_todo(),
 			Action::ToggleTodo { arg } => self.toggle_todo(arg),
 		}
+	}
+}
+
+impl wgui::wui::runtime::WuiController for TodoController {
+	fn render(&self) -> Item {
+		TodoController::render(self)
+	}
+
+	fn handle(&mut self, event: &ClientEvent) -> bool {
+		TodoController::handle(self, event)
 	}
 }

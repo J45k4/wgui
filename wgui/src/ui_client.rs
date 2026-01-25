@@ -1,4 +1,7 @@
-use super::{gui::Item, types::ClientEvent};
+use super::{
+	gui::Item,
+	types::{ClientEvent, ClientMessage},
+};
 use crate::{
 	diff::diff,
 	types::{ClientAction, Clients, Command, Replace},
@@ -13,7 +16,7 @@ where
 {
 	id: usize,
 	ws: S,
-	event_tx: mpsc::UnboundedSender<ClientEvent>,
+	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	cmd_recv: mpsc::UnboundedReceiver<Command>,
 	clients: Clients,
 	last_root: Option<Item>,
@@ -26,13 +29,18 @@ where
 	pub async fn new(
 		id: usize,
 		ws: S,
-		event_tx: mpsc::UnboundedSender<ClientEvent>,
+		event_tx: mpsc::UnboundedSender<ClientMessage>,
 		clients: Clients,
 	) -> Self {
 		log::info!("[{}] connection started", id);
 		let (cmd_sender, cmd_recv) = mpsc::unbounded_channel();
 		clients.write().await.insert(id, cmd_sender);
-		event_tx.send(ClientEvent::Connected { id }).unwrap();
+		event_tx
+			.send(ClientMessage {
+				client_id: id,
+				event: ClientEvent::Connected { id },
+			})
+			.unwrap();
 		Self {
 			id,
 			ws,
@@ -53,7 +61,12 @@ where
 				log::info!("received messages: {:?}", msgs);
 
 				for msg in msgs {
-					self.event_tx.send(msg).unwrap();
+					self.event_tx
+						.send(ClientMessage {
+							client_id: self.id,
+							event: msg,
+						})
+						.unwrap();
 				}
 			}
 			WsMessage::Binary(msg) => {
@@ -158,7 +171,10 @@ where
 		log::info!("[{}] connection closed", self.id);
 		self.clients.write().await.remove(&self.id);
 		self.event_tx
-			.send(ClientEvent::Disconnected { id: self.id })
+			.send(ClientMessage {
+				client_id: self.id,
+				event: ClientEvent::Disconnected { id: self.id },
+			})
 			.unwrap();
 	}
 }

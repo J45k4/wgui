@@ -1227,6 +1227,7 @@ dependencies = [
 name = "todo_wui"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "log",
  "simple_logger 5.1.0",
  "tokio",

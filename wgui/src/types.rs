@@ -61,6 +61,12 @@ pub enum ClientEvent {
 	OnSelect(OnSelect),
 }
 
+#[derive(Debug, Clone)]
+pub struct ClientMessage {
+	pub client_id: usize,
+	pub event: ClientEvent,
+}
+
 pub type ItemPath = Vec<usize>;
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
@@ -154,7 +160,7 @@ pub enum ClientAction {
 
 pub enum ServerEvent {
 	Connected {
-		ch: mpsc::UnboundedSender<ClientEvent>,
+		ch: mpsc::UnboundedSender<ClientMessage>,
 	},
 	ClientEvent {
 		id: usize,

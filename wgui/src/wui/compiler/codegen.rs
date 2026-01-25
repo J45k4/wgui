@@ -105,7 +105,7 @@ fn generate_controller_impl(doc: &IrDocument) -> Option<String> {
 	let controller_name = format!("{}Controller", pascal_case(module_name));
 	let mut out = String::new();
 	out.push_str(&format!("impl {} {{\n", controller_name));
-	out.push_str("\tpub fn render(&self) -> Item {\n\t\trender(&self.state)\n\t}\n\n");
+	out.push_str("\tpub fn render(&self) -> Item {\n\t\tlet state = self.state();\n\t\trender(&state)\n\t}\n\n");
 	out.push_str(
 		"\tpub fn handle(&mut self, event: &ClientEvent) -> bool {\n\t\tif let Some(action) = decode(event) {\n\t\t\tself.reduce(action);\n\t\t\ttrue\n\t\t} else {\n\t\t\tfalse\n\t\t}\n\t}\n\n",
 	);
@@ -141,6 +141,17 @@ fn generate_controller_impl(doc: &IrDocument) -> Option<String> {
 		}
 	}
 	out.push_str("\t\t}\n\t}\n}\n");
+	out.push('\n');
+	out.push_str(&format!(
+		"impl wgui::wui::runtime::WuiController for {} {{\n",
+		controller_name
+	));
+	out.push_str("\tfn render(&self) -> Item {\n");
+	out.push_str(&format!("\t\t{}::render(self)\n", controller_name));
+	out.push_str("\t}\n\n");
+	out.push_str("\tfn handle(&mut self, event: &ClientEvent) -> bool {\n");
+	out.push_str(&format!("\t\t{}::handle(self, event)\n", controller_name));
+	out.push_str("\t}\n}\n");
 	Some(out)
 }
 

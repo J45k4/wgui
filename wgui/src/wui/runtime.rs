@@ -6,6 +6,8 @@ use crate::wui::diagnostic::Diagnostic;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(feature = "axum")]
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime};
 use tokio::sync::mpsc;
@@ -13,6 +15,11 @@ use tokio::sync::mpsc;
 #[derive(Debug, Clone)]
 pub struct Template {
 	doc: crate::wui::compiler::ir::IrDocument,
+}
+
+pub trait WuiController {
+	fn render(&self) -> Item;
+	fn handle(&mut self, event: &crate::types::ClientEvent) -> bool;
 }
 
 #[derive(Debug, Clone)]
@@ -152,6 +159,68 @@ impl Template {
 		}
 		None
 	}
+}
+
+#[cfg(feature = "axum")]
+pub fn router_with_controller<T, C, F>(
+	shared: Arc<Mutex<C>>,
+	make_controller: F,
+	routes: &[&'static str],
+) -> axum::Router
+where
+	T: WuiController + Send + Sync + 'static,
+	C: Send + Sync + 'static,
+	F: Fn(Arc<Mutex<C>>) -> T + Send + Sync + 'static,
+{
+	let mut wgui = crate::Wgui::new_without_server();
+	let handle = wgui.handle();
+	let make_controller = Arc::new(make_controller);
+	let ssr_shared = shared.clone();
+	let ssr_make_controller = make_controller.clone();
+	let router = crate::axum::router_with_ssr_routes(
+		handle.clone(),
+		Arc::new(move || {
+			let controller = (ssr_make_controller)(ssr_shared.clone());
+			controller.render()
+		}),
+		routes,
+	);
+	let render_handle = handle.clone();
+	tokio::spawn(async move {
+		let mut controllers = HashMap::new();
+		while let Some(message) = wgui.next().await {
+			let client_id = message.client_id;
+			match message.event {
+				crate::ClientEvent::Connected { id: _ } => {
+					let controller = (make_controller)(shared.clone());
+					let item = controller.render();
+					render_handle.render(client_id, item).await;
+					controllers.insert(client_id, controller);
+				}
+				crate::ClientEvent::Disconnected { id: _ } => {
+					controllers.remove(&client_id);
+				}
+				crate::ClientEvent::PathChanged(_) => {}
+				crate::ClientEvent::Input(_) => {}
+				_ => {
+					let item = match controllers.get_mut(&client_id) {
+						Some(controller) => {
+							if controller.handle(&message.event) {
+								Some(controller.render())
+							} else {
+								None
+							}
+						}
+						None => None,
+					};
+					if let Some(item) = item {
+						render_handle.render(client_id, item).await;
+					}
+				}
+			}
+		}
+	});
+	router
 }
 
 pub fn load_template(path: &Path, module_name: &str) -> Result<Template, TemplateLoadError> {

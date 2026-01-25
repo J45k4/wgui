@@ -80,6 +80,7 @@ fn write_mod_rs(dir: &Path, modules: &[String]) {
 	for module in modules {
 		contents.push_str(&format!("pub mod {}_gen;\n", module));
 	}
+	contents.push_str("\n#[path = \"routes.gen.rs\"]\npub mod routes;\n");
 	let out_path = dir.join("mod.rs");
 	fs::write(&out_path, contents)
 		.unwrap_or_else(|err| panic!("failed to write {}: {}", out_path.display(), err));
@@ -87,6 +88,29 @@ fn write_mod_rs(dir: &Path, modules: &[String]) {
 
 fn write_routes(dir: &Path, routes: &[(String, String)]) {
 	let mut contents = String::new();
+	if let Some((module, _)) = routes.first() {
+		let controller_name = format!("{}Controller", to_pascal_case(module));
+		contents.push_str("#[cfg(feature = \"axum\")]\n");
+		contents.push_str("use std::sync::{Arc, Mutex};\n");
+		contents.push_str("#[cfg(feature = \"axum\")]\n");
+		contents.push_str("use axum::Router;\n");
+		contents.push_str("#[cfg(feature = \"axum\")]\n");
+		contents.push_str(&format!(
+			"use crate::controllers::{}_controller::{};\n",
+			module, controller_name
+		));
+		contents.push_str("use crate::context::SharedContext;\n\n");
+
+		contents.push_str("#[cfg(feature = \"axum\")]\n");
+		contents.push_str("pub fn router(shared: Arc<Mutex<SharedContext>>) -> Router {\n");
+		contents.push_str("\tlet routes: Vec<&'static str> = ROUTES.iter().map(|r| r.route).collect();\n");
+		contents.push_str(&format!(
+			"\tlet make_controller = |shared| {}::new(shared);\n",
+			controller_name
+		));
+		contents.push_str("\twgui::wui::runtime::router_with_controller(shared, make_controller, &routes)\n");
+		contents.push_str("}\n\n");
+	}
 	contents.push_str(
 		"pub struct RouteDef {\n\tpub module: &'static str,\n\tpub route: &'static str,\n}\n\n",
 	);
@@ -101,6 +125,28 @@ fn write_routes(dir: &Path, routes: &[(String, String)]) {
 	let out_path = dir.join("routes.gen.rs");
 	fs::write(&out_path, contents)
 		.unwrap_or_else(|err| panic!("failed to write {}: {}", out_path.display(), err));
+}
+
+fn to_pascal_case(input: &str) -> String {
+	let mut out = String::new();
+	let mut upper_next = true;
+	for ch in input.chars() {
+		if ch.is_ascii_alphanumeric() {
+			if upper_next {
+				out.push(ch.to_ascii_uppercase());
+				upper_next = false;
+			} else {
+				out.push(ch);
+			}
+		} else {
+			upper_next = true;
+		}
+	}
+	if out.is_empty() {
+		"Controller".to_string()
+	} else {
+		out
+	}
 }
 
 fn write_controllers_mod(dir: &Path, modules: &[String]) {

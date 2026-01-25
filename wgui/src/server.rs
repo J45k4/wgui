@@ -14,7 +14,7 @@ use tokio::sync::mpsc;
 
 use crate::gui::Item;
 use crate::ssr;
-use crate::types::{ClientEvent, Clients};
+use crate::types::{ClientMessage, Clients};
 use crate::ws::TungsteniteWs;
 use crate::WguiHandle;
 
@@ -23,7 +23,7 @@ const INDEX_JS_BYTES: &[u8] = include_bytes!("../../dist/index.js");
 const CSS_JS_BYTES: &[u8] = include_bytes!("../../dist/index.css");
 
 struct Ctx {
-	event_tx: mpsc::UnboundedSender<ClientEvent>,
+	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	clients: Clients,
 	ssr: Option<Arc<dyn Fn() -> Item + Send + Sync>>,
 }
@@ -72,7 +72,7 @@ async fn handle_req(
 
 pub struct Server {
 	listener: TcpListener,
-	event_tx: mpsc::UnboundedSender<ClientEvent>,
+	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	clients: Clients,
 	ssr: Option<Arc<dyn Fn() -> Item + Send + Sync>>,
 }
@@ -80,7 +80,7 @@ pub struct Server {
 impl Server {
 	pub async fn new(
 		addr: SocketAddr,
-		event_tx: mpsc::UnboundedSender<ClientEvent>,
+		event_tx: mpsc::UnboundedSender<ClientMessage>,
 		clients: Clients,
 		ssr: Option<Arc<dyn Fn() -> Item + Send + Sync>>,
 	) -> Self {
