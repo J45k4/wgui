@@ -67,13 +67,3 @@ impl TodoController {
 		}
 	}
 }
-
-impl wgui::wui::runtime::WuiController for TodoController {
-	fn render(&self) -> Item {
-		TodoController::render(self)
-	}
-
-	fn handle(&mut self, event: &ClientEvent) -> bool {
-		TodoController::handle(self, event)
-	}
-}

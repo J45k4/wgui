@@ -141,17 +141,6 @@ fn generate_controller_impl(doc: &IrDocument) -> Option<String> {
 		}
 	}
 	out.push_str("\t\t}\n\t}\n}\n");
-	out.push('\n');
-	out.push_str(&format!(
-		"impl wgui::wui::runtime::WuiController for {} {{\n",
-		controller_name
-	));
-	out.push_str("\tfn render(&self) -> Item {\n");
-	out.push_str(&format!("\t\t{}::render(self)\n", controller_name));
-	out.push_str("\t}\n\n");
-	out.push_str("\tfn handle(&mut self, event: &ClientEvent) -> bool {\n");
-	out.push_str(&format!("\t\t{}::handle(self, event)\n", controller_name));
-	out.push_str("\t}\n}\n");
 	Some(out)
 }
 

@@ -48,6 +48,10 @@ pub trait WuiValueConvert {
 	fn to_wui_value(&self) -> WuiValue;
 }
 
+pub trait WuiModel: WuiValueConvert {}
+
+impl<T: WuiValueConvert + ?Sized> WuiModel for T {}
+
 impl<T: WuiValueConvert + ?Sized> WuiValueProvider for T {
 	fn wui_value(&self) -> WuiValue {
 		self.to_wui_value()

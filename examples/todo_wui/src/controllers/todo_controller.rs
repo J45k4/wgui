@@ -1,10 +1,12 @@
 use crate::context::SharedContext;
 use std::sync::{Arc, Mutex};
+use wgui::wgui_controller;
 
 pub struct TodoController {
 	shared: Arc<Mutex<SharedContext>>,
 }
 
+#[wgui_controller]
 impl TodoController {
 	pub fn new(shared: Arc<Mutex<SharedContext>>) -> Self {
 		Self { shared }
