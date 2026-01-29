@@ -9,14 +9,14 @@ mod controllers;
 mod generated;
 
 #[derive(Debug, Clone, WuiModel)]
-struct TodoItem {
+pub struct TodoItem {
 	id: u32,
 	name: String,
 	completed: bool,
 }
 
 #[derive(Debug, Default, Clone, WuiModel)]
-struct TodoState {
+pub struct TodoState {
 	new_todo_name: String,
 	items: Vec<TodoItem>,
 }

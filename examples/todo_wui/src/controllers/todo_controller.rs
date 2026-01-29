@@ -1,6 +1,8 @@
 use crate::context::SharedContext;
+use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 use wgui::wgui_controller;
+use wgui::wui::runtime::Component;
 
 pub struct TodoController {
 	shared: Arc<Mutex<SharedContext>>,
@@ -24,6 +26,7 @@ impl TodoController {
 	}
 
 	pub(crate) fn add_todo(&mut self) {
+		println!("add_todo");
 		let mut shared = self.shared.lock().unwrap();
 		if shared.next_id == 0 {
 			shared.next_id = 1;
@@ -49,4 +52,20 @@ impl TodoController {
 	}
 
 	// </wui:handlers>
+}
+
+#[async_trait]
+impl Component for TodoController {
+	type Context = SharedContext;
+	type Model = crate::TodoState;
+
+	async fn mount(shared: Arc<Mutex<SharedContext>>) -> Self {
+		Self::new(shared)
+	}
+
+	fn render(&self) -> Self::Model {
+		self.state()
+	}
+
+	fn unmount(self) {}
 }

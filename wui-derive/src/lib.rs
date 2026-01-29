@@ -121,7 +121,7 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 								"wgui_controller requires exactly one &self method returning a model",
 							));
 						}
-						model_method = Some((method.sig.ident.clone(), (*ty).clone()));
+							model_method = Some((method.sig.ident.clone(), (**ty).clone()));
 					}
 				}
 			}
@@ -229,23 +229,30 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 		let name = ident.to_string();
 		quote! { #name => { self.#ident(value); true } }
 	});
-	let string_arms = string_handlers.iter().map(|ident| {
-		let name = ident.to_string();
-		quote! { #name => { self.#ident(value); true } }
-	});
+	let string_arms = string_handlers
+		.iter()
+		.map(|ident| {
+			let name = ident.to_string();
+			quote! { #name => { self.#ident(value); true } }
+		})
+		.collect::<Vec<_>>();
+	let string_arms_ref = &string_arms;
 
 	let output = quote! {
 		#impl_block
 
+		#[allow(non_snake_case)]
 		fn #template_fn() -> &'static ::wgui::wui::runtime::Template {
 			static TEMPLATE: ::std::sync::OnceLock<::wgui::wui::runtime::Template> = ::std::sync::OnceLock::new();
 			TEMPLATE.get_or_init(|| {
 				let source = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/wui/pages/", #module_name, ".wui"));
-				::wgui::wui::runtime::Template::parse(source, #module_name)
+				let base_dir = ::std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/wui/pages"));
+				::wgui::wui::runtime::Template::parse_with_dir(source, #module_name, Some(base_dir))
 					.unwrap_or_else(|diags| panic!("failed to parse wui template {}: {:?}", #module_name, diags))
 			})
 		}
 
+		#[allow(non_snake_case)]
 		fn #action_fn(name: &str) -> ::std::string::String {
 			let mut out = ::std::string::String::with_capacity(name.len());
 			for (index, ch) in name.chars().enumerate() {
@@ -291,7 +298,7 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 					::wgui::wui::runtime::RuntimeAction::TextChanged { ref name, value } => {
 						let action_name = #action_fn(name);
 						match action_name.as_str() {
-							#(#string_arms,)*
+							#(#string_arms_ref,)*
 							_ => false,
 						}
 					}
@@ -305,7 +312,7 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 					::wgui::wui::runtime::RuntimeAction::Select { ref name, value } => {
 						let action_name = #action_fn(name);
 						match action_name.as_str() {
-							#(#string_arms,)*
+							#(#string_arms_ref,)*
 							_ => false,
 						}
 					}

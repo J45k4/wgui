@@ -41,10 +41,6 @@ pub fn generate(doc: &IrDocument) -> String {
 	));
 	out.push_str(&emit_nodes(&doc.nodes, 1));
 	out.push_str("}\n");
-	if let Some(controller_impl) = generate_controller_impl(doc) {
-		out.push('\n');
-		out.push_str(&controller_impl);
-	}
 	out
 }
 
@@ -96,51 +92,6 @@ pub fn generate_controller_stub(doc: &IrDocument, module_name: &str) -> Option<S
 		}
 	}
 	out.push_str("\t// </wui:handlers>\n}\n");
-	Some(out)
-}
-
-fn generate_controller_impl(doc: &IrDocument) -> Option<String> {
-	let page = doc.pages.first()?;
-	let module_name = &page.module;
-	let controller_name = format!("{}Controller", pascal_case(module_name));
-	let mut out = String::new();
-	out.push_str(&format!("impl {} {{\n", controller_name));
-	out.push_str("\tpub fn render(&self) -> Item {\n\t\tlet state = self.state();\n\t\trender(&state)\n\t}\n\n");
-	out.push_str(
-		"\tpub fn handle(&mut self, event: &ClientEvent) -> bool {\n\t\tif let Some(action) = decode(event) {\n\t\t\tself.reduce(action);\n\t\t\ttrue\n\t\t} else {\n\t\t\tfalse\n\t\t}\n\t}\n\n",
-	);
-	out.push_str("\tfn reduce(&mut self, action: Action) {\n\t\tmatch action {\n");
-	for action in &doc.actions {
-		let variant = action_variant(&action.name);
-		let method = action_method_name(&action.name);
-		match action.payload {
-			ActionPayload::None => {
-				out.push_str(&format!(
-					"\t\t\tAction::{} => self.{}(),\n",
-					variant, method
-				));
-			}
-			ActionPayload::U32 => {
-				out.push_str(&format!(
-					"\t\t\tAction::{} {{ arg }} => self.{}(arg),\n",
-					variant, method
-				));
-			}
-			ActionPayload::String => {
-				out.push_str(&format!(
-					"\t\t\tAction::{} {{ value }} => self.{}(value),\n",
-					variant, method
-				));
-			}
-			ActionPayload::I32 => {
-				out.push_str(&format!(
-					"\t\t\tAction::{} {{ value }} => self.{}(value),\n",
-					variant, method
-				));
-			}
-		}
-	}
-	out.push_str("\t\t}\n\t}\n}\n");
 	Some(out)
 }
 

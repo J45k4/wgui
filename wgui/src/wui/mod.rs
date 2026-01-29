@@ -3,5 +3,6 @@ pub mod build;
 pub mod compiler;
 pub mod diagnostic;
 pub mod expr;
+pub mod imports;
 pub mod parser;
 pub mod runtime;

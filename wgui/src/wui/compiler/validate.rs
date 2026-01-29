@@ -67,6 +67,17 @@ fn validate_structural(el: &crate::wui::ast::Element, diags: &mut Vec<Diagnostic
 		"Page" => {
 			allow_only(el, &["route", "title", "state"], diags);
 		}
+		"Import" => {
+			require_attr(el, "src", diags);
+			require_string_attr(el, "src", diags);
+			allow_only(el, &["src"], diags);
+			if !el.children.is_empty() {
+				diags.push(Diagnostic::new(
+					"Import does not take children",
+					el.span,
+				));
+			}
+		}
 		_ => {}
 	}
 }
@@ -138,6 +149,18 @@ fn require_attr(el: &crate::wui::ast::Element, name: &str, diags: &mut Vec<Diagn
 		diags.push(Diagnostic::new(
 			format!("missing required attribute {}", name),
 			el.span,
+		));
+	}
+}
+
+fn require_string_attr(el: &crate::wui::ast::Element, name: &str, diags: &mut Vec<Diagnostic>) {
+	let Some(attr) = el.attrs.iter().find(|attr| attr.name == name) else {
+		return;
+	};
+	if !matches!(attr.value, AttrValue::String(_, _)) {
+		diags.push(Diagnostic::new(
+			format!("{} must be a string literal", name),
+			attr.span,
 		));
 	}
 }
