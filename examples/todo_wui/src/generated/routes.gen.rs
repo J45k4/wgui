@@ -9,8 +9,7 @@ use crate::context::SharedContext;
 #[cfg(feature = "axum")]
 pub fn router(shared: Arc<Mutex<SharedContext>>) -> Router {
 	let routes: Vec<&'static str> = ROUTES.iter().map(|r| r.route).collect();
-	let make_controller = |shared| TodoController::new(shared);
-	wgui::wui::runtime::router_with_controller(shared, make_controller, &routes)
+	wgui::wui::runtime::router_with_component::<TodoController>(shared, &routes)
 }
 
 pub struct RouteDef {

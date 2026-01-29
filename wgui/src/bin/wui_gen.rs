@@ -17,6 +17,7 @@ fn main() {
 		input_dir,
 		output_dir,
 		controllers_dir: None,
+		emit_modules: true,
 	};
 	if let Err(err) = generate(&config) {
 		eprintln!("{}", err);

@@ -1227,6 +1227,7 @@ dependencies = [
 name = "todo_wui"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum",
  "log",
  "simple_logger 5.1.0",
@@ -1614,6 +1615,7 @@ name = "wgui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "futures-util",
  "http-body-util",

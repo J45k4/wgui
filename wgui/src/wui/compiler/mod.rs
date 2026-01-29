@@ -4,7 +4,9 @@ pub mod lower;
 pub mod registry;
 pub mod validate;
 
+use crate::wui::ast::Node;
 use crate::wui::diagnostic::Diagnostic;
+use std::path::Path;
 
 #[derive(Debug)]
 pub struct GeneratedModule {
@@ -14,9 +16,24 @@ pub struct GeneratedModule {
 }
 
 pub fn compile(source: &str, module_name: &str) -> Result<GeneratedModule, Vec<Diagnostic>> {
-	let parsed = crate::wui::parser::Parser::new(source).parse();
-	let mut diags = parsed.diagnostics;
-	let validated = validate::validate(&parsed.nodes, &mut diags);
+	compile_with_dir(source, module_name, None)
+}
+
+pub fn compile_with_dir(
+	source: &str,
+	module_name: &str,
+	base_dir: Option<&Path>,
+) -> Result<GeneratedModule, Vec<Diagnostic>> {
+	let resolved = crate::wui::imports::resolve(source, module_name, base_dir)?;
+	compile_nodes(&resolved.nodes, module_name)
+}
+
+pub(crate) fn compile_nodes(
+	nodes: &[Node],
+	module_name: &str,
+) -> Result<GeneratedModule, Vec<Diagnostic>> {
+	let mut diags = Vec::new();
+	let validated = validate::validate(nodes, &mut diags);
 	let Some(validated) = validated else {
 		return Err(diags);
 	};

@@ -22,7 +22,8 @@ mod ui_client;
 pub mod ws;
 pub mod wui;
 
-pub use wui_derive::WuiValue;
+pub use wui_derive::{wgui_controller, WuiModel};
+pub use wui::runtime::WuiModel;
 
 use crate::ui_client::UiWsWorker;
 

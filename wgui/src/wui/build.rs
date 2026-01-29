@@ -2,16 +2,19 @@ use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::io;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::wui::compiler;
 use crate::wui::diagnostic::Diagnostic;
+use crate::wui::imports;
 
 #[derive(Clone, Debug)]
 pub struct BuildConfig {
 	pub input_dir: PathBuf,
 	pub output_dir: PathBuf,
 	pub controllers_dir: Option<PathBuf>,
+	pub emit_modules: bool,
 }
 
 #[derive(Debug)]
@@ -79,6 +82,7 @@ pub fn generate(config: &BuildConfig) -> Result<BuildResult, BuildError> {
 	let mut modules = Vec::new();
 	let mut routes = Vec::new();
 	let mut source_files = Vec::new();
+	let mut source_files_seen = HashSet::new();
 	for entry_result in entries {
 		let entry = entry_result.map_err(|err| BuildError::Io {
 			path: config.input_dir.clone(),
@@ -88,7 +92,9 @@ pub fn generate(config: &BuildConfig) -> Result<BuildResult, BuildError> {
 		if path.extension().and_then(|ext| ext.to_str()) != Some("wui") {
 			continue;
 		}
-		source_files.push(path.clone());
+		if source_files_seen.insert(path.clone()) {
+			source_files.push(path.clone());
+		}
 		let module_name = path
 			.file_stem()
 			.and_then(|stem| stem.to_str())
@@ -98,37 +104,56 @@ pub fn generate(config: &BuildConfig) -> Result<BuildResult, BuildError> {
 			path: path.clone(),
 			source: err,
 		})?;
-		let generated =
-			compiler::compile(&source, &module_name).map_err(|diags| BuildError::Compile {
+		let resolved = imports::resolve(&source, &module_name, path.parent()).map_err(|diags| {
+			BuildError::Compile {
+				path: path.clone(),
+				diagnostics: diags,
+			}
+		})?;
+		for import_path in resolved.source_files {
+			if source_files_seen.insert(import_path.clone()) {
+				source_files.push(import_path);
+			}
+		}
+		let generated = compiler::compile_nodes(&resolved.nodes, &module_name)
+			.map_err(|diags| BuildError::Compile {
 				path: path.clone(),
 				diagnostics: diags,
 			})?;
 		for (module, route) in generated.routes {
 			routes.push((module, route));
 		}
-		let out_path = config.output_dir.join(format!("{}_gen.rs", module_name));
-		fs::write(&out_path, generated.code).map_err(|err| BuildError::Io {
-			path: out_path.clone(),
-			source: err,
-		})?;
-		if let Some(stub) = generated.controller_stub {
-			let controller_path = controllers_dir.join(format!("{}_controller.rs", module_name));
-			if !controller_path.exists() {
-				fs::create_dir_all(&controllers_dir).map_err(|err| BuildError::Io {
-					path: controllers_dir.clone(),
-					source: err,
-				})?;
-				fs::write(&controller_path, stub).map_err(|err| BuildError::Io {
-					path: controller_path.clone(),
-					source: err,
-				})?;
+		if config.emit_modules {
+			let out_path = config.output_dir.join(format!("{}_gen.rs", module_name));
+			fs::write(&out_path, generated.code).map_err(|err| BuildError::Io {
+				path: out_path.clone(),
+				source: err,
+			})?;
+			if let Some(stub) = generated.controller_stub {
+				let controller_path = controllers_dir.join(format!("{}_controller.rs", module_name));
+				if !controller_path.exists() {
+					fs::create_dir_all(&controllers_dir).map_err(|err| BuildError::Io {
+						path: controllers_dir.clone(),
+						source: err,
+					})?;
+					fs::write(&controller_path, stub).map_err(|err| BuildError::Io {
+						path: controller_path.clone(),
+						source: err,
+					})?;
+				}
 			}
 		}
 		modules.push(module_name);
 	}
-	write_mod_rs(&config.output_dir, &modules)?;
+	if config.emit_modules {
+		write_mod_rs(&config.output_dir, &modules)?;
+	} else {
+		write_routes_mod(&config.output_dir)?;
+	}
 	write_routes(&config.output_dir, &routes)?;
-	write_controllers_mod(&controllers_dir, &modules)?;
+	if config.emit_modules {
+		write_controllers_mod(&controllers_dir, &modules)?;
+	}
 	Ok(BuildResult {
 		modules,
 		routes,
@@ -142,6 +167,15 @@ fn write_mod_rs(dir: &Path, modules: &[String]) -> Result<(), BuildError> {
 		contents.push_str(&format!("pub mod {}_gen;\n", module));
 	}
 	contents.push_str("\n#[path = \"routes.gen.rs\"]\npub mod routes;\n");
+	let out_path = dir.join("mod.rs");
+	fs::write(&out_path, contents).map_err(|err| BuildError::Io {
+		path: out_path.clone(),
+		source: err,
+	})
+}
+
+fn write_routes_mod(dir: &Path) -> Result<(), BuildError> {
+	let contents = "#[path = \"routes.gen.rs\"]\npub mod routes;\n";
 	let out_path = dir.join("mod.rs");
 	fs::write(&out_path, contents).map_err(|err| BuildError::Io {
 		path: out_path.clone(),
@@ -169,12 +203,9 @@ fn write_routes(dir: &Path, routes: &[(String, String)]) -> Result<(), BuildErro
 			"\tlet routes: Vec<&'static str> = ROUTES.iter().map(|r| r.route).collect();\n",
 		);
 		contents.push_str(&format!(
-			"\tlet make_controller = |shared| {}::new(shared);\n",
+			"\twgui::wui::runtime::router_with_component::<{}>(shared, &routes)\n",
 			controller_name
 		));
-		contents.push_str(
-			"\twgui::wui::runtime::router_with_controller(shared, make_controller, &routes)\n",
-		);
 		contents.push_str("}\n\n");
 	}
 	contents.push_str(

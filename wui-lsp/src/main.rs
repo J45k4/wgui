@@ -370,6 +370,10 @@ fn structural_prop_type(tag: &str, prop: &str) -> Option<&'static str> {
 			"state" => Some("string"),
 			_ => None,
 		},
+		"Import" => match prop {
+			"src" => Some("string"),
+			_ => None,
+		},
 		_ => None,
 	}
 }
@@ -599,6 +603,7 @@ fn structural_props(tag: &str) -> &'static [&'static str] {
 		"If" => &["test"],
 		"Scope" => &["name"],
 		"Page" => &["route", "title", "state"],
+		"Import" => &["src"],
 		_ => &[],
 	}
 }
@@ -618,6 +623,7 @@ fn all_tags() -> &'static [&'static str] {
 		"Else",
 		"Scope",
 		"Page",
+		"Import",
 	]
 }
 

@@ -2,11 +2,12 @@ use crate::gui::{self, Item};
 use crate::wui::ast::{BinaryOp, Expr, Literal, UnaryOp};
 use crate::wui::compiler::ir::{ActionDef, ActionPayload, EventKind, IrNode, IrProp, IrWidget};
 use crate::wui::diagnostic::Diagnostic;
+use crate::wui::imports;
 
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-#[cfg(feature = "axum")]
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime};
@@ -20,6 +21,16 @@ pub struct Template {
 pub trait WuiController {
 	fn render(&self) -> Item;
 	fn handle(&mut self, event: &crate::types::ClientEvent) -> bool;
+}
+
+#[async_trait]
+pub trait Component: Send + Sync + 'static {
+	type Context: Send + Sync + 'static;
+	type Model: WuiModel;
+
+	async fn mount(shared: Arc<Mutex<Self::Context>>) -> Self;
+	fn render(&self) -> Self::Model;
+	fn unmount(self);
 }
 
 #[derive(Debug, Clone)]
@@ -47,6 +58,10 @@ pub trait WuiValueProvider {
 pub trait WuiValueConvert {
 	fn to_wui_value(&self) -> WuiValue;
 }
+
+pub trait WuiModel: WuiValueConvert {}
+
+impl<T: WuiValueConvert + ?Sized> WuiModel for T {}
 
 impl<T: WuiValueConvert + ?Sized> WuiValueProvider for T {
 	fn wui_value(&self) -> WuiValue {
@@ -131,9 +146,17 @@ pub enum TemplateLoadError {
 
 impl Template {
 	pub fn parse(source: &str, module_name: &str) -> Result<Self, Vec<Diagnostic>> {
-		let parsed = crate::wui::parser::Parser::new(source).parse();
-		let mut diags = parsed.diagnostics;
-		let validated = crate::wui::compiler::validate::validate(&parsed.nodes, &mut diags);
+		Self::parse_with_dir(source, module_name, None)
+	}
+
+	pub fn parse_with_dir(
+		source: &str,
+		module_name: &str,
+		base_dir: Option<&Path>,
+	) -> Result<Self, Vec<Diagnostic>> {
+		let resolved = imports::resolve(source, module_name, base_dir)?;
+		let mut diags = Vec::new();
+		let validated = crate::wui::compiler::validate::validate(&resolved.nodes, &mut diags);
 		let Some(validated) = validated else {
 			return Err(diags);
 		};
@@ -223,9 +246,71 @@ where
 	router
 }
 
+#[cfg(feature = "axum")]
+pub fn router_with_component<T>(
+	shared: Arc<Mutex<T::Context>>,
+	routes: &[&'static str],
+) -> axum::Router
+where
+	T: Component + WuiController,
+{
+	let mut wgui = crate::Wgui::new_without_server();
+	let handle = wgui.handle();
+	let ssr_shared = shared.clone();
+	let router = crate::axum::router_with_ssr_routes(
+		handle.clone(),
+			Arc::new(move || {
+				let controller = tokio::task::block_in_place(|| {
+					tokio::runtime::Handle::current().block_on(T::mount(ssr_shared.clone()))
+				});
+				WuiController::render(&controller)
+			}),
+		routes,
+	);
+	let render_handle = handle.clone();
+	tokio::spawn(async move {
+		let mut controllers: HashMap<_, T> = HashMap::new();
+		while let Some(message) = wgui.next().await {
+			let client_id = message.client_id;
+			match message.event {
+				crate::ClientEvent::Connected { id: _ } => {
+					let controller = T::mount(shared.clone()).await;
+					let item = WuiController::render(&controller);
+					render_handle.render(client_id, item).await;
+					controllers.insert(client_id, controller);
+				}
+				crate::ClientEvent::Disconnected { id: _ } => {
+					if let Some(controller) = controllers.remove(&client_id) {
+						controller.unmount();
+					}
+				}
+				crate::ClientEvent::PathChanged(_) => {}
+				crate::ClientEvent::Input(_) => {}
+				_ => {
+					let item = match controllers.get_mut(&client_id) {
+						Some(controller) => {
+							if WuiController::handle(controller, &message.event) {
+								Some(WuiController::render(controller))
+							} else {
+								None
+							}
+						}
+						None => None,
+					};
+					if let Some(item) = item {
+						render_handle.render(client_id, item).await;
+					}
+				}
+			}
+		}
+	});
+	router
+}
+
 pub fn load_template(path: &Path, module_name: &str) -> Result<Template, TemplateLoadError> {
 	let source = fs::read_to_string(path).map_err(TemplateLoadError::Io)?;
-	Template::parse(&source, module_name).map_err(TemplateLoadError::Diagnostics)
+	Template::parse_with_dir(&source, module_name, path.parent())
+		.map_err(TemplateLoadError::Diagnostics)
 }
 
 pub fn spawn_template_watcher(

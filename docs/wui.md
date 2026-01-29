@@ -58,6 +58,7 @@ Builtins are reserved for future use and are not evaluated yet.
 - `<If test={state.items.len == 0}> ... </If>` followed by `<Else> ... </Else>`
 - `<Scope name="list"> ... </Scope>` prefixes action names
 - `<Page route="/todo" title="Todo" state="TodoState" />`
+- `<Import src="partials/header.wui" />` inlines another template file
 
 Rules:
 
@@ -66,6 +67,7 @@ Rules:
 - `Else` must immediately follow an `If` at the same nesting level.
 - `Scope` requires `name`.
 - `Page` is metadata only (no children).
+- `Import` requires `src` and does not take children.
 
 ## Events and actions
 

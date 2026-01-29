@@ -2,21 +2,21 @@ use ::axum::Router;
 use log::Level;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use wgui::WuiValue;
+use wgui::WuiModel;
 
 mod context;
 mod controllers;
 mod generated;
 
-#[derive(Debug, Clone, WuiValue)]
-struct TodoItem {
+#[derive(Debug, Clone, WuiModel)]
+pub struct TodoItem {
 	id: u32,
 	name: String,
 	completed: bool,
 }
 
-#[derive(Debug, Default, Clone, WuiValue)]
-struct TodoState {
+#[derive(Debug, Default, Clone, WuiModel)]
+pub struct TodoState {
 	new_todo_name: String,
 	items: Vec<TodoItem>,
 }
