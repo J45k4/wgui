@@ -188,22 +188,23 @@ fn write_routes(dir: &Path, routes: &[(String, String)]) -> Result<(), BuildErro
 	if let Some((module, _)) = routes.first() {
 		let controller_name = format!("{}Controller", to_pascal_case(module));
 		contents.push_str("#[cfg(feature = \"axum\")]\n");
-		contents.push_str("use std::sync::{Arc, Mutex};\n");
+		contents.push_str("use std::sync::Arc;\n");
 		contents.push_str("#[cfg(feature = \"axum\")]\n");
 		contents.push_str("use axum::Router;\n");
 		contents.push_str("#[cfg(feature = \"axum\")]\n");
 		contents.push_str(&format!(
-			"use crate::controllers::{}_controller::{};\n",
+			"use crate::controllers::{}::{};\n",
 			module, controller_name
 		));
+		contents.push_str("use wgui::wui::runtime::Ctx;\n");
 		contents.push_str("use crate::context::SharedContext;\n\n");
 		contents.push_str("#[cfg(feature = \"axum\")]\n");
-		contents.push_str("pub fn router(shared: Arc<Mutex<SharedContext>>) -> Router {\n");
+		contents.push_str("pub fn router(ctx: Arc<Ctx<SharedContext>>) -> Router {\n");
 		contents.push_str(
 			"\tlet routes: Vec<&'static str> = ROUTES.iter().map(|r| r.route).collect();\n",
 		);
 		contents.push_str(&format!(
-			"\twgui::wui::runtime::router_with_component::<{}>(shared, &routes)\n",
+			"\twgui::wui::runtime::router_with_component::<{}>(ctx, &routes)\n",
 			controller_name
 		));
 		contents.push_str("}\n\n");

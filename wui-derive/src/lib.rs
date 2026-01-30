@@ -174,27 +174,17 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 		}
 	};
 
-	let mut module_name = to_snake_case(&model_type_ident);
-	if module_name.ends_with("_state") {
-		module_name.truncate(module_name.len() - "_state".len());
-	}
-
-	let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default();
-	let template_path = std::path::PathBuf::from(manifest_dir)
-		.join("wui/pages")
-		.join(format!("{module_name}.wui"));
-	if !template_path.exists() {
-		return Err(syn::Error::new_spanned(
-			&controller_ident,
-			format!(
-				"wgui_controller could not find template at {}",
-				template_path.display()
-			),
-		));
-	}
+	let module_name = {
+		let mut name = to_snake_case(&model_type_ident);
+		if name.ends_with("_state") {
+			name.truncate(name.len() - "_state".len());
+		}
+		name
+	};
 
 	let template_fn = format_ident!("__wgui_template_for_{}", controller_ident);
 	let action_fn = format_ident!("__wgui_action_name_for_{}", controller_ident);
+	let module_name_fn = format_ident!("__wgui_module_name_for_{}", controller_ident);
 
 	let no_arg_handlers = handlers
 		.iter()
@@ -242,18 +232,45 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 		#impl_block
 
 		#[allow(non_snake_case)]
-		fn #template_fn() -> &'static ::wgui::wui::runtime::Template {
-			static TEMPLATE: ::std::sync::OnceLock<::wgui::wui::runtime::Template> = ::std::sync::OnceLock::new();
-			TEMPLATE.get_or_init(|| {
-				let source = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/wui/pages/", #module_name, ".wui"));
-				let base_dir = ::std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/wui/pages"));
-				::wgui::wui::runtime::Template::parse_with_dir(source, #module_name, Some(base_dir))
-					.unwrap_or_else(|diags| panic!("failed to parse wui template {}: {:?}", #module_name, diags))
-			})
+		fn #module_name_fn() -> ::std::string::String {
+			let fallback = #module_name;
+			let path = ::std::path::Path::new(file!());
+			let stem = path
+				.file_stem()
+				.and_then(|value| value.to_str())
+				.unwrap_or("");
+			let derived = if stem == "mod" {
+				path.parent()
+					.and_then(|parent| parent.file_name())
+					.and_then(|value| value.to_str())
+					.unwrap_or("")
+			} else {
+				stem
+			};
+			if derived.is_empty() {
+				fallback.to_string()
+			} else {
+				derived.to_string()
+			}
 		}
 
-		#[allow(non_snake_case)]
-		fn #action_fn(name: &str) -> ::std::string::String {
+	#[allow(non_snake_case)]
+	fn #template_fn() -> &'static ::wgui::wui::runtime::Template {
+		static TEMPLATE: ::std::sync::OnceLock<::wgui::wui::runtime::Template> = ::std::sync::OnceLock::new();
+		TEMPLATE.get_or_init(|| {
+			let module_name = #module_name_fn();
+			let base_dir = ::std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/wui/pages"));
+			let source_path = base_dir.join(format!("{}.wui", module_name));
+			let source = ::std::fs::read_to_string(&source_path).unwrap_or_else(|err| {
+				panic!("failed to read wui template {}: {}", source_path.display(), err)
+			});
+			::wgui::wui::runtime::Template::parse_with_dir(&source, &module_name, Some(base_dir))
+				.unwrap_or_else(|diags| panic!("failed to parse wui template {}: {:?}", module_name, diags))
+		})
+	}
+
+	#[allow(non_snake_case)]
+	fn #action_fn(name: &str) -> ::std::string::String {
 			let mut out = ::std::string::String::with_capacity(name.len());
 			for (index, ch) in name.chars().enumerate() {
 				if ch.is_uppercase() {
@@ -270,7 +287,7 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 			out
 		}
 
-		impl ::wgui::wui::runtime::WuiController for #controller_ident {
+	impl ::wgui::wui::runtime::WuiController for #controller_ident {
 			fn render(&self) -> ::wgui::Item {
 				let model = self.#model_method_ident();
 				#template_fn().render(&model)

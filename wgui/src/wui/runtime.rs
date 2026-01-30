@@ -7,6 +7,7 @@ use crate::wui::imports;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::fs;
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -23,14 +24,44 @@ pub trait WuiController {
 	fn handle(&mut self, event: &crate::types::ClientEvent) -> bool;
 }
 
+pub struct Ctx<T> {
+	pub state: Arc<T>,
+	title: Arc<Mutex<String>>,
+}
+
+impl<T> Ctx<T> {
+	pub fn new(state: T) -> Self {
+		Self {
+			state: Arc::new(state),
+			title: Arc::new(Mutex::new(String::new())),
+		}
+	}
+
+	pub fn spawn<F>(&self, fut: F)
+	where
+		F: Future + Send + 'static,
+		F::Output: Send + 'static,
+	{
+		tokio::spawn(fut);
+	}
+
+	pub fn set_title(&self, title: impl Into<String>) {
+		*self.title.lock().unwrap() = title.into();
+	}
+
+	pub fn title(&self) -> String {
+		self.title.lock().unwrap().clone()
+	}
+}
+
 #[async_trait]
 pub trait Component: Send + Sync + 'static {
 	type Context: Send + Sync + 'static;
 	type Model: WuiModel;
 
-	async fn mount(shared: Arc<Mutex<Self::Context>>) -> Self;
-	fn render(&self) -> Self::Model;
-	fn unmount(self);
+	async fn mount(ctx: Arc<Ctx<Self::Context>>) -> Self;
+	fn render(&self, ctx: &Ctx<Self::Context>) -> Self::Model;
+	fn unmount(self, ctx: Arc<Ctx<Self::Context>>);
 }
 
 #[derive(Debug, Clone)]
@@ -248,7 +279,7 @@ where
 
 #[cfg(feature = "axum")]
 pub fn router_with_component<T>(
-	shared: Arc<Mutex<T::Context>>,
+	ctx: Arc<Ctx<T::Context>>,
 	routes: &[&'static str],
 ) -> axum::Router
 where
@@ -256,34 +287,38 @@ where
 {
 	let mut wgui = crate::Wgui::new_without_server();
 	let handle = wgui.handle();
-	let ssr_shared = shared.clone();
+	let ssr_ctx = ctx.clone();
 	let router = crate::axum::router_with_ssr_routes(
 		handle.clone(),
-			Arc::new(move || {
-				let controller = tokio::task::block_in_place(|| {
-					tokio::runtime::Handle::current().block_on(T::mount(ssr_shared.clone()))
-				});
-				WuiController::render(&controller)
-			}),
+		Arc::new(move || {
+			let controller = tokio::task::block_in_place(|| {
+				tokio::runtime::Handle::current().block_on(T::mount(ssr_ctx.clone()))
+			});
+			WuiController::render(&controller)
+		}),
 		routes,
 	);
 	let render_handle = handle.clone();
 	tokio::spawn(async move {
 		let mut controllers: HashMap<_, T> = HashMap::new();
 		while let Some(message) = wgui.next().await {
-			let client_id = message.client_id;
-			match message.event {
+				let client_id = message.client_id;
+				match message.event {
 				crate::ClientEvent::Connected { id: _ } => {
-					let controller = T::mount(shared.clone()).await;
+					let controller = T::mount(ctx.clone()).await;
 					let item = WuiController::render(&controller);
 					render_handle.render(client_id, item).await;
+					let title = ctx.title();
+					if !title.is_empty() {
+						render_handle.set_title(client_id, &title).await;
+					}
 					controllers.insert(client_id, controller);
 				}
-				crate::ClientEvent::Disconnected { id: _ } => {
-					if let Some(controller) = controllers.remove(&client_id) {
-						controller.unmount();
+					crate::ClientEvent::Disconnected { id: _ } => {
+						if let Some(controller) = controllers.remove(&client_id) {
+							controller.unmount(ctx.clone());
+						}
 					}
-				}
 				crate::ClientEvent::PathChanged(_) => {}
 				crate::ClientEvent::Input(_) => {}
 				_ => {
@@ -299,6 +334,10 @@ where
 					};
 					if let Some(item) = item {
 						render_handle.render(client_id, item).await;
+						let title = ctx.title();
+						if !title.is_empty() {
+							render_handle.set_title(client_id, &title).await;
+						}
 					}
 				}
 			}

@@ -1,8 +1,9 @@
 use ::axum::Router;
 use log::Level;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use wgui::WuiModel;
+use wgui::wui::runtime::Ctx;
 
 mod context;
 mod controllers;
@@ -25,8 +26,8 @@ pub struct TodoState {
 async fn main() {
 	simple_logger::init_with_level(Level::Info).unwrap();
 
-	let shared = Arc::new(Mutex::new(context::SharedContext::default()));
-	let router = generated::routes::router(shared);
+	let ctx = Arc::new(Ctx::new(context::SharedContext::default()));
+	let router = generated::routes::router(ctx);
 	let app = Router::new().merge(router);
 
 	let addr: SocketAddr = "0.0.0.0:12345".parse().unwrap();

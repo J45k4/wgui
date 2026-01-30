@@ -1,7 +1,8 @@
 use crate::TodoState;
+use std::sync::Mutex;
 
 #[derive(Debug, Default)]
 pub struct SharedContext {
-	pub state: TodoState,
-	pub next_id: u32,
+	pub state: Mutex<TodoState>,
+	pub next_id: Mutex<u32>,
 }
