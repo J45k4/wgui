@@ -1,4 +1,4 @@
-<Page route="/todo" title="Todo" state="TodoState" />
+<Page route="/todo" title="Todo" />
 
 <VStack spacing=8 padding=8>
   <Text value="Todo List" />
