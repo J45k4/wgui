@@ -27,13 +27,23 @@ pub trait WuiController {
 pub struct Ctx<T> {
 	pub state: Arc<T>,
 	title: Arc<Mutex<String>>,
+	title_tx: mpsc::UnboundedSender<String>,
 }
 
 impl<T> Ctx<T> {
 	pub fn new(state: T) -> Self {
+		let (title_tx, mut title_rx) = mpsc::unbounded_channel::<String>();
+		let title = Arc::new(Mutex::new(String::new()));
+		let title_handle = title.clone();
+		tokio::spawn(async move {
+			while let Some(next) = title_rx.recv().await {
+				*title_handle.lock().unwrap() = next;
+			}
+		});
 		Self {
 			state: Arc::new(state),
-			title: Arc::new(Mutex::new(String::new())),
+			title,
+			title_tx,
 		}
 	}
 
@@ -47,6 +57,10 @@ impl<T> Ctx<T> {
 
 	pub fn set_title(&self, title: impl Into<String>) {
 		*self.title.lock().unwrap() = title.into();
+	}
+
+	pub fn set_title_deferred(&self, title: impl Into<String>) {
+		let _ = self.title_tx.send(title.into());
 	}
 
 	pub fn title(&self) -> String {

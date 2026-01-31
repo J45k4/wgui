@@ -11,11 +11,23 @@ pub struct Todo {
 #[wgui_controller]
 impl Todo {
 	pub fn new(ctx: Arc<Ctx<SharedContext>>) -> Self {
-		Self { ctx }
+		let component = Self { ctx };
+		component.update_title();
+		component
 	}
 
 	pub fn state(&self) -> crate::TodoState {
 		self.ctx.state.state.lock().unwrap().clone()
+	}
+
+	fn update_title(&self) {
+		let title = {
+			let state = self.ctx.state.state.lock().unwrap();
+			let done = state.items.iter().filter(|item| item.completed).count();
+			let undone = state.items.len() - done;
+			format!("Todo {} done / {} undone", done, undone)
+		};
+		self.ctx.set_title_deferred(title);
 	}
 
 	// <wui:handlers>
@@ -40,13 +52,24 @@ impl Todo {
 			*next_id += 1;
 		}
 		state.new_todo_name.clear();
+		let done = state.items.iter().filter(|item| item.completed).count();
+		let undone = state.items.len() - done;
+		let title = format!("Todo {} done / {} undone", done, undone);
+		println!("title {}", title);
+		self.ctx.set_title_deferred(title);
 	}
 
 	pub(crate) fn toggle_todo(&mut self, arg: u32) {
-		let mut state = self.ctx.state.state.lock().unwrap();
-		if let Some(item) = state.items.iter_mut().find(|item| item.id == arg) {
-			item.completed = !item.completed;
-		}
+		let title = {
+			let mut state = self.ctx.state.state.lock().unwrap();
+			if let Some(item) = state.items.iter_mut().find(|item| item.id == arg) {
+				item.completed = !item.completed;
+			}
+			let done = state.items.iter().filter(|item| item.completed).count();
+			let undone = state.items.len() - done;
+			format!("Todo {} done / {} undone", done, undone)
+		};
+		self.ctx.set_title_deferred(title);
 	}
 
 	// </wui:handlers>
