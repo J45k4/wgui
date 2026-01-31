@@ -1,7 +1,7 @@
 <Switch>
   <Case path="/" title="PuppyChat">
     <HStack spacing=0 grow=1>
-      <VStack width=260 padding=12 spacing=10 backgroundColor="#f6f5f2" border="1px solid #e1ded7">
+      <VStack width=260 minWidth=200 maxWidth=420 padding=12 spacing=10 backgroundColor="#f6f5f2" border="1px solid #e1ded7" hresize=true overflow="auto">
         <Text value="PuppyChat" />
         <Text value="Channels" />
         <VStack spacing=4>

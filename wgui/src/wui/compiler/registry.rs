@@ -260,6 +260,14 @@ fn layout_props() -> &'static [PropSchema] {
 			kind: PropKind::Value(ValueType::Bool),
 		},
 		PropSchema {
+			name: "hresize",
+			kind: PropKind::Value(ValueType::Bool),
+		},
+		PropSchema {
+			name: "vresize",
+			kind: PropKind::Value(ValueType::Bool),
+		},
+		PropSchema {
 			name: "overflow",
 			kind: PropKind::Value(ValueType::String),
 		},

@@ -44,6 +44,8 @@ export type Layout = {
 	wrap?: boolean
 	maxWidth?: number
 	pos?: Pos
+	horizontalResize?: boolean
+	horizontal_resize?: boolean
 	vresize?: boolean
 	hresize?: boolean
     body: Item[]

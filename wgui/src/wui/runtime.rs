@@ -704,6 +704,8 @@ fn apply_bool_prop(item: Item, name: &str, value: bool) -> Item {
 	match name {
 		"checked" | "bind:checked" => item.checked(value),
 		"wrap" => item.wrap(value),
+		"hresize" => item.hresize(value),
+		"vresize" => item.vresize(value),
 		_ => item,
 	}
 }

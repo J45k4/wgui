@@ -117,6 +117,58 @@ var renderPayload = (item, ctx, old) => {
       element.style.flexDirection = payload.flex;
       element.classList.add(payload.flex === "row" ? "flex-row" : "flex-col");
     }
+    const horizontal = payload.horizontalResize || payload.horizontal_resize || payload.hresize;
+    const vertical = payload.vresize;
+    if (horizontal || vertical) {
+      if (!element.style.overflow) {
+        element.style.overflow = "auto";
+      }
+    }
+    if (horizontal) {
+      element.style.position = element.style.position || "relative";
+      element.style.resize = "none";
+      element.style.flexShrink = "0";
+      let handle = element.querySelector(".wgui-resize-handle");
+      if (!handle) {
+        handle = document.createElement("div");
+        handle.className = "wgui-resize-handle";
+        element.appendChild(handle);
+      }
+      handle.style.position = "absolute";
+      handle.style.top = "0";
+      handle.style.right = "0";
+      handle.style.bottom = "0";
+      handle.style.width = "8px";
+      handle.style.cursor = "col-resize";
+      handle.style.zIndex = "2";
+      handle.style.background = "transparent";
+      handle.onmousedown = (e) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startWidth = element.getBoundingClientRect().width;
+        const minWidth = item.minWidth || 0;
+        const maxWidth = item.maxWidth || 0;
+        const onMove = (moveEvent) => {
+          const next = startWidth + (moveEvent.clientX - startX);
+          let width = next;
+          if (minWidth && width < minWidth)
+            width = minWidth;
+          if (maxWidth && width > maxWidth)
+            width = maxWidth;
+          element.style.width = `${width}px`;
+        };
+        const onUp = () => {
+          document.removeEventListener("mousemove", onMove);
+          document.removeEventListener("mouseup", onUp);
+          document.body.style.userSelect = "";
+          document.body.style.cursor = "";
+        };
+        document.body.style.userSelect = "none";
+        document.body.style.cursor = "col-resize";
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+      };
+    }
     return element;
   }
   if (payload.type === "select") {

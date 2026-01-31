@@ -74,6 +74,19 @@ fn render_layout(item: &Item, layout: &Layout) -> String {
 	if layout.wrap {
 		style.push("flex-wrap", "wrap");
 	}
+	if layout.horizontal_resize || layout.vresize || layout.hresize {
+		let resize = if (layout.horizontal_resize || layout.hresize) && layout.vresize {
+			"both"
+		} else if layout.horizontal_resize || layout.hresize {
+			"horizontal"
+		} else {
+			"vertical"
+		};
+		style.push("resize", resize);
+		if item.overflow.is_empty() {
+			style.push("overflow", "auto");
+		}
+	}
 	apply_item_styles(item, &mut style);
 	let mut classes = vec!["retro-panel".to_string()];
 	classes.push(match layout.flex {
