@@ -44,7 +44,10 @@ async fn handle_req(
 				Ok(ws) => {
 					log::info!("websocket connected");
 					let ws = TungsteniteWs::new(ws);
-					let handle = WguiHandle::new(event_tx, clients);
+					let sessions: crate::Sessions = std::sync::Arc::new(tokio::sync::RwLock::new(
+						std::collections::HashMap::new(),
+					));
+					let handle = WguiHandle::new(event_tx, clients, sessions);
 					handle.handle_ws(ws).await;
 				}
 				Err(err) => {

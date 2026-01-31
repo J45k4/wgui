@@ -1,68 +1,81 @@
 <Switch>
   <Case path="/" title="PuppyChat">
-    <HStack spacing=0 grow=1>
-      <VStack width=260 minWidth=200 maxWidth=420 padding=12 spacing=10 backgroundColor="#f6f5f2" border="1px solid #e1ded7" hresize=true overflow="auto">
-        <Text value="PuppyChat" />
-        <Text value="Channels" />
-        <VStack spacing=4>
-          <For each={state.channels} itemAs="channel">
-            <Button text={channel.display_name} onClick="SelectChannel" arg={channel.id} />
-          </For>
-        </VStack>
-        <Text value="Direct Messages" />
-        <VStack spacing=4>
-          <For each={state.directs} itemAs="dm">
-            <HStack spacing=6>
-              <Text value={dm.online ? "●" : "○"} />
-              <Button text={dm.display_name} onClick="SelectDirect" arg={dm.id} />
-            </HStack>
-          </For>
-        </VStack>
+    <If test={state.user_name == ""}>
+      <VStack padding=16 spacing=12 width=360>
+        <Text value="Welcome to PuppyChat" />
+        <TextInput
+          value={state.login_name}
+          placeholder="Your name"
+          onTextChanged="EditLoginName"
+        />
+        <Button text="Enter" onClick="Login" />
       </VStack>
-      <VStack grow=1 padding=12 spacing=10>
-        <Text value={state.active_name} />
-        <VStack spacing=6 grow=1 overflow="scroll">
-          <If test={state.active_kind == "channel"}>
+    </If>
+    <Else>
+      <HStack spacing=0 grow=1>
+        <VStack width=260 minWidth=200 maxWidth=420 padding=12 spacing=10 backgroundColor="#f6f5f2" border="1px solid #e1ded7" hresize=true overflow="auto">
+          <Text value="PuppyChat" />
+          <Text value="Channels" />
+          <VStack spacing=4>
             <For each={state.channels} itemAs="channel">
-              <If test={channel.id == state.active_id}>
-                <For each={channel.messages} itemAs="msg">
-                  <VStack spacing=2 padding=6 border="1px solid #e6e6e6">
-                    <HStack spacing=8>
-                      <Text value={msg.author} />
-                      <Text value={msg.time} />
-                    </HStack>
-                    <Text value={msg.body} />
-                  </VStack>
-                </For>
-              </If>
+              <Button text={channel.display_name} onClick="SelectChannel" arg={channel.id} />
             </For>
-          </If>
-          <If test={state.active_kind == "dm"}>
+          </VStack>
+          <Text value="Direct Messages" />
+          <VStack spacing=4>
             <For each={state.directs} itemAs="dm">
-              <If test={dm.id == state.active_id}>
-                <For each={dm.messages} itemAs="msg">
-                  <VStack spacing=2 padding=6 border="1px solid #e6e6e6">
-                    <HStack spacing=8>
-                      <Text value={msg.author} />
-                      <Text value={msg.time} />
-                    </HStack>
-                    <Text value={msg.body} />
-                  </VStack>
-                </For>
-              </If>
+              <HStack spacing=6>
+                <Text value={dm.online ? "●" : "○"} />
+                <Button text={dm.display_name} onClick="SelectDirect" arg={dm.id} />
+              </HStack>
             </For>
-          </If>
+          </VStack>
         </VStack>
-        <HStack spacing=6>
-          <TextInput
-            value={state.new_message}
-            placeholder="Write a message"
-            onTextChanged="EditNewMessage"
-          />
-          <Button text="Send" onClick="SendMessage" />
-        </HStack>
-      </VStack>
-    </HStack>
+        <VStack grow=1 padding=12 spacing=10>
+          <Text value={state.active_name} />
+          <VStack spacing=6 grow=1 overflow="scroll">
+            <If test={state.active_kind == "channel"}>
+              <For each={state.channels} itemAs="channel">
+                <If test={channel.id == state.active_id}>
+                  <For each={channel.messages} itemAs="msg">
+                    <VStack spacing=2 padding=6 border="1px solid #e6e6e6">
+                      <HStack spacing=8>
+                        <Text value={msg.author} />
+                        <Text value={msg.time} />
+                      </HStack>
+                      <Text value={msg.body} />
+                    </VStack>
+                  </For>
+                </If>
+              </For>
+            </If>
+            <If test={state.active_kind == "dm"}>
+              <For each={state.directs} itemAs="dm">
+                <If test={dm.id == state.active_id}>
+                  <For each={dm.messages} itemAs="msg">
+                    <VStack spacing=2 padding=6 border="1px solid #e6e6e6">
+                      <HStack spacing=8>
+                        <Text value={msg.author} />
+                        <Text value={msg.time} />
+                      </HStack>
+                      <Text value={msg.body} />
+                    </VStack>
+                  </For>
+                </If>
+              </For>
+            </If>
+          </VStack>
+          <HStack spacing=6>
+            <TextInput
+              value={state.new_message}
+              placeholder="Write a message"
+              onTextChanged="EditNewMessage"
+            />
+            <Button text="Send" onClick="SendMessage" />
+          </HStack>
+        </VStack>
+      </HStack>
+    </Else>
   </Case>
   <Case path="/*" title="Not Found">
     <Text value="Page not found" />

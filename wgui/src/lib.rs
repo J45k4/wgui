@@ -39,15 +39,26 @@ pub use types::*;
 pub use ws::TungsteniteWs;
 pub use ws::{next_client_id, WsMessage, WsStream};
 
+pub(crate) type Sessions = Arc<RwLock<HashMap<usize, Option<String>>>>;
+
 #[derive(Clone)]
 pub struct WguiHandle {
 	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	clients: Clients,
+	sessions: Sessions,
 }
 
 impl WguiHandle {
-	pub(crate) fn new(event_tx: mpsc::UnboundedSender<ClientMessage>, clients: Clients) -> Self {
-		Self { event_tx, clients }
+	pub(crate) fn new(
+		event_tx: mpsc::UnboundedSender<ClientMessage>,
+		clients: Clients,
+		sessions: Sessions,
+	) -> Self {
+		Self {
+			event_tx,
+			clients,
+			sessions,
+		}
 	}
 
 	pub async fn handle_ws<S>(&self, ws: S) -> usize
@@ -63,6 +74,19 @@ impl WguiHandle {
 			worker.run().await;
 		});
 
+		let mut sessions = self.sessions.write().await;
+		sessions.insert(id, None);
+
+		id
+	}
+
+	pub async fn handle_ws_with_session<S>(&self, ws: S, session: Option<String>) -> usize
+	where
+		S: WsStream + 'static,
+	{
+		let id = self.handle_ws(ws).await;
+		let mut sessions = self.sessions.write().await;
+		sessions.insert(id, session);
 		id
 	}
 
@@ -90,6 +114,16 @@ impl WguiHandle {
 		};
 		sender.send(Command::SetTitle(title.to_string())).unwrap();
 	}
+
+	pub async fn session_for_client(&self, client_id: usize) -> Option<String> {
+		let sessions = self.sessions.read().await;
+		sessions.get(&client_id).cloned().flatten()
+	}
+
+	pub async fn clear_session(&self, client_id: usize) {
+		let mut sessions = self.sessions.write().await;
+		sessions.remove(&client_id);
+	}
 }
 
 pub struct Wgui {
@@ -102,6 +136,7 @@ impl Wgui {
 	pub fn new(addr: SocketAddr) -> Self {
 		let (events_tx, events_rx) = mpsc::unbounded_channel();
 		let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
+		let sessions: Sessions = Arc::new(RwLock::new(HashMap::new()));
 
 		{
 			let clients = clients.clone();
@@ -113,7 +148,7 @@ impl Wgui {
 
 		Self {
 			events_rx,
-			handle: WguiHandle::new(events_tx, clients),
+			handle: WguiHandle::new(events_tx, clients, sessions),
 		}
 	}
 
@@ -124,6 +159,7 @@ impl Wgui {
 	) -> Self {
 		let (events_tx, events_rx) = mpsc::unbounded_channel();
 		let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
+		let sessions: Sessions = Arc::new(RwLock::new(HashMap::new()));
 
 		{
 			let clients = clients.clone();
@@ -136,17 +172,18 @@ impl Wgui {
 
 		Self {
 			events_rx,
-			handle: WguiHandle::new(events_tx, clients),
+			handle: WguiHandle::new(events_tx, clients, sessions),
 		}
 	}
 
 	pub fn new_without_server() -> Self {
 		let (events_tx, events_rx) = mpsc::unbounded_channel();
 		let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
+		let sessions: Sessions = Arc::new(RwLock::new(HashMap::new()));
 
 		Self {
 			events_rx,
-			handle: WguiHandle::new(events_tx, clients),
+			handle: WguiHandle::new(events_tx, clients, sessions),
 		}
 	}
 
@@ -169,5 +206,13 @@ impl Wgui {
 
 	pub async fn set_title(&self, client_id: usize, title: &str) {
 		self.handle.set_title(client_id, title).await
+	}
+
+	pub async fn session_for_client(&self, client_id: usize) -> Option<String> {
+		self.handle.session_for_client(client_id).await
+	}
+
+	pub async fn clear_session(&self, client_id: usize) {
+		self.handle.clear_session(client_id).await
 	}
 }

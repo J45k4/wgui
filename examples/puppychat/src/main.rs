@@ -36,6 +36,46 @@ pub struct DirectMessage {
 
 #[derive(Debug, Clone, WuiModel)]
 pub struct ChatState {
+	channels: Vec<Channel>,
+	directs: Vec<DirectMessage>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionState {
+	pub user_name: String,
+	pub login_name: String,
+	pub new_message: String,
+	pub active_kind: String,
+	pub active_id: u32,
+	pub active_name: String,
+}
+
+impl SessionState {
+	fn new(shared: &ChatState) -> Self {
+		let (active_kind, active_id, active_name) = if let Some(first) = shared.channels.first() {
+			(
+				"channel".to_string(),
+				first.id,
+				first.display_name.clone(),
+			)
+		} else {
+			("".to_string(), 0, "".to_string())
+		};
+		Self {
+			user_name: String::new(),
+			login_name: String::new(),
+			new_message: String::new(),
+			active_kind,
+			active_id,
+			active_name,
+		}
+	}
+}
+
+#[derive(Debug, Clone, WuiModel)]
+pub struct ChatViewState {
+	user_name: String,
+	login_name: String,
 	new_message: String,
 	active_kind: String,
 	active_id: u32,
@@ -115,14 +155,7 @@ impl Default for ChatState {
 				}],
 			},
 		];
-		Self {
-			new_message: String::new(),
-			active_kind: "channel".to_string(),
-			active_id: channels[0].id,
-			active_name: channels[0].display_name.clone(),
-			channels,
-			directs,
-		}
+		Self { channels, directs }
 	}
 }
 
@@ -131,7 +164,11 @@ async fn main() {
 	simple_logger::init_with_level(Level::Info).unwrap();
 
 	let ctx = Arc::new(Ctx::new(context::SharedContext::default()));
-	let router = generated::routes::router(ctx);
+	let routes: Vec<&'static str> = generated::routes::ROUTES.iter().map(|r| r.route).collect();
+	let session = wgui::axum::SessionCookieConfig::new("puppychat_session");
+	let router = wgui::wui::runtime::router_with_component_and_session::<
+		components::puppychat::Puppychat,
+	>(ctx, &routes, session);
 	let app = Router::new().merge(router);
 
 	let addr: SocketAddr = "0.0.0.0:5545".parse().unwrap();

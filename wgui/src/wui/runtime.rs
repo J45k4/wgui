@@ -31,6 +31,7 @@ pub trait WuiController {
 pub struct Ctx<T> {
 	pub state: Arc<T>,
 	current_client: Arc<Mutex<Option<usize>>>,
+	current_session: Arc<Mutex<Option<String>>>,
 	command_tx: mpsc::UnboundedSender<RuntimeCommand>,
 	command_rx: Mutex<Option<mpsc::UnboundedReceiver<RuntimeCommand>>>,
 }
@@ -41,6 +42,7 @@ impl<T> Ctx<T> {
 		Self {
 			state: Arc::new(state),
 			current_client: Arc::new(Mutex::new(None)),
+			current_session: Arc::new(Mutex::new(None)),
 			command_tx,
 			command_rx: Mutex::new(Some(command_rx)),
 		}
@@ -63,8 +65,20 @@ impl<T> Ctx<T> {
 		}
 	}
 
+	pub fn session_id(&self) -> Option<String> {
+		self.current_session.lock().unwrap().clone()
+	}
+
+	pub fn client_id(&self) -> Option<usize> {
+		*self.current_client.lock().unwrap()
+	}
+
 	pub(crate) fn set_current_client(&self, client_id: Option<usize>) {
 		*self.current_client.lock().unwrap() = client_id;
+	}
+
+	pub(crate) fn set_current_session(&self, session: Option<String>) {
+		*self.current_session.lock().unwrap() = session;
 	}
 
 	pub(crate) fn take_command_rx(&self) -> mpsc::UnboundedReceiver<RuntimeCommand> {
@@ -280,11 +294,14 @@ where
 						crate::ClientEvent::Connected { id: _ } => {
 							let path = paths.get(&client_id).cloned().unwrap_or_else(|| "/".to_string());
 							ctx.set_current_client(Some(client_id));
+							let session = wgui.session_for_client(client_id).await;
+							ctx.set_current_session(session);
 							let controller = T::mount(ctx.clone()).await;
 							let item = WuiController::render_with_path(&controller, &path);
 							render_handle.render(client_id, item).await;
 							controllers.insert(client_id, controller);
 							ctx.set_current_client(None);
+							ctx.set_current_session(None);
 							while let Ok(cmd) = command_rx.try_recv() {
 								match cmd {
 									RuntimeCommand::SetTitle { client_id, title } => {
@@ -298,20 +315,26 @@ where
 								controller.unmount(ctx.clone());
 							}
 							paths.remove(&client_id);
+							wgui.clear_session(client_id).await;
 						}
 						crate::ClientEvent::PathChanged(change) => {
 							paths.insert(client_id, change.path.clone());
 							if let Some(controller) = controllers.get_mut(&client_id) {
 								ctx.set_current_client(Some(client_id));
+								let session = wgui.session_for_client(client_id).await;
+								ctx.set_current_session(session);
 								let item = WuiController::render_with_path(controller, &change.path);
 								render_handle.render(client_id, item).await;
 								ctx.set_current_client(None);
+								ctx.set_current_session(None);
 							}
 						}
 						crate::ClientEvent::Input(_) => {}
 						_ => {
 							let path = paths.get(&client_id).cloned().unwrap_or_else(|| "/".to_string());
 							ctx.set_current_client(Some(client_id));
+							let session = wgui.session_for_client(client_id).await;
+							ctx.set_current_session(session);
 							let item = match controllers.get_mut(&client_id) {
 								Some(controller) => {
 									if WuiController::handle(controller, &message.event) {
@@ -326,6 +349,123 @@ where
 								render_handle.render(client_id, item).await;
 							}
 							ctx.set_current_client(None);
+							ctx.set_current_session(None);
+							while let Ok(cmd) = command_rx.try_recv() {
+								match cmd {
+									RuntimeCommand::SetTitle { client_id, title } => {
+										render_handle.set_title(client_id, &title).await;
+									}
+								}
+							}
+						}
+					}
+				}
+				Some(cmd) = command_rx.recv() => {
+					match cmd {
+						RuntimeCommand::SetTitle { client_id, title } => {
+							render_handle.set_title(client_id, &title).await;
+						}
+					}
+				}
+				else => break,
+			}
+		}
+	});
+	router
+}
+
+#[cfg(feature = "axum")]
+pub fn router_with_component_and_session<T>(
+	ctx: Arc<Ctx<T::Context>>,
+	routes: &[&'static str],
+	session: crate::axum::SessionCookieConfig,
+) -> axum::Router
+where
+	T: Component + WuiController,
+{
+	let mut wgui = crate::Wgui::new_without_server();
+	let handle = wgui.handle();
+	let ssr_ctx = ctx.clone();
+	let mut command_rx = ctx.take_command_rx();
+	let router = crate::axum::router_with_ssr_routes_and_session(
+		handle.clone(),
+		Arc::new(move || {
+			let controller = tokio::task::block_in_place(|| {
+				tokio::runtime::Handle::current().block_on(T::mount(ssr_ctx.clone()))
+			});
+			WuiController::render(&controller)
+		}),
+		routes,
+		session,
+	);
+	let render_handle = handle.clone();
+	tokio::spawn(async move {
+		let mut controllers: HashMap<_, T> = HashMap::new();
+		let mut paths: HashMap<usize, String> = HashMap::new();
+		loop {
+			tokio::select! {
+				Some(message) = wgui.next() => {
+					let client_id = message.client_id;
+					match message.event {
+						crate::ClientEvent::Connected { id: _ } => {
+							let path = paths.get(&client_id).cloned().unwrap_or_else(|| "/".to_string());
+							ctx.set_current_client(Some(client_id));
+							let session = wgui.session_for_client(client_id).await;
+							ctx.set_current_session(session);
+							let controller = T::mount(ctx.clone()).await;
+							let item = WuiController::render_with_path(&controller, &path);
+							render_handle.render(client_id, item).await;
+							controllers.insert(client_id, controller);
+							ctx.set_current_client(None);
+							ctx.set_current_session(None);
+							while let Ok(cmd) = command_rx.try_recv() {
+								match cmd {
+									RuntimeCommand::SetTitle { client_id, title } => {
+										render_handle.set_title(client_id, &title).await;
+									}
+								}
+							}
+						}
+						crate::ClientEvent::Disconnected { id: _ } => {
+							if let Some(controller) = controllers.remove(&client_id) {
+								controller.unmount(ctx.clone());
+							}
+							paths.remove(&client_id);
+							wgui.clear_session(client_id).await;
+						}
+						crate::ClientEvent::PathChanged(change) => {
+							paths.insert(client_id, change.path.clone());
+							if let Some(controller) = controllers.get_mut(&client_id) {
+								ctx.set_current_client(Some(client_id));
+								let session = wgui.session_for_client(client_id).await;
+								ctx.set_current_session(session);
+								let item = WuiController::render_with_path(controller, &change.path);
+								render_handle.render(client_id, item).await;
+								ctx.set_current_client(None);
+								ctx.set_current_session(None);
+							}
+						}
+						crate::ClientEvent::Input(_) => {}
+						_ => {
+							let path = paths.get(&client_id).cloned().unwrap_or_else(|| "/".to_string());
+							ctx.set_current_client(Some(client_id));
+							let session = wgui.session_for_client(client_id).await;
+							ctx.set_current_session(session);
+							let item = match controllers.get_mut(&client_id) {
+								Some(controller) => {
+									if WuiController::handle(controller, &message.event) {
+										Some(WuiController::render_with_path(controller, &path))
+									} else {
+										None
+									}
+								}
+								None => None,
+							};
+							if let Some(item) = item {
+								render_handle.render(client_id, item).await;
+							}
+							ctx.set_current_client(None);
+							ctx.set_current_session(None);
 							while let Ok(cmd) = command_rx.try_recv() {
 								match cmd {
 									RuntimeCommand::SetTitle { client_id, title } => {
