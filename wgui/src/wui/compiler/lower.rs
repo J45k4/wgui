@@ -1,6 +1,6 @@
 use crate::wui::ast::{AttrValue, Element, Expr, Node};
 use crate::wui::compiler::ir::{
-	ActionDef, ActionPayload, EventKind, IrDocument, IrFor, IrIf, IrNode, IrProp, IrScope,
+	ActionDef, ActionPayload, EventKind, IrDocument, IrFor, IrIf, IrNode, IrProp, IrRoute, IrScope,
 	IrWidget, PageMeta,
 };
 use crate::wui::compiler::registry::schema_for;
@@ -132,6 +132,10 @@ fn lower_nodes(nodes: &[Node], ctx: &mut LowerContext, diags: &mut Vec<Diagnosti
 				out.push(IrNode::Scope(IrScope { name, body }));
 			}
 			Node::Element(el) if el.name == "Page" => {
+				diags.push(Diagnostic::new(
+					"Page is deprecated; use Route instead",
+					el.span,
+				));
 				let route = get_string_attr(el, "route");
 				let title = get_string_attr(el, "title");
 				let state_type = get_string_attr(el, "state");
@@ -141,6 +145,21 @@ fn lower_nodes(nodes: &[Node], ctx: &mut LowerContext, diags: &mut Vec<Diagnosti
 					title,
 					state_type,
 				});
+			}
+			Node::Element(el) if el.name == "Route" => {
+				let route = get_string_attr(el, "path").or_else(|| get_string_attr(el, "route"));
+				let title = get_string_attr(el, "title");
+				let state_type = get_string_attr(el, "state");
+				ctx.pages.push(PageMeta {
+					module: ctx.module.clone(),
+					route: route.clone(),
+					title,
+					state_type,
+				});
+				if let Some(path) = route {
+					let body = lower_nodes(&el.children, ctx, diags);
+					out.push(IrNode::Route(IrRoute { path, body }));
+				}
 			}
 			Node::Element(el) => {
 				if let Some(widget) = lower_widget(el, ctx, diags) {

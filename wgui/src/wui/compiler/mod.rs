@@ -62,7 +62,7 @@ mod tests {
 	#[test]
 	fn compiles_actions_and_routes() {
 		let src = r#"
-<Page route="/todo" state="TodoState" />
+<Route path="/todo" />
 <VStack>
 	<Button text="Add" onClick="AddTodo" />
 	<TextInput value={state.new_todo_name} onTextChanged="EditNewTodo" />

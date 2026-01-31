@@ -288,15 +288,20 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 		}
 
 	impl ::wgui::wui::runtime::WuiController for #controller_ident {
-			fn render(&self) -> ::wgui::Item {
-				let model = self.#model_method_ident();
-				#template_fn().render(&model)
-			}
+		fn render(&self) -> ::wgui::Item {
+			let model = self.#model_method_ident();
+			#template_fn().render(&model)
+		}
 
-			fn handle(&mut self, event: &::wgui::ClientEvent) -> bool {
-				let Some(action) = #template_fn().decode(event) else {
-					return false;
-				};
+		fn render_with_path(&self, path: &str) -> ::wgui::Item {
+			let model = self.#model_method_ident();
+			#template_fn().render_with_path(&model, path)
+		}
+
+		fn handle(&mut self, event: &::wgui::ClientEvent) -> bool {
+			let Some(action) = #template_fn().decode(event) else {
+				return false;
+			};
 				match action {
 					::wgui::wui::runtime::RuntimeAction::Click { ref name, arg } => {
 						let action_name = #action_fn(name);

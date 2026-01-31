@@ -222,6 +222,7 @@ fn write_routes(dir: &Path, routes: &[(String, String)]) -> Result<(), BuildErro
 	);
 	contents.push_str("pub const ROUTES: &[RouteDef] = &[\n");
 	for (module, route) in routes {
+		let route = normalize_route(route);
 		contents.push_str(&format!(
 			"\tRouteDef {{ module: \"{}\", route: \"{}\" }},\n",
 			module, route
@@ -273,6 +274,19 @@ fn to_pascal_case(input: &str) -> String {
 		"Controller".to_string()
 	} else {
 		out
+	}
+}
+
+fn normalize_route(route: &str) -> String {
+	if route.ends_with("/*") {
+		let base = route.trim_end_matches("/*");
+		if base.is_empty() {
+			"/{*wildcard}".to_string()
+		} else {
+			format!("{base}/{{*wildcard}}")
+		}
+	} else {
+		route.to_string()
 	}
 }
 

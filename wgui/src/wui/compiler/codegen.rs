@@ -39,7 +39,28 @@ pub fn generate(doc: &IrDocument) -> String {
 		"pub fn render(state: &{}) -> Item {{\n",
 		state_type_path
 	));
+	out.push_str("\trender_with_path(state, \"\")\n");
+	out.push_str("}\n\n");
+	out.push_str(&format!(
+		"pub fn render_with_path(state: &{}, path: &str) -> Item {{\n",
+		state_type_path
+	));
+	out.push_str("\tlet __path = path;\n");
 	out.push_str(&emit_nodes(&doc.nodes, 1));
+	out.push_str("}\n\n");
+	out.push_str(
+		"fn __wui_route_matches(route: &str, path: &str) -> bool {\n",
+	);
+	out.push_str("\tif route == path { return true; }\n");
+	out.push_str("\tif route.ends_with(\"/*\") {\n");
+	out.push_str("\t\tlet base = route.trim_end_matches(\"/*\");\n");
+	out.push_str("\t\treturn if base.is_empty() { path.starts_with('/') } else { path.starts_with(base) };\n");
+	out.push_str("\t}\n");
+	out.push_str("\tif let Some(pos) = route.find(\"{*wildcard}\") {\n");
+	out.push_str("\t\tlet base = &route[..pos.saturating_sub(1)];\n");
+	out.push_str("\t\treturn if base.is_empty() { path.starts_with('/') } else { path.starts_with(base) };\n");
+	out.push_str("\t}\n");
+	out.push_str("\tfalse\n");
 	out.push_str("}\n");
 	out
 }
@@ -151,6 +172,7 @@ fn emit_node_into(node: &IrNode, indent: usize, target: &str) -> String {
 		IrNode::For(for_node) => emit_for(for_node, indent, target),
 		IrNode::If(if_node) => emit_if(if_node, indent, target),
 		IrNode::Scope(scope) => emit_scope(scope, indent, target),
+		IrNode::Route(route) => emit_route(route, indent, target),
 	}
 }
 
@@ -192,6 +214,18 @@ fn emit_if(node: &IrIf, indent: usize, target: &str) -> String {
 
 fn emit_scope(node: &IrScope, indent: usize, target: &str) -> String {
 	emit_body(&node.body, indent, target)
+}
+
+fn emit_route(node: &crate::wui::compiler::ir::IrRoute, indent: usize, target: &str) -> String {
+	let indent_str = "\t".repeat(indent);
+	let mut out = String::new();
+	out.push_str(&format!(
+		"{indent_str}if __wui_route_matches({:?}, __path) {{\n",
+		node.path
+	));
+	out.push_str(&emit_body(&node.body, indent + 1, target));
+	out.push_str(&format!("{indent_str}}}\n"));
+	out
 }
 
 fn emit_body(nodes: &[IrNode], indent: usize, target: &str) -> String {

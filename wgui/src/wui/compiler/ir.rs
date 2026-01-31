@@ -21,6 +21,7 @@ pub enum IrNode {
 	For(IrFor),
 	If(IrIf),
 	Scope(IrScope),
+	Route(IrRoute),
 	Text(String),
 }
 
@@ -50,6 +51,12 @@ pub struct IrIf {
 #[derive(Debug, Clone)]
 pub struct IrScope {
 	pub name: String,
+	pub body: Vec<IrNode>,
+}
+
+#[derive(Debug, Clone)]
+pub struct IrRoute {
+	pub path: String,
 	pub body: Vec<IrNode>,
 }
 

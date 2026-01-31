@@ -21,6 +21,10 @@ pub struct Template {
 
 pub trait WuiController {
 	fn render(&self) -> Item;
+	fn render_with_path(&self, path: &str) -> Item {
+		let _ = path;
+		self.render()
+	}
 	fn handle(&mut self, event: &crate::types::ClientEvent) -> bool;
 }
 
@@ -222,7 +226,11 @@ impl Template {
 	}
 
 	pub fn render<T: WuiValueProvider>(&self, state: &T) -> Item {
-		let mut ctx = EvalContext::new(state.wui_value());
+		self.render_with_path(state, "")
+	}
+
+	pub fn render_with_path<T: WuiValueProvider>(&self, state: &T, path: &str) -> Item {
+		let mut ctx = EvalContext::new(state.wui_value(), path);
 		let mut children = Vec::new();
 		render_nodes(&self.doc.nodes, &mut children, &mut ctx);
 		gui::vstack(children)
@@ -263,15 +271,17 @@ where
 	let render_handle = handle.clone();
 	tokio::spawn(async move {
 		let mut controllers: HashMap<_, T> = HashMap::new();
+		let mut paths: HashMap<usize, String> = HashMap::new();
 		loop {
 			tokio::select! {
 				Some(message) = wgui.next() => {
 					let client_id = message.client_id;
 					match message.event {
 						crate::ClientEvent::Connected { id: _ } => {
+							let path = paths.get(&client_id).cloned().unwrap_or_else(|| "/".to_string());
 							ctx.set_current_client(Some(client_id));
 							let controller = T::mount(ctx.clone()).await;
-							let item = WuiController::render(&controller);
+							let item = WuiController::render_with_path(&controller, &path);
 							render_handle.render(client_id, item).await;
 							controllers.insert(client_id, controller);
 							ctx.set_current_client(None);
@@ -287,15 +297,25 @@ where
 							if let Some(controller) = controllers.remove(&client_id) {
 								controller.unmount(ctx.clone());
 							}
+							paths.remove(&client_id);
 						}
-						crate::ClientEvent::PathChanged(_) => {}
+						crate::ClientEvent::PathChanged(change) => {
+							paths.insert(client_id, change.path.clone());
+							if let Some(controller) = controllers.get_mut(&client_id) {
+								ctx.set_current_client(Some(client_id));
+								let item = WuiController::render_with_path(controller, &change.path);
+								render_handle.render(client_id, item).await;
+								ctx.set_current_client(None);
+							}
+						}
 						crate::ClientEvent::Input(_) => {}
 						_ => {
+							let path = paths.get(&client_id).cloned().unwrap_or_else(|| "/".to_string());
 							ctx.set_current_client(Some(client_id));
 							let item = match controllers.get_mut(&client_id) {
 								Some(controller) => {
 									if WuiController::handle(controller, &message.event) {
-										Some(WuiController::render(controller))
+										Some(WuiController::render_with_path(controller, &path))
 									} else {
 										None
 									}
@@ -374,9 +394,10 @@ struct EvalContext {
 }
 
 impl EvalContext {
-	fn new(state: WuiValue) -> Self {
+	fn new(state: WuiValue, path: &str) -> Self {
 		let mut vars = HashMap::new();
 		vars.insert("state".to_string(), state);
+		vars.insert("path".to_string(), WuiValue::String(path.to_string()));
 		Self { vars }
 	}
 
@@ -461,6 +482,16 @@ fn render_nodes(nodes: &[IrNode], out: &mut Vec<Item>, ctx: &mut EvalContext) {
 			}
 			IrNode::Scope(node) => {
 				render_nodes(&node.body, out, ctx);
+			}
+			IrNode::Route(node) => {
+				let path = ctx
+					.vars
+					.get("path")
+					.map(value_as_string)
+					.unwrap_or_else(String::new);
+				if route_matches(&node.path, &path) {
+					render_nodes(&node.body, out, ctx);
+				}
 			}
 		}
 	}
@@ -776,6 +807,29 @@ fn values_equal(left: &WuiValue, right: &WuiValue) -> bool {
 		(WuiValue::Null, WuiValue::Null) => true,
 		_ => false,
 	}
+}
+
+fn route_matches(route: &str, path: &str) -> bool {
+	if route == path {
+		return true;
+	}
+	if route.ends_with("/*") {
+		let base = route.trim_end_matches("/*");
+		return if base.is_empty() {
+			path.starts_with('/')
+		} else {
+			path.starts_with(base)
+		};
+	}
+	if let Some(pos) = route.find("{*wildcard}") {
+		let base = &route[..pos.saturating_sub(1)];
+		return if base.is_empty() {
+			path.starts_with('/')
+		} else {
+			path.starts_with(base)
+		};
+	}
+	false
 }
 
 fn action_id(name: &str) -> u32 {
