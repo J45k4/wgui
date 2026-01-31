@@ -254,8 +254,8 @@ where
 	tokio::spawn(async move {
 		let mut controllers: HashMap<_, T> = HashMap::new();
 		while let Some(message) = wgui.next().await {
-				let client_id = message.client_id;
-				match message.event {
+			let client_id = message.client_id;
+			match message.event {
 				crate::ClientEvent::Connected { id: _ } => {
 					let controller = T::mount(ctx.clone()).await;
 					let item = WuiController::render(&controller);
