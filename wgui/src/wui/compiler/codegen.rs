@@ -3,6 +3,7 @@ use crate::wui::compiler::ir::{
 	ActionDef, ActionPayload, EventKind, IrDocument, IrFor, IrIf, IrNode, IrProp, IrScope, IrSwitch,
 	IrWidget,
 };
+use std::collections::BTreeSet;
 
 pub fn generate(doc: &IrDocument) -> String {
 	let mut out = String::new();
@@ -36,6 +37,22 @@ pub fn generate(doc: &IrDocument) -> String {
 		.and_then(|page| page.state_type.clone())
 		.unwrap_or_else(|| "State".to_string());
 	let state_type_path = state_type_path(&state_type);
+	let param_names = collect_param_names(&doc.nodes);
+	out.push_str("#[derive(Clone, Default)]\n");
+	out.push_str("struct __WuiParams {\n");
+	for name in &param_names {
+		out.push_str(&format!("\tpub {}: String,\n", name));
+	}
+	out.push_str("}\n\n");
+	out.push_str("fn __wui_param_set(params: &mut __WuiParams, name: &str, value: &str) {\n");
+	out.push_str("\tmatch name {\n");
+	for name in &param_names {
+		out.push_str(&format!(
+			"\t\t{:?} => params.{} = value.to_string(),\n",
+			name, name
+		));
+	}
+	out.push_str("\t\t_ => {}\n\t}\n}\n\n");
 	out.push_str(&format!(
 		"pub fn render(state: &{}) -> Item {{\n",
 		state_type_path
@@ -50,18 +67,45 @@ pub fn generate(doc: &IrDocument) -> String {
 	out.push_str(&emit_nodes(&doc.nodes, 1));
 	out.push_str("}\n\n");
 	out.push_str(
-		"fn __wui_route_matches(route: &str, path: &str) -> bool {\n",
+		"fn __wui_route_params(route: &str, path: &str) -> Option<__WuiParams> {\n",
 	);
-	out.push_str("\tif route == path { return true; }\n");
-	out.push_str("\tif route.ends_with(\"/*\") {\n");
-	out.push_str("\t\tlet base = route.trim_end_matches(\"/*\");\n");
-	out.push_str("\t\treturn if base.is_empty() { path.starts_with('/') } else { path.starts_with(base) };\n");
+	out.push_str("\tif route == path { return Some(__WuiParams::default()); }\n");
+	out.push_str("\tlet route_parts: Vec<&str> = route.trim_matches('/').split('/').filter(|s| !s.is_empty()).collect();\n");
+	out.push_str("\tlet path_parts: Vec<&str> = path.trim_matches('/').split('/').filter(|s| !s.is_empty()).collect();\n");
+	out.push_str("\tlet mut params = __WuiParams::default();\n");
+	out.push_str("\tlet mut wildcard_at = None;\n");
+	out.push_str("\tfor (index, seg) in route_parts.iter().enumerate() {\n");
+	out.push_str("\t\tif *seg == \"*\" || *seg == \"{*wildcard}\" {\n");
+	out.push_str("\t\t\twildcard_at = Some(index);\n");
+	out.push_str("\t\t\tbreak;\n");
+	out.push_str("\t\t}\n");
 	out.push_str("\t}\n");
-	out.push_str("\tif let Some(pos) = route.find(\"{*wildcard}\") {\n");
-	out.push_str("\t\tlet base = &route[..pos.saturating_sub(1)];\n");
-	out.push_str("\t\treturn if base.is_empty() { path.starts_with('/') } else { path.starts_with(base) };\n");
+	out.push_str("\tlet end = wildcard_at.unwrap_or(route_parts.len());\n");
+	out.push_str("\tif wildcard_at.is_none() && end != path_parts.len() { return None; }\n");
+	out.push_str("\tif wildcard_at.is_some() && path_parts.len() < end { return None; }\n");
+	out.push_str("\tfor i in 0..end {\n");
+	out.push_str("\t\tlet route_seg = route_parts[i];\n");
+	out.push_str("\t\tlet path_seg = path_parts[i];\n");
+	out.push_str("\t\tif let Some(name) = __wui_param_name(route_seg) {\n");
+	out.push_str("\t\t\t__wui_param_set(&mut params, name, path_seg);\n");
+	out.push_str("\t\t} else if route_seg != path_seg {\n");
+	out.push_str("\t\t\treturn None;\n");
+	out.push_str("\t\t}\n");
 	out.push_str("\t}\n");
-	out.push_str("\tfalse\n");
+	out.push_str("\tSome(params)\n");
+	out.push_str("}\n");
+	out.push_str(
+		"fn __wui_param_name(segment: &str) -> Option<&str> {\n",
+	);
+	out.push_str("\tif let Some(name) = segment.strip_prefix(':') {\n");
+	out.push_str("\t\tif !name.is_empty() { return Some(name); }\n");
+	out.push_str("\t}\n");
+	out.push_str("\tif segment.starts_with('{') && segment.ends_with('}') {\n");
+	out.push_str("\t\tlet inner = &segment[1..segment.len() - 1];\n");
+	out.push_str("\t\tif inner.starts_with('*') { return None; }\n");
+	out.push_str("\t\tif !inner.is_empty() { return Some(inner); }\n");
+	out.push_str("\t}\n");
+	out.push_str("\tNone\n");
 	out.push_str("}\n");
 	out
 }
@@ -222,9 +266,10 @@ fn emit_route(node: &crate::wui::compiler::ir::IrRoute, indent: usize, target: &
 	let indent_str = "\t".repeat(indent);
 	let mut out = String::new();
 	out.push_str(&format!(
-		"{indent_str}if __wui_route_matches({:?}, __path) {{\n",
+		"{indent_str}if let Some(params) = __wui_route_params({:?}, __path) {{\n",
 		node.path
 	));
+	out.push_str(&format!("{indent_str}\tlet _ = &params;\n"));
 	out.push_str(&emit_body(&node.body, indent + 1, target));
 	out.push_str(&format!("{indent_str}}}\n"));
 	out
@@ -237,17 +282,19 @@ fn emit_switch(node: &IrSwitch, indent: usize, target: &str) -> String {
 	for case in &node.cases {
 		if first {
 			out.push_str(&format!(
-				"{indent_str}if __wui_route_matches({:?}, __path) {{\n",
+				"{indent_str}if let Some(params) = __wui_route_params({:?}, __path) {{\n",
 				case.path
 			));
+			out.push_str(&format!("{indent_str}\tlet _ = &params;\n"));
 			out.push_str(&emit_body(&case.body, indent + 1, target));
 			out.push_str(&format!("{indent_str}}}"));
 			first = false;
 		} else {
 			out.push_str(&format!(
-				" else if __wui_route_matches({:?}, __path) {{\n",
+				" else if let Some(params) = __wui_route_params({:?}, __path) {{\n",
 				case.path
 			));
+			out.push_str(&format!("{indent_str}\tlet _ = &params;\n"));
 			out.push_str(&emit_body(&case.body, indent + 1, target));
 			out.push_str(&format!("{indent_str}}}"));
 		}
@@ -256,6 +303,49 @@ fn emit_switch(node: &IrSwitch, indent: usize, target: &str) -> String {
 		out.push('\n');
 	}
 	out
+}
+
+fn collect_param_names(nodes: &[IrNode]) -> Vec<String> {
+	let mut names = BTreeSet::new();
+	collect_param_names_into(nodes, &mut names);
+	names.into_iter().collect()
+}
+
+fn collect_param_names_into(nodes: &[IrNode], out: &mut BTreeSet<String>) {
+	for node in nodes {
+		match node {
+			IrNode::Widget(widget) => collect_param_names_into(&widget.children, out),
+			IrNode::For(node) => collect_param_names_into(&node.body, out),
+			IrNode::If(node) => {
+				collect_param_names_into(&node.then_body, out);
+				collect_param_names_into(&node.else_body, out);
+			}
+			IrNode::Scope(node) => collect_param_names_into(&node.body, out),
+			IrNode::Route(node) => collect_names_from_route(&node.path, out),
+			IrNode::Switch(node) => {
+				for case in &node.cases {
+					collect_names_from_route(&case.path, out);
+					collect_param_names_into(&case.body, out);
+				}
+			}
+			IrNode::Text(_) => {}
+		}
+	}
+}
+
+fn collect_names_from_route(route: &str, out: &mut BTreeSet<String>) {
+	for segment in route.split('/').filter(|seg| !seg.is_empty()) {
+		if let Some(name) = segment.strip_prefix(':') {
+			if !name.is_empty() {
+				out.insert(name.to_string());
+			}
+		} else if segment.starts_with('{') && segment.ends_with('}') && !segment.starts_with("{*") {
+			let name = &segment[1..segment.len() - 1];
+			if !name.is_empty() {
+				out.insert(name.to_string());
+			}
+		}
+	}
 }
 
 fn emit_body(nodes: &[IrNode], indent: usize, target: &str) -> String {

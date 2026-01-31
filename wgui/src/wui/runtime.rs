@@ -489,8 +489,15 @@ fn render_nodes(nodes: &[IrNode], out: &mut Vec<Item>, ctx: &mut EvalContext) {
 					.get("path")
 					.map(value_as_string)
 					.unwrap_or_else(String::new);
-				if route_matches(&node.path, &path) {
-					render_nodes(&node.body, out, ctx);
+				if let Some(params) = route_params(&node.path, &path) {
+					let params = WuiValue::object(
+						params
+							.into_iter()
+							.map(|(k, v)| (k, WuiValue::String(v)))
+							.collect(),
+					);
+					let mut nested = ctx.with_var("params", params);
+					render_nodes(&node.body, out, &mut nested);
 				}
 			}
 			IrNode::Switch(node) => {
@@ -500,8 +507,15 @@ fn render_nodes(nodes: &[IrNode], out: &mut Vec<Item>, ctx: &mut EvalContext) {
 					.map(value_as_string)
 					.unwrap_or_else(String::new);
 				for case in &node.cases {
-					if route_matches(&case.path, &path) {
-						render_nodes(&case.body, out, ctx);
+					if let Some(params) = route_params(&case.path, &path) {
+						let params = WuiValue::object(
+							params
+								.into_iter()
+								.map(|(k, v)| (k, WuiValue::String(v)))
+								.collect(),
+						);
+						let mut nested = ctx.with_var("params", params);
+						render_nodes(&case.body, out, &mut nested);
 						break;
 					}
 				}
@@ -822,27 +836,63 @@ fn values_equal(left: &WuiValue, right: &WuiValue) -> bool {
 	}
 }
 
-fn route_matches(route: &str, path: &str) -> bool {
+fn route_params(route: &str, path: &str) -> Option<HashMap<String, String>> {
 	if route == path {
-		return true;
+		return Some(HashMap::new());
 	}
-	if route.ends_with("/*") {
-		let base = route.trim_end_matches("/*");
-		return if base.is_empty() {
-			path.starts_with('/')
-		} else {
-			path.starts_with(base)
-		};
+	let route_parts: Vec<&str> = route
+		.trim_matches('/')
+		.split('/')
+		.filter(|s| !s.is_empty())
+		.collect();
+	let path_parts: Vec<&str> = path
+		.trim_matches('/')
+		.split('/')
+		.filter(|s| !s.is_empty())
+		.collect();
+	let mut params = HashMap::new();
+	let mut wildcard_at = None;
+	for (index, seg) in route_parts.iter().enumerate() {
+		if *seg == "*" || *seg == "{*wildcard}" {
+			wildcard_at = Some(index);
+			break;
+		}
 	}
-	if let Some(pos) = route.find("{*wildcard}") {
-		let base = &route[..pos.saturating_sub(1)];
-		return if base.is_empty() {
-			path.starts_with('/')
-		} else {
-			path.starts_with(base)
-		};
+	let end = wildcard_at.unwrap_or(route_parts.len());
+	if wildcard_at.is_none() && end != path_parts.len() {
+		return None;
 	}
-	false
+	if wildcard_at.is_some() && path_parts.len() < end {
+		return None;
+	}
+	for i in 0..end {
+		let route_seg = route_parts[i];
+		let path_seg = path_parts[i];
+		if let Some(name) = param_name(route_seg) {
+			params.insert(name.to_string(), path_seg.to_string());
+		} else if route_seg != path_seg {
+			return None;
+		}
+	}
+	Some(params)
+}
+
+fn param_name(segment: &str) -> Option<&str> {
+	if let Some(name) = segment.strip_prefix(':') {
+		if !name.is_empty() {
+			return Some(name);
+		}
+	}
+	if segment.starts_with('{') && segment.ends_with('}') {
+		let inner = &segment[1..segment.len() - 1];
+		if inner.starts_with('*') {
+			return None;
+		}
+		if !inner.is_empty() {
+			return Some(inner);
+		}
+	}
+	None
 }
 
 fn action_id(name: &str) -> u32 {

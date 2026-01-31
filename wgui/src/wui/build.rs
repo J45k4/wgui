@@ -278,16 +278,35 @@ fn to_pascal_case(input: &str) -> String {
 }
 
 fn normalize_route(route: &str) -> String {
-	if route.ends_with("/*") {
-		let base = route.trim_end_matches("/*");
-		if base.is_empty() {
-			"/{*wildcard}".to_string()
-		} else {
-			format!("{base}/{{*wildcard}}")
-		}
+	let (base, has_wildcard) = if route.ends_with("/*") {
+		(route.trim_end_matches("/*"), true)
 	} else {
-		route.to_string()
+		(route, false)
+	};
+	let mut segments = Vec::new();
+	for seg in base.split('/').filter(|seg| !seg.is_empty()) {
+		if let Some(name) = seg.strip_prefix(':') {
+			segments.push(format!("{{{}}}", name));
+		} else {
+			segments.push(seg.to_string());
+		}
 	}
+	let mut out = String::new();
+	if route.starts_with('/') {
+		out.push('/');
+	}
+	out.push_str(&segments.join("/"));
+	if out.is_empty() {
+		out.push('/');
+	}
+	if has_wildcard {
+		if out.ends_with('/') {
+			out.push_str("{*wildcard}");
+		} else {
+			out.push_str("/{*wildcard}");
+		}
+	}
+	out
 }
 
 fn default_components_dir(output_dir: &Path) -> PathBuf {

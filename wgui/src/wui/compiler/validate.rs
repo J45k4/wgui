@@ -69,6 +69,9 @@ fn validate_structural(el: &crate::wui::ast::Element, diags: &mut Vec<Diagnostic
 				"Page is deprecated; use Route instead",
 				el.span,
 			));
+			if let Some((route, span)) = string_attr(el, "route") {
+				validate_path_params(route, span, diags);
+			}
 			allow_only(el, &["route", "title", "state"], diags);
 		}
 		"Route" => {
@@ -82,9 +85,15 @@ fn validate_structural(el: &crate::wui::ast::Element, diags: &mut Vec<Diagnostic
 			}
 			if has_path {
 				require_string_attr(el, "path", diags);
+				if let Some((path, span)) = string_attr(el, "path") {
+					validate_path_params(path, span, diags);
+				}
 			}
 			if has_route {
 				require_string_attr(el, "route", diags);
+				if let Some((route, span)) = string_attr(el, "route") {
+					validate_path_params(route, span, diags);
+				}
 			}
 			allow_only(el, &["path", "route", "title", "state"], diags);
 		}
@@ -118,9 +127,15 @@ fn validate_structural(el: &crate::wui::ast::Element, diags: &mut Vec<Diagnostic
 			}
 			if has_path {
 				require_string_attr(el, "path", diags);
+				if let Some((path, span)) = string_attr(el, "path") {
+					validate_path_params(path, span, diags);
+				}
 			}
 			if has_route {
 				require_string_attr(el, "route", diags);
+				if let Some((route, span)) = string_attr(el, "route") {
+					validate_path_params(route, span, diags);
+				}
 			}
 			allow_only(el, &["path", "route", "title", "state"], diags);
 		}
@@ -220,6 +235,66 @@ fn require_string_attr(el: &crate::wui::ast::Element, name: &str, diags: &mut Ve
 			attr.span,
 		));
 	}
+}
+
+fn string_attr<'a>(
+	el: &'a crate::wui::ast::Element,
+	name: &str,
+) -> Option<(&'a str, crate::wui::diagnostic::Span)> {
+	let attr = el.attrs.iter().find(|attr| attr.name == name)?;
+	match &attr.value {
+		AttrValue::String(value, _) => Some((value.as_str(), attr.span)),
+		_ => None,
+	}
+}
+
+fn validate_path_params(
+	path: &str,
+	span: crate::wui::diagnostic::Span,
+	diags: &mut Vec<Diagnostic>,
+) {
+	for segment in path.split('/').filter(|seg| !seg.is_empty()) {
+		if segment == "*" || segment == "{*wildcard}" {
+			continue;
+		}
+		if let Some(name) = segment.strip_prefix(':') {
+			if !is_valid_ident(name) {
+				diags.push(Diagnostic::new(
+					format!("invalid path parameter name {}", name),
+					span,
+				));
+			}
+			continue;
+		}
+		if segment.starts_with('{') && segment.ends_with('}') {
+			let inner = &segment[1..segment.len() - 1];
+			if inner.starts_with('*') {
+				continue;
+			}
+			if !is_valid_ident(inner) {
+				diags.push(Diagnostic::new(
+					format!("invalid path parameter name {}", inner),
+					span,
+				));
+			}
+		}
+	}
+}
+
+fn is_valid_ident(name: &str) -> bool {
+	let mut chars = name.chars();
+	let Some(first) = chars.next() else {
+		return false;
+	};
+	if !(first == '_' || first.is_ascii_alphabetic()) {
+		return false;
+	}
+	for ch in chars {
+		if !(ch == '_' || ch.is_ascii_alphanumeric()) {
+			return false;
+		}
+	}
+	true
 }
 
 fn allow_only(el: &crate::wui::ast::Element, allowed: &[&str], diags: &mut Vec<Diagnostic>) {

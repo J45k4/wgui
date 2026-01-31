@@ -20,6 +20,12 @@
       </VStack>
     </VStack>
   </Case>
+  <Case path="/todo/:todoId" title="Todo Item">
+    <VStack spacing=8 padding=8>
+      <Text value="Todo Item" />
+      <Text value={params.todoId} />
+    </VStack>
+  </Case>
   <Case path="/*" title="Not Found">
     <Text value="Page not found" />
   </Case>
