@@ -664,6 +664,9 @@ window.onload = () => {
   }
   res.style.display = "flex";
   res.style.flexDirection = "row";
+  res.style.height = "100vh";
+  res.style.margin = "0";
+  res.style.width = "100%";
   let root = res.querySelector("#wgui-root");
   if (!root) {
     res.innerHTML = "";
@@ -671,6 +674,11 @@ window.onload = () => {
     root.id = "wgui-root";
     res.appendChild(root);
   }
+  root.style.display = "flex";
+  root.style.flexDirection = "column";
+  root.style.flexGrow = "1";
+  root.style.minHeight = "100vh";
+  root.style.width = "100%";
   const debouncer = new Deboncer;
   const {
     sender

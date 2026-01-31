@@ -766,6 +766,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "puppychat"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "log",
+ "simple_logger 5.1.0",
+ "tokio",
+ "wgui",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
