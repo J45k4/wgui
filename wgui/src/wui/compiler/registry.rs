@@ -159,7 +159,10 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 }
 
 pub fn is_structural(tag: &str) -> bool {
-	matches!(tag, "For" | "If" | "Else" | "Scope" | "Page" | "Route" | "Import")
+	matches!(
+		tag,
+		"For" | "If" | "Else" | "Scope" | "Page" | "Route" | "Switch" | "Case" | "Import"
+	)
 }
 
 fn layout_props() -> &'static [PropSchema] {

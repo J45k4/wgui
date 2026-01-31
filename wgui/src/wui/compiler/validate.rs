@@ -88,6 +88,42 @@ fn validate_structural(el: &crate::wui::ast::Element, diags: &mut Vec<Diagnostic
 			}
 			allow_only(el, &["path", "route", "title", "state"], diags);
 		}
+		"Switch" => {
+			if !el.attrs.is_empty() {
+				diags.push(Diagnostic::new(
+					"Switch does not take attributes",
+					el.span,
+				));
+			}
+			for child in &el.children {
+				match child {
+					Node::Element(child_el) if child_el.name == "Case" => {}
+					_ => {
+						diags.push(Diagnostic::new(
+							"Switch only allows Case children",
+							el.span,
+						));
+					}
+				}
+			}
+		}
+		"Case" => {
+			let has_path = el.attrs.iter().any(|attr| attr.name == "path");
+			let has_route = el.attrs.iter().any(|attr| attr.name == "route");
+			if !has_path && !has_route {
+				diags.push(Diagnostic::new(
+					"Case requires a path attribute",
+					el.span,
+				));
+			}
+			if has_path {
+				require_string_attr(el, "path", diags);
+			}
+			if has_route {
+				require_string_attr(el, "route", diags);
+			}
+			allow_only(el, &["path", "route", "title", "state"], diags);
+		}
 		"Import" => {
 			require_attr(el, "src", diags);
 			require_string_attr(el, "src", diags);

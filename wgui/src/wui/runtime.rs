@@ -493,6 +493,19 @@ fn render_nodes(nodes: &[IrNode], out: &mut Vec<Item>, ctx: &mut EvalContext) {
 					render_nodes(&node.body, out, ctx);
 				}
 			}
+			IrNode::Switch(node) => {
+				let path = ctx
+					.vars
+					.get("path")
+					.map(value_as_string)
+					.unwrap_or_else(String::new);
+				for case in &node.cases {
+					if route_matches(&case.path, &path) {
+						render_nodes(&case.body, out, ctx);
+						break;
+					}
+				}
+			}
 		}
 	}
 }

@@ -1,21 +1,26 @@
-<Route path="/todo" title="Todo">
-  <VStack spacing=8 padding=8>
-    <Text value="Todo List" />
-    <HStack spacing=4>
-      <TextInput
-        value={state.new_todo_name}
-        placeholder="What needs to be done?"
-        onTextChanged="EditNewTodo"
-      />
-      <Button text="Add" onClick="AddTodo" />
-    </HStack>
-    <VStack spacing=4>
-      <For each={state.items} itemAs="item" indexAs="i" key={item.id}>
-        <HStack spacing=4>
-          <Checkbox checked={item.completed} onClick="ToggleTodo" arg={item.id} />
-          <Text value={item.name} />
-        </HStack>
-      </For>
+<Switch>
+  <Case path="/todo" title="Todo">
+    <VStack spacing=8 padding=8>
+      <Text value="Todo List" />
+      <HStack spacing=4>
+        <TextInput
+          value={state.new_todo_name}
+          placeholder="What needs to be done?"
+          onTextChanged="EditNewTodo"
+        />
+        <Button text="Add" onClick="AddTodo" />
+      </HStack>
+      <VStack spacing=4>
+        <For each={state.items} itemAs="item" indexAs="i" key={item.id}>
+          <HStack spacing=4>
+            <Checkbox checked={item.completed} onClick="ToggleTodo" arg={item.id} />
+            <Text value={item.name} />
+          </HStack>
+        </For>
+      </VStack>
     </VStack>
-  </VStack>
-</Route>
+  </Case>
+  <Case path="/*" title="Not Found">
+    <Text value="Page not found" />
+  </Case>
+</Switch>

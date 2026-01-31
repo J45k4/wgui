@@ -1,6 +1,7 @@
 use crate::wui::ast::{BinaryOp, Expr, Literal, UnaryOp};
 use crate::wui::compiler::ir::{
-	ActionDef, ActionPayload, EventKind, IrDocument, IrFor, IrIf, IrNode, IrProp, IrScope, IrWidget,
+	ActionDef, ActionPayload, EventKind, IrDocument, IrFor, IrIf, IrNode, IrProp, IrScope, IrSwitch,
+	IrWidget,
 };
 
 pub fn generate(doc: &IrDocument) -> String {
@@ -173,6 +174,7 @@ fn emit_node_into(node: &IrNode, indent: usize, target: &str) -> String {
 		IrNode::If(if_node) => emit_if(if_node, indent, target),
 		IrNode::Scope(scope) => emit_scope(scope, indent, target),
 		IrNode::Route(route) => emit_route(route, indent, target),
+		IrNode::Switch(node) => emit_switch(node, indent, target),
 	}
 }
 
@@ -225,6 +227,34 @@ fn emit_route(node: &crate::wui::compiler::ir::IrRoute, indent: usize, target: &
 	));
 	out.push_str(&emit_body(&node.body, indent + 1, target));
 	out.push_str(&format!("{indent_str}}}\n"));
+	out
+}
+
+fn emit_switch(node: &IrSwitch, indent: usize, target: &str) -> String {
+	let indent_str = "\t".repeat(indent);
+	let mut out = String::new();
+	let mut first = true;
+	for case in &node.cases {
+		if first {
+			out.push_str(&format!(
+				"{indent_str}if __wui_route_matches({:?}, __path) {{\n",
+				case.path
+			));
+			out.push_str(&emit_body(&case.body, indent + 1, target));
+			out.push_str(&format!("{indent_str}}}"));
+			first = false;
+		} else {
+			out.push_str(&format!(
+				" else if __wui_route_matches({:?}, __path) {{\n",
+				case.path
+			));
+			out.push_str(&emit_body(&case.body, indent + 1, target));
+			out.push_str(&format!("{indent_str}}}"));
+		}
+	}
+	if !out.is_empty() {
+		out.push('\n');
+	}
 	out
 }
 

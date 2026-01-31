@@ -1,7 +1,7 @@
 use crate::wui::ast::{AttrValue, Element, Expr, Node};
 use crate::wui::compiler::ir::{
 	ActionDef, ActionPayload, EventKind, IrDocument, IrFor, IrIf, IrNode, IrProp, IrRoute, IrScope,
-	IrWidget, PageMeta,
+	IrSwitch, IrWidget, PageMeta,
 };
 use crate::wui::compiler::registry::schema_for;
 use crate::wui::diagnostic::{Diagnostic, Span};
@@ -160,6 +160,32 @@ fn lower_nodes(nodes: &[Node], ctx: &mut LowerContext, diags: &mut Vec<Diagnosti
 					let body = lower_nodes(&el.children, ctx, diags);
 					out.push(IrNode::Route(IrRoute { path, body }));
 				}
+			}
+			Node::Element(el) if el.name == "Switch" => {
+				let mut cases = Vec::new();
+				for child in &el.children {
+					let Node::Element(case_el) = child else {
+						continue;
+					};
+					if case_el.name != "Case" {
+						continue;
+					}
+					let route =
+						get_string_attr(case_el, "path").or_else(|| get_string_attr(case_el, "route"));
+					let title = get_string_attr(case_el, "title");
+					let state_type = get_string_attr(case_el, "state");
+					ctx.pages.push(PageMeta {
+						module: ctx.module.clone(),
+						route: route.clone(),
+						title,
+						state_type,
+					});
+					if let Some(path) = route {
+						let body = lower_nodes(&case_el.children, ctx, diags);
+						cases.push(IrRoute { path, body });
+					}
+				}
+				out.push(IrNode::Switch(IrSwitch { cases }));
 			}
 			Node::Element(el) => {
 				if let Some(widget) = lower_widget(el, ctx, diags) {

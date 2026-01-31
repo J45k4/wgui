@@ -22,6 +22,7 @@ pub enum IrNode {
 	If(IrIf),
 	Scope(IrScope),
 	Route(IrRoute),
+	Switch(IrSwitch),
 	Text(String),
 }
 
@@ -58,6 +59,11 @@ pub struct IrScope {
 pub struct IrRoute {
 	pub path: String,
 	pub body: Vec<IrNode>,
+}
+
+#[derive(Debug, Clone)]
+pub struct IrSwitch {
+	pub cases: Vec<IrRoute>,
 }
 
 #[derive(Debug, Clone)]
