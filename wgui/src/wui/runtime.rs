@@ -26,24 +26,19 @@ pub trait WuiController {
 
 pub struct Ctx<T> {
 	pub state: Arc<T>,
-	title: Arc<Mutex<String>>,
-	title_tx: mpsc::UnboundedSender<String>,
+	current_client: Arc<Mutex<Option<usize>>>,
+	command_tx: mpsc::UnboundedSender<RuntimeCommand>,
+	command_rx: Mutex<Option<mpsc::UnboundedReceiver<RuntimeCommand>>>,
 }
 
 impl<T> Ctx<T> {
 	pub fn new(state: T) -> Self {
-		let (title_tx, mut title_rx) = mpsc::unbounded_channel::<String>();
-		let title = Arc::new(Mutex::new(String::new()));
-		let title_handle = title.clone();
-		tokio::spawn(async move {
-			while let Some(next) = title_rx.recv().await {
-				*title_handle.lock().unwrap() = next;
-			}
-		});
+		let (command_tx, command_rx) = mpsc::unbounded_channel::<RuntimeCommand>();
 		Self {
 			state: Arc::new(state),
-			title,
-			title_tx,
+			current_client: Arc::new(Mutex::new(None)),
+			command_tx,
+			command_rx: Mutex::new(Some(command_rx)),
 		}
 	}
 
@@ -56,15 +51,24 @@ impl<T> Ctx<T> {
 	}
 
 	pub fn set_title(&self, title: impl Into<String>) {
-		*self.title.lock().unwrap() = title.into();
+		let title = title.into();
+		if let Some(client_id) = *self.current_client.lock().unwrap() {
+			let _ = self
+				.command_tx
+				.send(RuntimeCommand::SetTitle { client_id, title });
+		}
 	}
 
-	pub fn set_title_deferred(&self, title: impl Into<String>) {
-		let _ = self.title_tx.send(title.into());
+	pub(crate) fn set_current_client(&self, client_id: Option<usize>) {
+		*self.current_client.lock().unwrap() = client_id;
 	}
 
-	pub fn title(&self) -> String {
-		self.title.lock().unwrap().clone()
+	pub(crate) fn take_command_rx(&self) -> mpsc::UnboundedReceiver<RuntimeCommand> {
+		self.command_rx
+			.lock()
+			.unwrap()
+			.take()
+			.expect("command receiver already taken")
 	}
 }
 
@@ -84,6 +88,11 @@ pub enum RuntimeAction {
 	TextChanged { name: String, value: String },
 	SliderChange { name: String, value: i32 },
 	Select { name: String, value: String },
+}
+
+#[derive(Debug, Clone)]
+pub enum RuntimeCommand {
+	SetTitle { client_id: usize, title: String },
 }
 
 #[derive(Debug, Clone)]
@@ -240,6 +249,7 @@ where
 	let mut wgui = crate::Wgui::new_without_server();
 	let handle = wgui.handle();
 	let ssr_ctx = ctx.clone();
+	let mut command_rx = ctx.take_command_rx();
 	let router = crate::axum::router_with_ssr_routes(
 		handle.clone(),
 		Arc::new(move || {
@@ -253,45 +263,67 @@ where
 	let render_handle = handle.clone();
 	tokio::spawn(async move {
 		let mut controllers: HashMap<_, T> = HashMap::new();
-		while let Some(message) = wgui.next().await {
-			let client_id = message.client_id;
-			match message.event {
-				crate::ClientEvent::Connected { id: _ } => {
-					let controller = T::mount(ctx.clone()).await;
-					let item = WuiController::render(&controller);
-					render_handle.render(client_id, item).await;
-					let title = ctx.title();
-					if !title.is_empty() {
-						render_handle.set_title(client_id, &title).await;
-					}
-					controllers.insert(client_id, controller);
-				}
-					crate::ClientEvent::Disconnected { id: _ } => {
-						if let Some(controller) = controllers.remove(&client_id) {
-							controller.unmount(ctx.clone());
-						}
-					}
-				crate::ClientEvent::PathChanged(_) => {}
-				crate::ClientEvent::Input(_) => {}
-				_ => {
-					let item = match controllers.get_mut(&client_id) {
-						Some(controller) => {
-							if WuiController::handle(controller, &message.event) {
-								Some(WuiController::render(controller))
-							} else {
-								None
+		loop {
+			tokio::select! {
+				Some(message) = wgui.next() => {
+					let client_id = message.client_id;
+					match message.event {
+						crate::ClientEvent::Connected { id: _ } => {
+							ctx.set_current_client(Some(client_id));
+							let controller = T::mount(ctx.clone()).await;
+							let item = WuiController::render(&controller);
+							render_handle.render(client_id, item).await;
+							controllers.insert(client_id, controller);
+							ctx.set_current_client(None);
+							while let Ok(cmd) = command_rx.try_recv() {
+								match cmd {
+									RuntimeCommand::SetTitle { client_id, title } => {
+										render_handle.set_title(client_id, &title).await;
+									}
+								}
 							}
 						}
-						None => None,
-					};
-					if let Some(item) = item {
-						render_handle.render(client_id, item).await;
-						let title = ctx.title();
-						if !title.is_empty() {
+						crate::ClientEvent::Disconnected { id: _ } => {
+							if let Some(controller) = controllers.remove(&client_id) {
+								controller.unmount(ctx.clone());
+							}
+						}
+						crate::ClientEvent::PathChanged(_) => {}
+						crate::ClientEvent::Input(_) => {}
+						_ => {
+							ctx.set_current_client(Some(client_id));
+							let item = match controllers.get_mut(&client_id) {
+								Some(controller) => {
+									if WuiController::handle(controller, &message.event) {
+										Some(WuiController::render(controller))
+									} else {
+										None
+									}
+								}
+								None => None,
+							};
+							if let Some(item) = item {
+								render_handle.render(client_id, item).await;
+							}
+							ctx.set_current_client(None);
+							while let Ok(cmd) = command_rx.try_recv() {
+								match cmd {
+									RuntimeCommand::SetTitle { client_id, title } => {
+										render_handle.set_title(client_id, &title).await;
+									}
+								}
+							}
+						}
+					}
+				}
+				Some(cmd) = command_rx.recv() => {
+					match cmd {
+						RuntimeCommand::SetTitle { client_id, title } => {
 							render_handle.set_title(client_id, &title).await;
 						}
 					}
 				}
+				else => break,
 			}
 		}
 	});

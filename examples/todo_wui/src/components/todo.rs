@@ -27,7 +27,7 @@ impl Todo {
 			let undone = state.items.len() - done;
 			format!("Todo {} done / {} undone", done, undone)
 		};
-		self.ctx.set_title_deferred(title);
+		self.ctx.set_title(title);
 	}
 
 	// <wui:handlers>
@@ -56,7 +56,7 @@ impl Todo {
 		let undone = state.items.len() - done;
 		let title = format!("Todo {} done / {} undone", done, undone);
 		println!("title {}", title);
-		self.ctx.set_title_deferred(title);
+		self.ctx.set_title(title);
 	}
 
 	pub(crate) fn toggle_todo(&mut self, arg: u32) {
@@ -69,7 +69,7 @@ impl Todo {
 			let undone = state.items.len() - done;
 			format!("Todo {} done / {} undone", done, undone)
 		};
-		self.ctx.set_title_deferred(title);
+		self.ctx.set_title(title);
 	}
 
 	// </wui:handlers>
