@@ -230,68 +230,6 @@ impl Template {
 }
 
 #[cfg(feature = "axum")]
-pub fn router_with_controller<T, C, F>(
-	shared: Arc<Mutex<C>>,
-	make_controller: F,
-	routes: &[&'static str],
-) -> axum::Router
-where
-	T: WuiController + Send + Sync + 'static,
-	C: Send + Sync + 'static,
-	F: Fn(Arc<Mutex<C>>) -> T + Send + Sync + 'static,
-{
-	let mut wgui = crate::Wgui::new_without_server();
-	let handle = wgui.handle();
-	let make_controller = Arc::new(make_controller);
-	let ssr_shared = shared.clone();
-	let ssr_make_controller = make_controller.clone();
-	let router = crate::axum::router_with_ssr_routes(
-		handle.clone(),
-		Arc::new(move || {
-			let controller = (ssr_make_controller)(ssr_shared.clone());
-			controller.render()
-		}),
-		routes,
-	);
-	let render_handle = handle.clone();
-	tokio::spawn(async move {
-		let mut controllers = HashMap::new();
-		while let Some(message) = wgui.next().await {
-			let client_id = message.client_id;
-			match message.event {
-				crate::ClientEvent::Connected { id: _ } => {
-					let controller = (make_controller)(shared.clone());
-					let item = controller.render();
-					render_handle.render(client_id, item).await;
-					controllers.insert(client_id, controller);
-				}
-				crate::ClientEvent::Disconnected { id: _ } => {
-					controllers.remove(&client_id);
-				}
-				crate::ClientEvent::PathChanged(_) => {}
-				crate::ClientEvent::Input(_) => {}
-				_ => {
-					let item = match controllers.get_mut(&client_id) {
-						Some(controller) => {
-							if controller.handle(&message.event) {
-								Some(controller.render())
-							} else {
-								None
-							}
-						}
-						None => None,
-					};
-					if let Some(item) = item {
-						render_handle.render(client_id, item).await;
-					}
-				}
-			}
-		}
-	});
-	router
-}
-
-#[cfg(feature = "axum")]
 pub fn router_with_component<T>(
 	ctx: Arc<Ctx<T::Context>>,
 	routes: &[&'static str],
