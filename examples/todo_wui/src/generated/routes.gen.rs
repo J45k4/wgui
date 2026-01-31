@@ -3,14 +3,14 @@ use std::sync::Arc;
 #[cfg(feature = "axum")]
 use axum::Router;
 #[cfg(feature = "axum")]
-use crate::controllers::todo::TodoController;
+use crate::components::todo::Todo;
 use wgui::wui::runtime::Ctx;
 use crate::context::SharedContext;
 
 #[cfg(feature = "axum")]
 pub fn router(ctx: Arc<Ctx<SharedContext>>) -> Router {
 	let routes: Vec<&'static str> = ROUTES.iter().map(|r| r.route).collect();
-	wgui::wui::runtime::router_with_component::<TodoController>(ctx, &routes)
+	wgui::wui::runtime::router_with_component::<Todo>(ctx, &routes)
 }
 
 pub struct RouteDef {

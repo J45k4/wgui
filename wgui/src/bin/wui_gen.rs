@@ -16,7 +16,7 @@ fn main() {
 	let config = BuildConfig {
 		input_dir,
 		output_dir,
-		controllers_dir: None,
+		components_dir: None,
 		emit_modules: true,
 	};
 	if let Err(err) = generate(&config) {

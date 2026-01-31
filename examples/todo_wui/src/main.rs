@@ -6,7 +6,7 @@ use wgui::WuiModel;
 use wgui::wui::runtime::Ctx;
 
 mod context;
-mod controllers;
+mod components;
 mod generated;
 
 #[derive(Debug, Clone, WuiModel)]

@@ -13,7 +13,7 @@ use crate::wui::imports;
 pub struct BuildConfig {
 	pub input_dir: PathBuf,
 	pub output_dir: PathBuf,
-	pub controllers_dir: Option<PathBuf>,
+	pub components_dir: Option<PathBuf>,
 	pub emit_modules: bool,
 }
 
@@ -71,45 +71,53 @@ pub fn generate(config: &BuildConfig) -> Result<BuildResult, BuildError> {
 		path: config.output_dir.clone(),
 		source: err,
 	})?;
-	let entries = fs::read_dir(&config.input_dir).map_err(|err| BuildError::Io {
-		path: config.input_dir.clone(),
-		source: err,
-	})?;
-	let controllers_dir = config
-		.controllers_dir
+	let components_dir = config
+		.components_dir
 		.clone()
-		.unwrap_or_else(|| default_controllers_dir(&config.output_dir));
+		.unwrap_or_else(|| default_components_dir(&config.output_dir));
 	let mut modules = Vec::new();
 	let mut routes = Vec::new();
 	let mut source_files = Vec::new();
 	let mut source_files_seen = HashSet::new();
-	for entry_result in entries {
+	let component_entries = fs::read_dir(&components_dir).map_err(|err| BuildError::Io {
+		path: components_dir.clone(),
+		source: err,
+	})?;
+	for entry_result in component_entries {
 		let entry = entry_result.map_err(|err| BuildError::Io {
-			path: config.input_dir.clone(),
+			path: components_dir.clone(),
 			source: err,
 		})?;
-		let path = entry.path();
-		if path.extension().and_then(|ext| ext.to_str()) != Some("wui") {
+		let component_path = entry.path();
+		if component_path.file_name().and_then(|name| name.to_str()) == Some("mod.rs") {
 			continue;
 		}
-		if source_files_seen.insert(path.clone()) {
-			source_files.push(path.clone());
+		if component_path.extension().and_then(|ext| ext.to_str()) != Some("rs") {
+			continue;
 		}
-		let module_name = path
+		let module_name = component_path
 			.file_stem()
 			.and_then(|stem| stem.to_str())
 			.unwrap_or("page")
 			.to_string();
-		let source = fs::read_to_string(&path).map_err(|err| BuildError::Io {
-			path: path.clone(),
+		let wui_path = config.input_dir.join(format!("{module_name}.wui"));
+		if !wui_path.exists() {
+			return Err(BuildError::MissingInput(wui_path));
+		}
+		if source_files_seen.insert(wui_path.clone()) {
+			source_files.push(wui_path.clone());
+		}
+		let source = fs::read_to_string(&wui_path).map_err(|err| BuildError::Io {
+			path: wui_path.clone(),
 			source: err,
 		})?;
-		let resolved = imports::resolve(&source, &module_name, path.parent()).map_err(|diags| {
-			BuildError::Compile {
-				path: path.clone(),
-				diagnostics: diags,
-			}
-		})?;
+		let resolved =
+			imports::resolve(&source, &module_name, wui_path.parent()).map_err(|diags| {
+				BuildError::Compile {
+					path: wui_path.clone(),
+					diagnostics: diags,
+				}
+			})?;
 		for import_path in resolved.source_files {
 			if source_files_seen.insert(import_path.clone()) {
 				source_files.push(import_path);
@@ -117,7 +125,7 @@ pub fn generate(config: &BuildConfig) -> Result<BuildResult, BuildError> {
 		}
 		let generated = compiler::compile_nodes(&resolved.nodes, &module_name)
 			.map_err(|diags| BuildError::Compile {
-				path: path.clone(),
+				path: wui_path.clone(),
 				diagnostics: diags,
 			})?;
 		for (module, route) in generated.routes {
@@ -130,14 +138,14 @@ pub fn generate(config: &BuildConfig) -> Result<BuildResult, BuildError> {
 				source: err,
 			})?;
 			if let Some(stub) = generated.controller_stub {
-				let controller_path = controllers_dir.join(format!("{}_controller.rs", module_name));
-				if !controller_path.exists() {
-					fs::create_dir_all(&controllers_dir).map_err(|err| BuildError::Io {
-						path: controllers_dir.clone(),
+				let component_path = components_dir.join(format!("{}.rs", module_name));
+				if !component_path.exists() {
+					fs::create_dir_all(&components_dir).map_err(|err| BuildError::Io {
+						path: components_dir.clone(),
 						source: err,
 					})?;
-					fs::write(&controller_path, stub).map_err(|err| BuildError::Io {
-						path: controller_path.clone(),
+					fs::write(&component_path, stub).map_err(|err| BuildError::Io {
+						path: component_path.clone(),
 						source: err,
 					})?;
 				}
@@ -152,7 +160,7 @@ pub fn generate(config: &BuildConfig) -> Result<BuildResult, BuildError> {
 	}
 	write_routes(&config.output_dir, &routes)?;
 	if config.emit_modules {
-		write_controllers_mod(&controllers_dir, &modules)?;
+		write_components_mod(&components_dir, &modules)?;
 	}
 	Ok(BuildResult {
 		modules,
@@ -186,15 +194,15 @@ fn write_routes_mod(dir: &Path) -> Result<(), BuildError> {
 fn write_routes(dir: &Path, routes: &[(String, String)]) -> Result<(), BuildError> {
 	let mut contents = String::new();
 	if let Some((module, _)) = routes.first() {
-		let controller_name = format!("{}Controller", to_pascal_case(module));
+		let component_name = format!("{}", to_pascal_case(module));
 		contents.push_str("#[cfg(feature = \"axum\")]\n");
 		contents.push_str("use std::sync::Arc;\n");
 		contents.push_str("#[cfg(feature = \"axum\")]\n");
 		contents.push_str("use axum::Router;\n");
 		contents.push_str("#[cfg(feature = \"axum\")]\n");
 		contents.push_str(&format!(
-			"use crate::controllers::{}::{};\n",
-			module, controller_name
+			"use crate::components::{}::{};\n",
+			module, component_name
 		));
 		contents.push_str("use wgui::wui::runtime::Ctx;\n");
 		contents.push_str("use crate::context::SharedContext;\n\n");
@@ -205,7 +213,7 @@ fn write_routes(dir: &Path, routes: &[(String, String)]) -> Result<(), BuildErro
 		);
 		contents.push_str(&format!(
 			"\twgui::wui::runtime::router_with_component::<{}>(ctx, &routes)\n",
-			controller_name
+			component_name
 		));
 		contents.push_str("}\n\n");
 	}
@@ -227,7 +235,7 @@ fn write_routes(dir: &Path, routes: &[(String, String)]) -> Result<(), BuildErro
 	})
 }
 
-fn write_controllers_mod(dir: &Path, modules: &[String]) -> Result<(), BuildError> {
+fn write_components_mod(dir: &Path, modules: &[String]) -> Result<(), BuildError> {
 	let mod_path = dir.join("mod.rs");
 	if mod_path.exists() {
 		return Ok(());
@@ -238,7 +246,7 @@ fn write_controllers_mod(dir: &Path, modules: &[String]) -> Result<(), BuildErro
 	})?;
 	let mut contents = String::new();
 	for module in modules {
-		contents.push_str(&format!("pub mod {}_controller;\n", module));
+		contents.push_str(&format!("pub mod {};\n", module));
 	}
 	fs::write(&mod_path, contents).map_err(|err| BuildError::Io {
 		path: mod_path.clone(),
@@ -268,9 +276,9 @@ fn to_pascal_case(input: &str) -> String {
 	}
 }
 
-fn default_controllers_dir(output_dir: &Path) -> PathBuf {
+fn default_components_dir(output_dir: &Path) -> PathBuf {
 	output_dir
 		.parent()
 		.unwrap_or_else(|| Path::new("src"))
-		.join("controllers")
+		.join("components")
 }

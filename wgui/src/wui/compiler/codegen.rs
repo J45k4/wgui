@@ -7,10 +7,10 @@ pub fn generate(doc: &IrDocument) -> String {
 	let mut out = String::new();
 	out.push_str("use wgui::*;\n");
 	if let Some(page) = doc.pages.first() {
-		let controller_name = format!("{}Controller", pascal_case(&page.module));
+		let component_name = format!("{}", pascal_case(&page.module));
 		out.push_str(&format!(
-			"use crate::controllers::{}_controller::{};\n",
-			page.module, controller_name
+			"use crate::components::{}::{};\n",
+			page.module, component_name
 		));
 	}
 	out.push('\n');
@@ -51,7 +51,7 @@ pub fn generate_controller_stub(doc: &IrDocument, module_name: &str) -> Option<S
 		.and_then(|page| page.state_type.clone())
 		.unwrap_or_else(|| "State".to_string());
 	let state_type_path = state_type_path(&state_type);
-	let controller_name = format!("{}Controller", pascal_case(module_name));
+	let controller_name = format!("{}", pascal_case(module_name));
 	let mut out = String::new();
 	out.push_str(&format!(
 		"pub struct {} {{\n\tpub state: {},\n}}\n\n",
