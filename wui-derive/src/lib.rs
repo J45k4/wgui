@@ -259,7 +259,7 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 		static TEMPLATE: ::std::sync::OnceLock<::wgui::wui::runtime::Template> = ::std::sync::OnceLock::new();
 		TEMPLATE.get_or_init(|| {
 			let module_name = #module_name_fn();
-			let base_dir = ::std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/wui/pages"));
+			let base_dir = ::std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/wui"));
 			let source_path = base_dir.join(format!("{}.wui", module_name));
 			let source = ::std::fs::read_to_string(&source_path).unwrap_or_else(|err| {
 				panic!("failed to read wui template {}: {}", source_path.display(), err)

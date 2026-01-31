@@ -8,7 +8,7 @@ fn main() {
 	let input_dir = args
 		.next()
 		.map(PathBuf::from)
-		.unwrap_or_else(|| PathBuf::from("wui/pages"));
+		.unwrap_or_else(|| PathBuf::from("wui"));
 	let output_dir = args
 		.next()
 		.map(PathBuf::from)

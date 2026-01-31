@@ -9,7 +9,7 @@ Recommended layout per app:
 
 ```
 examples/your_app/
-  wui/pages/
+  wui/
     home.wui
   src/
     main.rs
@@ -126,7 +126,7 @@ There are two ways to use WUI today:
 
 The `todo_wui` example demonstrates hot reload:
 
-- It watches `wui/pages/todo.wui` for changes.
+- It watches `wui/todo.wui` for changes.
 - On update, it re-parses the template and re-renders all connected clients.
 
 Run it with:

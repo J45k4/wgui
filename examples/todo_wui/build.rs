@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use wgui::wui::build::{generate, BuildConfig};
 
 fn main() {
-	println!("cargo:rerun-if-changed=wui/pages");
+	println!("cargo:rerun-if-changed=wui");
 	let config = BuildConfig {
-		input_dir: PathBuf::from("wui/pages"),
+		input_dir: PathBuf::from("wui"),
 		output_dir: PathBuf::from("src/generated"),
 		components_dir: None,
 		emit_modules: false,
