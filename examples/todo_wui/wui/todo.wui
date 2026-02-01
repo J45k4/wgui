@@ -1,5 +1,5 @@
 <Switch>
-  <Case path="/todo" title="Todo">
+  <Case path="/" title="Todo">
     <VStack spacing=8 padding=8>
       <Text value="Todo List" />
       <HStack spacing=4>
