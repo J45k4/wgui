@@ -127,7 +127,6 @@ pub fn generate_controller_stub(doc: &IrDocument, module_name: &str) -> Option<S
 		"impl {} {{\n\tpub fn new(state: {}) -> Self {{\n\t\tSelf {{ state }}\n\t}}\n\n",
 		controller_name, state_type_path
 	));
-	out.push_str("\t// <wui:handlers>\n");
 	for action in &doc.actions {
 		let method = action_method_name(&action.name);
 		match action.payload {
@@ -157,7 +156,7 @@ pub fn generate_controller_stub(doc: &IrDocument, module_name: &str) -> Option<S
 			}
 		}
 	}
-	out.push_str("\t// </wui:handlers>\n}\n");
+	out.push_str("}\n");
 	Some(out)
 }
 

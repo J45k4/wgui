@@ -30,7 +30,6 @@ impl Todo {
 		self.ctx.set_title(title);
 	}
 
-	// <wui:handlers>
 	pub(crate) fn edit_new_todo(&mut self, value: String) {
 		self.ctx.state.state.lock().unwrap().new_todo_name = value;
 	}
@@ -71,8 +70,6 @@ impl Todo {
 		};
 		self.ctx.set_title(title);
 	}
-
-	// </wui:handlers>
 }
 
 #[async_trait]

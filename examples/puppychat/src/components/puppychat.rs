@@ -53,7 +53,6 @@ impl Puppychat {
 		}
 	}
 
-	// <wui:handlers>
 	pub(crate) fn edit_login_name(&mut self, value: String) {
 		let shared = self.ctx.state.state.lock().unwrap();
 		let mut sessions = self.ctx.state.sessions.lock().unwrap();
@@ -146,7 +145,6 @@ impl Puppychat {
 		}
 		session.new_message.clear();
 	}
-	// </wui:handlers>
 }
 
 #[async_trait]
