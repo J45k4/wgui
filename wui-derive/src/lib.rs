@@ -298,6 +298,10 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 			#template_fn().render_with_path(&model, path)
 		}
 
+		fn route_title(&self, path: &str) -> ::std::option::Option<::std::string::String> {
+			#template_fn().title_for_path(path)
+		}
+
 		fn handle(&mut self, event: &::wgui::ClientEvent) -> bool {
 			let Some(action) = #template_fn().decode(event) else {
 				return false;

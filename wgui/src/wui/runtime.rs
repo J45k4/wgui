@@ -25,6 +25,9 @@ pub trait WuiController {
 		let _ = path;
 		self.render()
 	}
+	fn route_title(&self, _path: &str) -> Option<String> {
+		None
+	}
 	fn handle(&mut self, event: &crate::types::ClientEvent) -> bool;
 }
 
@@ -256,6 +259,18 @@ impl Template {
 		gui::vstack(children)
 	}
 
+	pub fn title_for_path(&self, path: &str) -> Option<String> {
+		for page in &self.doc.pages {
+			let Some(route) = &page.route else {
+				continue;
+			};
+			if route_params(route, path).is_some() {
+				return page.title.clone();
+			}
+		}
+		None
+	}
+
 	pub fn decode(&self, event: &crate::types::ClientEvent) -> Option<RuntimeAction> {
 		for action in &self.doc.actions {
 			if let Some(decoded) = decode_action(action, event) {
@@ -306,6 +321,9 @@ where
 							let controller = T::mount(ctx.clone()).await;
 							let item = WuiController::render_with_path(&controller, &path);
 							render_handle.render(client_id, item).await;
+							if let Some(title) = WuiController::route_title(&controller, &path) {
+								ctx.set_title(title);
+							}
 							controllers.insert(client_id, controller);
 							ctx.set_current_client(None);
 							ctx.set_current_session(None);
@@ -332,6 +350,9 @@ where
 								ctx.set_current_session(session);
 								let item = WuiController::render_with_path(controller, &change.path);
 								render_handle.render(client_id, item).await;
+								if let Some(title) = WuiController::route_title(controller, &change.path) {
+									ctx.set_title(title);
+								}
 								ctx.set_current_client(None);
 								ctx.set_current_session(None);
 							}
@@ -435,6 +456,9 @@ where
 							let controller = T::mount(ctx.clone()).await;
 							let item = WuiController::render_with_path(&controller, &path);
 							render_handle.render(client_id, item).await;
+							if let Some(title) = WuiController::route_title(&controller, &path) {
+								ctx.set_title(title);
+							}
 							controllers.insert(client_id, controller);
 							ctx.set_current_client(None);
 							ctx.set_current_session(None);
@@ -461,6 +485,9 @@ where
 								ctx.set_current_session(session);
 								let item = WuiController::render_with_path(controller, &change.path);
 								render_handle.render(client_id, item).await;
+								if let Some(title) = WuiController::route_title(controller, &change.path) {
+									ctx.set_title(title);
+								}
 								ctx.set_current_client(None);
 								ctx.set_current_session(None);
 							}
