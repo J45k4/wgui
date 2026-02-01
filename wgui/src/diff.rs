@@ -158,6 +158,12 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 			value: Value::Number(new.max_height),
 		});
 	}
+	if old.padding != new.padding {
+		sets.push(SetProp {
+			key: PropKey::Padding,
+			value: Value::Number(new.padding as u32),
+		});
+	}
 
 	if old.border != new.border {
 		println!("{:?} border is different", path);

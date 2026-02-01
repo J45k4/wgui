@@ -718,6 +718,9 @@ var applySetProp = (element, set) => {
     case "MaxHeight":
       element.style.maxHeight = value === "0" ? "" : `${value}px`;
       break;
+    case "Padding":
+      element.style.padding = value === "0" ? "" : `${value}px`;
+      break;
     case "ID":
       element.id = value;
       break;

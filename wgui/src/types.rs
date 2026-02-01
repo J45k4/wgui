@@ -142,6 +142,7 @@ pub enum PropKey {
 	MaxWidth = 10,
 	MinHeight = 11,
 	MaxHeight = 12,
+	Padding = 13,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
