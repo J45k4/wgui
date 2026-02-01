@@ -33,6 +33,14 @@ impl Puppychat {
 			.entry(key)
 			.or_insert_with(|| crate::SessionState::new(shared))
 	}
+
+	fn dm_thread_key(left: &str, right: &str) -> String {
+		if left <= right {
+			format!("{}|{}", left, right)
+		} else {
+			format!("{}|{}", right, left)
+		}
+	}
 }
 
 #[wgui_controller]
@@ -41,8 +49,9 @@ impl Puppychat {
 		let shared = self.ctx.state.state.lock().unwrap();
 		let mut sessions = self.ctx.state.sessions.lock().unwrap();
 		let session = self.ensure_session_state(&shared, &mut sessions);
+		let user_name = session.user_name.clone();
 		crate::ChatViewState {
-			user_name: session.user_name.clone(),
+			user_name: user_name.clone(),
 			login_name: session.login_name.clone(),
 			new_message: session.new_message.clone(),
 			new_channel_name: session.new_channel_name.clone(),
@@ -52,7 +61,20 @@ impl Puppychat {
 			active_name: session.active_name.clone(),
 			channels: shared.channels.clone(),
 			directs: {
-				let mut directs = shared.directs.clone();
+				let mut directs = shared
+					.directs
+					.iter()
+					.filter(|dm| dm.name != user_name)
+					.cloned()
+					.collect::<Vec<_>>();
+				for dm in &mut directs {
+					dm.messages = if user_name.is_empty() {
+						Vec::new()
+					} else {
+						let key = Self::dm_thread_key(&user_name, &dm.name);
+						shared.dm_threads.get(&key).cloned().unwrap_or_default()
+					};
+				}
 				directs.sort_by(|left, right| {
 					let left_last = left.messages.last().map(|msg| msg.id).unwrap_or(0);
 					let right_last = right.messages.last().map(|msg| msg.id).unwrap_or(0);
@@ -196,14 +218,10 @@ impl Puppychat {
 		let mut sessions = self.ctx.state.sessions.lock().unwrap();
 		let session = self.ensure_session_state(&shared, &mut sessions);
 		let body = session.new_message.trim().to_string();
-		if body.is_empty() {
+		if body.is_empty() || session.user_name.is_empty() {
 			return;
 		}
-		let author = if session.user_name.is_empty() {
-			"You".to_string()
-		} else {
-			session.user_name.clone()
-		};
+		let author = session.user_name.clone();
 		let message = crate::Message {
 			id: *next_id,
 			author,
@@ -218,8 +236,14 @@ impl Puppychat {
 				channel.messages.push(message);
 			}
 		} else if active_kind == "dm" {
-			if let Some(dm) = shared.directs.iter_mut().find(|d| d.id == active_id) {
-				dm.messages.push(message);
+			let other_name = shared
+				.directs
+				.iter()
+				.find(|dm| dm.id == active_id)
+				.map(|dm| dm.name.clone());
+			if let Some(other_name) = other_name {
+				let key = Self::dm_thread_key(&session.user_name, &other_name);
+				shared.dm_threads.entry(key).or_default().push(message);
 			}
 		}
 		session.new_message.clear();

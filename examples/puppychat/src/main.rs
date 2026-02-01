@@ -4,6 +4,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use wgui::WuiModel;
 use wgui::wui::runtime::Ctx;
+use std::collections::HashMap;
 
 mod components;
 mod context;
@@ -34,10 +35,11 @@ pub struct DirectMessage {
 	messages: Vec<Message>,
 }
 
-#[derive(Debug, Clone, WuiModel)]
+#[derive(Debug, Clone)]
 pub struct ChatState {
 	channels: Vec<Channel>,
 	directs: Vec<DirectMessage>,
+	dm_threads: HashMap<String, Vec<Message>>,
 }
 
 #[derive(Debug, Clone)]
@@ -92,76 +94,18 @@ pub struct ChatViewState {
 
 impl Default for ChatState {
 	fn default() -> Self {
-		let channels = vec![
-			Channel {
-				id: 1,
-				name: "general".to_string(),
-				display_name: "# general".to_string(),
-				messages: vec![
-					Message {
-						id: 1,
-						author: "Nova".to_string(),
-						body: "Welcome to PuppyChat!".to_string(),
-						time: "9:00".to_string(),
-					},
-					Message {
-						id: 2,
-						author: "You".to_string(),
-						body: "Let’s build the Slack clone UI.".to_string(),
-						time: "9:02".to_string(),
-					},
-				],
-			},
-			Channel {
-				id: 2,
-				name: "design".to_string(),
-				display_name: "# design".to_string(),
-				messages: vec![Message {
-					id: 3,
-					author: "Luna".to_string(),
-					body: "Left sidebar needs some structure.".to_string(),
-					time: "9:10".to_string(),
-				}],
-			},
-			Channel {
-				id: 3,
-				name: "ship-it".to_string(),
-				display_name: "# ship-it".to_string(),
-				messages: vec![Message {
-					id: 4,
-					author: "Piper".to_string(),
-					body: "We ship today.".to_string(),
-					time: "9:18".to_string(),
-				}],
-			},
-		];
-		let directs = vec![
-			DirectMessage {
-				id: 10,
-				name: "Avery".to_string(),
-				display_name: "@ Avery".to_string(),
-				online: true,
-				messages: vec![Message {
-					id: 5,
-					author: "Avery".to_string(),
-					body: "Do we have the layout ready?".to_string(),
-					time: "9:20".to_string(),
-				}],
-			},
-			DirectMessage {
-				id: 11,
-				name: "Milo".to_string(),
-				display_name: "@ Milo".to_string(),
-				online: false,
-				messages: vec![Message {
-					id: 6,
-					author: "Milo".to_string(),
-					body: "Ping me when it’s live.".to_string(),
-					time: "9:22".to_string(),
-				}],
-			},
-		];
-		Self { channels, directs }
+		let channels = vec![Channel {
+			id: 1,
+			name: "general".to_string(),
+			display_name: "# general".to_string(),
+			messages: Vec::new(),
+		}];
+		let directs = Vec::new();
+		Self {
+			channels,
+			directs,
+			dm_threads: HashMap::new(),
+		}
 	}
 }
 
