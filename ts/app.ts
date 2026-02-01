@@ -47,22 +47,22 @@ const applySetProp = (element: Element, set: SetPropSet) => {
             element.style.flexGrow = value
             break
         case "Width":
-            element.style.width = `${value}px`
+            element.style.width = value === "0" ? "" : `${value}px`
             break
         case "Height":
-            element.style.height = `${value}px`
+            element.style.height = value === "0" ? "" : `${value}px`
             break
         case "MinWidth":
-            element.style.minWidth = `${value}px`
+            element.style.minWidth = value === "0" ? "" : `${value}px`
             break
         case "MaxWidth":
-            element.style.maxWidth = `${value}px`
+            element.style.maxWidth = value === "0" ? "" : `${value}px`
             break
         case "MinHeight":
-            element.style.minHeight = `${value}px`
+            element.style.minHeight = value === "0" ? "" : `${value}px`
             break
         case "MaxHeight":
-            element.style.maxHeight = `${value}px`
+            element.style.maxHeight = value === "0" ? "" : `${value}px`
             break
         case "ID":
             element.id = value
