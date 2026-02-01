@@ -44,6 +44,10 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 					kind: PropKind::Value(ValueType::String),
 				},
 				PropSchema {
+					name: "grow",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
 					name: "textAlign",
 					kind: PropKind::Value(ValueType::String),
 				},
@@ -154,6 +158,103 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 				},
 				PropSchema {
 					name: "objectFit",
+					kind: PropKind::Value(ValueType::String),
+				},
+			],
+		}),
+		"Modal" => Some(TagSchema {
+			name: "Modal",
+			props: &[
+				PropSchema {
+					name: "open",
+					kind: PropKind::Value(ValueType::Bool),
+				},
+				PropSchema {
+					name: "onClick",
+					kind: PropKind::Event(EventKind::Click),
+				},
+				PropSchema {
+					name: "padding",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "paddingLeft",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "paddingRight",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "paddingTop",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "paddingBottom",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "margin",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "marginLeft",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "marginRight",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "marginTop",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "marginBottom",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "backgroundColor",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "border",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "width",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "height",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "minWidth",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "maxWidth",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "minHeight",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "maxHeight",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "grow",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "overflow",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "cursor",
 					kind: PropKind::Value(ValueType::String),
 				},
 			],

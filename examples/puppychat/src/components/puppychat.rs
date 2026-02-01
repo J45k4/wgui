@@ -45,6 +45,8 @@ impl Puppychat {
 			user_name: session.user_name.clone(),
 			login_name: session.login_name.clone(),
 			new_message: session.new_message.clone(),
+			new_channel_name: session.new_channel_name.clone(),
+			show_create_channel: session.show_create_channel,
 			active_kind: session.active_kind.clone(),
 			active_id: session.active_id,
 			active_name: session.active_name.clone(),
@@ -77,6 +79,57 @@ impl Puppychat {
 		let mut sessions = self.ctx.state.sessions.lock().unwrap();
 		let session = self.ensure_session_state(&shared, &mut sessions);
 		session.new_message = value;
+	}
+
+	pub(crate) fn open_create_channel(&mut self) {
+		let shared = self.ctx.state.state.lock().unwrap();
+		let mut sessions = self.ctx.state.sessions.lock().unwrap();
+		let session = self.ensure_session_state(&shared, &mut sessions);
+		session.show_create_channel = true;
+	}
+
+	pub(crate) fn close_create_channel(&mut self) {
+		let shared = self.ctx.state.state.lock().unwrap();
+		let mut sessions = self.ctx.state.sessions.lock().unwrap();
+		let session = self.ensure_session_state(&shared, &mut sessions);
+		session.show_create_channel = false;
+	}
+
+	pub(crate) fn edit_new_channel_name(&mut self, value: String) {
+		let shared = self.ctx.state.state.lock().unwrap();
+		let mut sessions = self.ctx.state.sessions.lock().unwrap();
+		let session = self.ensure_session_state(&shared, &mut sessions);
+		session.new_channel_name = value;
+	}
+
+	pub(crate) fn create_channel(&mut self) {
+		let mut shared = self.ctx.state.state.lock().unwrap();
+		let mut sessions = self.ctx.state.sessions.lock().unwrap();
+		let session = self.ensure_session_state(&shared, &mut sessions);
+		let name = session.new_channel_name.trim().to_string();
+		if name.is_empty() {
+			return;
+		}
+		let mut next_id = self.ctx.state.next_channel_id.lock().unwrap();
+		let id = *next_id;
+		*next_id = next_id.saturating_add(1);
+		let display = if name.starts_with('#') {
+			name.clone()
+		} else {
+			format!("# {}", name)
+		};
+		shared.channels.push(crate::Channel {
+			id,
+			name: name.clone(),
+			display_name: display.clone(),
+			messages: Vec::new(),
+		});
+		session.active_kind = "channel".to_string();
+		session.active_id = id;
+		session.active_name = display;
+		session.new_channel_name.clear();
+		session.show_create_channel = false;
+		self.ctx.pubsub().publish("rerender", ());
 	}
 
 	pub(crate) fn select_channel(&mut self, arg: u32) {

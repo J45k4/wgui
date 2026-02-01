@@ -736,6 +736,7 @@ fn render_widget(widget: &IrWidget, ctx: &mut EvalContext) -> Item {
 			let (src, alt) = image_values(widget, ctx);
 			gui::img(&src, &alt)
 		}
+		"Modal" => render_modal(widget, ctx),
 		_ => gui::text("unsupported"),
 	};
 
@@ -756,6 +757,12 @@ where
 	let mut items = Vec::new();
 	render_nodes(children, &mut items, ctx);
 	builder(items)
+}
+
+fn render_modal(widget: &IrWidget, ctx: &mut EvalContext) -> Item {
+	let mut items = Vec::new();
+	render_nodes(&widget.children, &mut items, ctx);
+	gui::modal(items)
 }
 
 fn text_value(widget: &IrWidget, ctx: &mut EvalContext) -> String {
@@ -903,6 +910,7 @@ fn apply_bool_prop(item: Item, name: &str, value: bool) -> Item {
 	match name {
 		"checked" | "bind:checked" => item.checked(value),
 		"wrap" => item.wrap(value),
+		"open" => item.open(value),
 		"hresize" => item.hresize(value),
 		"vresize" => item.vresize(value),
 		_ => item,

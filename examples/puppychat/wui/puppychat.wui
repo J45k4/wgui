@@ -15,7 +15,10 @@
       <HStack spacing=0 grow=1>
         <VStack width=260 minWidth=200 maxWidth=420 padding=12 spacing=10 backgroundColor="#f6f5f2" border="1px solid #e1ded7" hresize=true overflow="auto">
           <Text value="PuppyChat" />
-          <Text value="Channels" />
+          <HStack spacing=6>
+            <Text value="Channels" grow=1 />
+            <Button text="Add" onClick="OpenCreateChannel" />
+          </HStack>
           <VStack spacing=4>
             <For each={state.channels} itemAs="channel">
               <Button text={channel.display_name} onClick="SelectChannel" arg={channel.id} />
@@ -76,6 +79,20 @@
           </HStack>
         </VStack>
       </HStack>
+      <Modal open={state.show_create_channel} onClick="CloseCreateChannel">
+        <VStack padding=16 spacing=10 width=360 backgroundColor="#ffffff" border="1px solid #d9d9d9">
+          <Text value="Create channel" />
+          <TextInput
+            value={state.new_channel_name}
+            placeholder="Channel name"
+            onTextChanged="EditNewChannelName"
+          />
+          <HStack spacing=8>
+            <Button text="Cancel" onClick="CloseCreateChannel" />
+            <Button text="Create" onClick="CreateChannel" />
+          </HStack>
+        </VStack>
+      </Modal>
     </Else>
   </Case>
   <Case path="/*" title="Not Found">

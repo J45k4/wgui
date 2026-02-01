@@ -365,6 +365,7 @@ fn emit_widget(widget: &IrWidget, indent: usize) -> String {
 		"Checkbox" => "wgui::checkbox()".to_string(),
 		"Slider" => "wgui::slider()".to_string(),
 		"Image" => emit_image(widget),
+		"Modal" => emit_container("modal", &widget.children, indent),
 		_ => "wgui::text(\"unsupported\")".to_string(),
 	};
 	for prop in &widget.props {
