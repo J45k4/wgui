@@ -70,6 +70,7 @@
               value={state.new_message}
               placeholder="Write a message"
               onTextChanged="EditNewMessage"
+              grow=1
             />
             <Button text="Send" onClick="SendMessage" />
           </HStack>

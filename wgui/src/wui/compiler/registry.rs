@@ -89,6 +89,10 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 					name: "onTextChanged",
 					kind: PropKind::Event(EventKind::TextChanged),
 				},
+				PropSchema {
+					name: "grow",
+					kind: PropKind::Value(ValueType::Number),
+				},
 			],
 		}),
 		"Checkbox" => Some(TagSchema {
