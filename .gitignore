@@ -3,3 +3,15 @@ target
 extension.wasm
 wui.wasm
 wgui.xml
+.kotlin/errors/*
+
+# Android (local + build artifacts)
+android/.gradle/
+android/**/build/
+android/.idea/
+android/*.iml
+android/local.properties
+android/.externalNativeBuild/
+android/.cxx/
+android/.kotlin/
+android/captures/
