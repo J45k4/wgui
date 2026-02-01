@@ -17,18 +17,42 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 	let mut sets: Vec<SetProp> = Vec::new();
 
 	match (&old.payload, &new.payload) {
-		(ItemPayload::Layout(old), ItemPayload::Layout(new)) => {
+		(ItemPayload::Layout(old_layout), ItemPayload::Layout(new_layout)) => {
 			log::trace!("{:?} layout", path);
 
-			if old.spacing != new.spacing {
+			if old_layout.flex != new_layout.flex {
+				let flex = match new_layout.flex {
+					crate::gui::FlexDirection::Row => "row",
+					crate::gui::FlexDirection::Column => "column",
+				};
+				sets.push(SetProp {
+					key: PropKey::FlexDirection,
+					value: Value::String(flex.to_string()),
+				});
+			}
+
+			if old_layout.wrap != new_layout.wrap
+				|| old_layout.horizontal_resize != new_layout.horizontal_resize
+				|| old_layout.vresize != new_layout.vresize
+				|| old_layout.hresize != new_layout.hresize
+				|| old_layout.pos != new_layout.pos
+			{
+				changes.push(ClientAction::Replace(Replace {
+					path: path.clone(),
+					item: new.clone(),
+				}));
+				return;
+			}
+
+			if old_layout.spacing != new_layout.spacing {
 				println!("{:?} spacing is different", path);
 				sets.push(SetProp {
 					key: PropKey::Spacing,
-					value: Value::Number(new.spacing),
+					value: Value::Number(new_layout.spacing),
 				})
 			}
 
-			let edits = get_minimum_edits(&old.body, &new.body);
+			let edits = get_minimum_edits(&old_layout.body, &new_layout.body);
 			for edit in edits {
 				match edit {
 					EditOperation::InsertFirst(item) => {
@@ -64,7 +88,7 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 
 						log::trace!("{:?} new path: {:?}", path, path);
 
-						inner_diff(changes, &old.body[i], &item, path);
+						inner_diff(changes, &old_layout.body[i], &item, path);
 					}
 					EditOperation::InsertBack(item) => {
 						log::trace!("{:?} insert back", path);
@@ -91,6 +115,48 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 			key: PropKey::ID,
 			value: Value::Number(new.id),
 		})
+	}
+	if old.grow != new.grow {
+		sets.push(SetProp {
+			key: PropKey::Grow,
+			value: Value::Number(new.grow),
+		});
+	}
+	if old.width != new.width {
+		sets.push(SetProp {
+			key: PropKey::Width,
+			value: Value::Number(new.width),
+		});
+	}
+	if old.height != new.height {
+		sets.push(SetProp {
+			key: PropKey::Height,
+			value: Value::Number(new.height),
+		});
+	}
+	if old.min_width != new.min_width {
+		sets.push(SetProp {
+			key: PropKey::MinWidth,
+			value: Value::Number(new.min_width),
+		});
+	}
+	if old.max_width != new.max_width {
+		sets.push(SetProp {
+			key: PropKey::MaxWidth,
+			value: Value::Number(new.max_width),
+		});
+	}
+	if old.min_height != new.min_height {
+		sets.push(SetProp {
+			key: PropKey::MinHeight,
+			value: Value::Number(new.min_height),
+		});
+	}
+	if old.max_height != new.max_height {
+		sets.push(SetProp {
+			key: PropKey::MaxHeight,
+			value: Value::Number(new.max_height),
+		});
 	}
 
 	if old.border != new.border {

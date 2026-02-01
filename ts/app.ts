@@ -39,6 +39,31 @@ const applySetProp = (element: Element, set: SetPropSet) => {
             element.style.gap = isNaN(parsed) ? value : `${parsed}px`
             break
         }
+        case "FlexDirection":
+            element.style.display = "flex"
+            element.style.flexDirection = value
+            break
+        case "Grow":
+            element.style.flexGrow = value
+            break
+        case "Width":
+            element.style.width = `${value}px`
+            break
+        case "Height":
+            element.style.height = `${value}px`
+            break
+        case "MinWidth":
+            element.style.minWidth = `${value}px`
+            break
+        case "MaxWidth":
+            element.style.maxWidth = `${value}px`
+            break
+        case "MinHeight":
+            element.style.minHeight = `${value}px`
+            break
+        case "MaxHeight":
+            element.style.maxHeight = `${value}px`
+            break
         case "ID":
             element.id = value
             break

@@ -134,6 +134,14 @@ pub enum PropKey {
 	Border = 2,
 	BackgroundColor = 3,
 	Spacing = 4,
+	FlexDirection = 5,
+	Grow = 6,
+	Width = 7,
+	Height = 8,
+	MinWidth = 9,
+	MaxWidth = 10,
+	MinHeight = 11,
+	MaxHeight = 12,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
