@@ -51,7 +51,15 @@ impl Puppychat {
 			active_id: session.active_id,
 			active_name: session.active_name.clone(),
 			channels: shared.channels.clone(),
-			directs: shared.directs.clone(),
+			directs: {
+				let mut directs = shared.directs.clone();
+				directs.sort_by(|left, right| {
+					let left_last = left.messages.last().map(|msg| msg.id).unwrap_or(0);
+					let right_last = right.messages.last().map(|msg| msg.id).unwrap_or(0);
+					right_last.cmp(&left_last)
+				});
+				directs
+			},
 		}
 	}
 
@@ -63,7 +71,7 @@ impl Puppychat {
 	}
 
 	pub(crate) fn login(&mut self) {
-		let shared = self.ctx.state.state.lock().unwrap();
+		let mut shared = self.ctx.state.state.lock().unwrap();
 		let mut sessions = self.ctx.state.sessions.lock().unwrap();
 		let session = self.ensure_session_state(&shared, &mut sessions);
 		let name = session.login_name.trim().to_string();
@@ -71,7 +79,25 @@ impl Puppychat {
 			return;
 		}
 		session.user_name = name;
+		let user_name = session.user_name.clone();
 		session.login_name.clear();
+		if !shared.directs.iter().any(|dm| dm.name == user_name) {
+			let next_id = shared
+				.directs
+				.iter()
+				.map(|dm| dm.id)
+				.max()
+				.unwrap_or(0)
+				.saturating_add(1);
+			shared.directs.push(crate::DirectMessage {
+				id: next_id,
+				name: user_name.clone(),
+				display_name: format!("@ {}", user_name),
+				online: true,
+				messages: Vec::new(),
+			});
+		}
+		self.ctx.pubsub().publish("rerender", ());
 	}
 
 	pub(crate) fn edit_new_message(&mut self, value: String) {
