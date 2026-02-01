@@ -144,6 +144,7 @@ impl Puppychat {
 			}
 		}
 		session.new_message.clear();
+		self.ctx.pubsub().publish("rerender", ());
 	}
 }
 

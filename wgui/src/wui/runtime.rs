@@ -32,6 +32,7 @@ pub struct Ctx<T> {
 	pub state: Arc<T>,
 	current_client: Arc<Mutex<Option<usize>>>,
 	current_session: Arc<Mutex<Option<String>>>,
+	pubsub: crate::PubSub<()>,
 	command_tx: mpsc::UnboundedSender<RuntimeCommand>,
 	command_rx: Mutex<Option<mpsc::UnboundedReceiver<RuntimeCommand>>>,
 }
@@ -43,6 +44,7 @@ impl<T> Ctx<T> {
 			state: Arc::new(state),
 			current_client: Arc::new(Mutex::new(None)),
 			current_session: Arc::new(Mutex::new(None)),
+			pubsub: crate::PubSub::new(),
 			command_tx,
 			command_rx: Mutex::new(Some(command_rx)),
 		}
@@ -71,6 +73,10 @@ impl<T> Ctx<T> {
 
 	pub fn client_id(&self) -> Option<usize> {
 		*self.current_client.lock().unwrap()
+	}
+
+	pub fn pubsub(&self) -> crate::PubSub<()> {
+		self.pubsub.clone()
 	}
 
 	pub(crate) fn set_current_client(&self, client_id: Option<usize>) {
@@ -272,6 +278,7 @@ where
 	let handle = wgui.handle();
 	let ssr_ctx = ctx.clone();
 	let mut command_rx = ctx.take_command_rx();
+	let mut pubsub_rx = ctx.pubsub().subscribe("rerender");
 	let router = crate::axum::router_with_ssr_routes(
 		handle.clone(),
 		Arc::new(move || {
@@ -360,6 +367,18 @@ where
 						}
 					}
 				}
+				Ok(_) = pubsub_rx.recv() => {
+					for (client_id, controller) in controllers.iter_mut() {
+						let path = paths.get(client_id).cloned().unwrap_or_else(|| "/".to_string());
+						ctx.set_current_client(Some(*client_id));
+						let session = wgui.session_for_client(*client_id).await;
+						ctx.set_current_session(session);
+						let item = WuiController::render_with_path(controller, &path);
+						render_handle.render(*client_id, item).await;
+						ctx.set_current_client(None);
+						ctx.set_current_session(None);
+					}
+				}
 				Some(cmd) = command_rx.recv() => {
 					match cmd {
 						RuntimeCommand::SetTitle { client_id, title } => {
@@ -387,6 +406,7 @@ where
 	let handle = wgui.handle();
 	let ssr_ctx = ctx.clone();
 	let mut command_rx = ctx.take_command_rx();
+	let mut pubsub_rx = ctx.pubsub().subscribe("rerender");
 	let router = crate::axum::router_with_ssr_routes_and_session(
 		handle.clone(),
 		Arc::new(move || {
@@ -474,6 +494,18 @@ where
 								}
 							}
 						}
+					}
+				}
+				Ok(_) = pubsub_rx.recv() => {
+					for (client_id, controller) in controllers.iter_mut() {
+						let path = paths.get(client_id).cloned().unwrap_or_else(|| "/".to_string());
+						ctx.set_current_client(Some(*client_id));
+						let session = wgui.session_for_client(*client_id).await;
+						ctx.set_current_session(session);
+						let item = WuiController::render_with_path(controller, &path);
+						render_handle.render(*client_id, item).await;
+						ctx.set_current_client(None);
+						ctx.set_current_session(None);
 					}
 				}
 				Some(cmd) = command_rx.recv() => {
