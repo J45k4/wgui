@@ -69,7 +69,6 @@ var renderPayload = (item, ctx, old) => {
     }
     checkbox.type = "checkbox";
     checkbox.checked = payload.checked;
-    checkbox.classList.add("retro-checkbox");
     if (item.id) {
       checkbox.onclick = () => {
         ctx.sender.send({
@@ -105,7 +104,6 @@ var renderPayload = (item, ctx, old) => {
       if (old)
         old.replaceWith(element);
     }
-    element.classList.add("retro-panel");
     if (payload.spacing) {
       element.style.gap = payload.spacing + "px";
     }
@@ -198,7 +196,6 @@ var renderPayload = (item, ctx, old) => {
       if (old)
         old.replaceWith(select);
     }
-    select.classList.add("retro-input");
     select.oninput = (e) => {
       ctx.sender.send({
         type: "onSelect",
@@ -220,7 +217,6 @@ var renderPayload = (item, ctx, old) => {
         old.replaceWith(button);
     }
     button.textContent = payload.title;
-    button.classList.add("retro-button");
     if (item.id) {
       button.onclick = () => {
         ctx.sender.send({
@@ -248,7 +244,6 @@ var renderPayload = (item, ctx, old) => {
     image.style.maxHeight = "100%";
     image.style.objectFit = payload.objectFit ?? "contain";
     image.loading = "lazy";
-    image.classList.add("retro-panel");
     return image;
   }
   if (payload.type === "slider") {
@@ -265,7 +260,6 @@ var renderPayload = (item, ctx, old) => {
     slider.type = "range";
     slider.value = payload.value.toString();
     slider.step = payload.step.toString();
-    slider.classList.add("retro-input");
     if (item.id) {
       slider.oninput = (e) => {
         ctx.sender.send({
@@ -290,7 +284,6 @@ var renderPayload = (item, ctx, old) => {
     }
     input.placeholder = payload.placeholder;
     input.value = payload.value;
-    input.classList.add("retro-input");
     if (item.id) {
       input.oninput = (e) => {
         ctx.sender.send({
@@ -322,7 +315,6 @@ var renderPayload = (item, ctx, old) => {
     const rowCount = payload.value.split(`
 `).length;
     textarea.style.height = rowCount * 20 + "px";
-    textarea.classList.add("retro-input");
     textarea.oninput = (e) => {
       const value = e.target.value;
       const rowCount2 = value.split(`
@@ -348,7 +340,6 @@ var renderPayload = (item, ctx, old) => {
       if (old)
         old.replaceWith(table);
     }
-    table.classList.add("retro-table");
     renderChildren(table, payload.items, ctx);
     return table;
   }
@@ -423,7 +414,6 @@ var renderPayload = (item, ctx, old) => {
       if (old)
         old.replaceWith(element);
     }
-    element.classList.add("retro-text");
     if (item.id) {
       element.onclick = () => {
         ctx.sender.send({
@@ -433,7 +423,6 @@ var renderPayload = (item, ctx, old) => {
         });
         ctx.sender.sendNow();
       };
-      element.classList.add("retro-clickable");
     }
     return element;
   }

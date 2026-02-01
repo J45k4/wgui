@@ -88,14 +88,7 @@ fn render_layout(item: &Item, layout: &Layout) -> String {
 		}
 	}
 	apply_item_styles(item, &mut style);
-	let mut classes = vec!["retro-panel".to_string()];
-	classes.push(match layout.flex {
-		FlexDirection::Row => "flex-row".to_string(),
-		FlexDirection::Column => "flex-col".to_string(),
-	});
-	if layout.wrap {
-		classes.push("flex-wrap".to_string());
-	}
+	let classes = Vec::new();
 	let attrs = collect_item_attrs(item);
 	let children = render_children(&layout.body);
 	render_element("div", &classes, style, &attrs, &children)
@@ -104,7 +97,7 @@ fn render_layout(item: &Item, layout: &Layout) -> String {
 fn render_text(item: &Item, value: &str) -> String {
 	let mut style = StyleBuilder::new();
 	apply_item_styles(item, &mut style);
-	let classes = vec!["retro-text".to_string()];
+	let classes = Vec::new();
 	let attrs = collect_item_attrs(item);
 	render_element("span", &classes, style, &attrs, &escape_text(value))
 }
@@ -112,7 +105,7 @@ fn render_text(item: &Item, value: &str) -> String {
 fn render_text_input(item: &Item, value: &str, placeholder: &str) -> String {
 	let mut style = StyleBuilder::new();
 	apply_item_styles(item, &mut style);
-	let classes = vec!["retro-input".to_string()];
+	let classes = Vec::new();
 	let mut attrs = collect_item_attrs(item);
 	attrs.push(("type".to_string(), "text".to_string()));
 	attrs.push(("value".to_string(), escape_attr(value)));
@@ -131,7 +124,7 @@ fn render_textarea(item: &Item, value: &str, placeholder: &str) -> String {
 	let row_count = value.split('\n').count().max(1);
 	style.push("height", &format!("{}px", row_count * 20));
 	apply_item_styles(item, &mut style);
-	let classes = vec!["retro-input".to_string()];
+	let classes = Vec::new();
 	let mut attrs = collect_item_attrs(item);
 	if !placeholder.is_empty() {
 		attrs.push(("placeholder".to_string(), escape_attr(placeholder)));
@@ -142,7 +135,7 @@ fn render_textarea(item: &Item, value: &str, placeholder: &str) -> String {
 fn render_select(item: &Item, value: &str, options: &[SelectOption]) -> String {
 	let mut style = StyleBuilder::new();
 	apply_item_styles(item, &mut style);
-	let classes = vec!["retro-input".to_string()];
+	let classes = Vec::new();
 	let mut children = String::new();
 	for option in options {
 		let mut attrs = Vec::new();
@@ -165,7 +158,7 @@ fn render_select(item: &Item, value: &str, options: &[SelectOption]) -> String {
 fn render_checkbox(item: &Item, checked: bool) -> String {
 	let mut style = StyleBuilder::new();
 	apply_item_styles(item, &mut style);
-	let classes = vec!["retro-checkbox".to_string()];
+	let classes = Vec::new();
 	let mut attrs = collect_item_attrs(item);
 	attrs.push(("type".to_string(), "checkbox".to_string()));
 	if checked {
@@ -177,7 +170,7 @@ fn render_checkbox(item: &Item, checked: bool) -> String {
 fn render_slider(item: &Item, min: i32, max: i32, value: i32, step: i32) -> String {
 	let mut style = StyleBuilder::new();
 	apply_item_styles(item, &mut style);
-	let classes = vec!["retro-input".to_string()];
+	let classes = Vec::new();
 	let mut attrs = collect_item_attrs(item);
 	attrs.extend(vec![
 		("type".to_string(), "range".to_string()),
@@ -192,7 +185,7 @@ fn render_slider(item: &Item, min: i32, max: i32, value: i32, step: i32) -> Stri
 fn render_button(item: &Item, title: &str) -> String {
 	let mut style = StyleBuilder::new();
 	apply_item_styles(item, &mut style);
-	let classes = vec!["retro-button".to_string()];
+	let classes = Vec::new();
 	let attrs = collect_item_attrs(item);
 	render_element("button", &classes, style, &attrs, &escape_text(title))
 }
@@ -200,7 +193,7 @@ fn render_button(item: &Item, title: &str) -> String {
 fn render_table(item: &Item, items: &[Item]) -> String {
 	let mut style = StyleBuilder::new();
 	apply_item_styles(item, &mut style);
-	let classes = vec!["retro-table".to_string()];
+	let classes = Vec::new();
 	let attrs = collect_item_attrs(item);
 	let children = render_children(items);
 	render_element("table", &classes, style, &attrs, &children)
@@ -232,7 +225,7 @@ fn render_image(item: &Item, src: &str, alt: &str, object_fit: Option<&str>) -> 
 		style.push("object-fit", "contain");
 	}
 	apply_item_styles(item, &mut style);
-	let classes = vec!["retro-panel".to_string()];
+	let classes = Vec::new();
 	let mut attrs = collect_item_attrs(item);
 	attrs.push(("src".to_string(), escape_attr(src)));
 	attrs.push(("alt".to_string(), escape_attr(alt)));
