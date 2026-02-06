@@ -1,5 +1,13 @@
 # Repository Guidelines
 
+## When making changes
+
+1. Make changes
+2. Run these commands to verify your changes:
+   - `cargo build --workspace` to ensure all Rust code compiles.
+   - `cargo test --workspace` to run unit tests in the core crate.
+3. If any of these fails goto 1
+
 ## Project Structure & Module Organization
 The workspace root (`Cargo.toml`) ties together the core `wgui` crate and the `examples/*` showcase projects. Core server-side virtual DOM logic lives in `wgui/src` (notably `gui.rs`, `server.rs`, `diff.rs`), with focused unit tests colocated under `#[cfg(test)]`. Browser-facing TypeScript resides in `ts/` and is bundled into `dist/index.js`; treat everything under `dist/` as generated output. Example applications such as `examples/todo` and `examples/allcomponents` exercise the library and ship any static assets they need.
 

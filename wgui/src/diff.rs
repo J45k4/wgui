@@ -2,6 +2,8 @@ use crate::edit_distance::get_minimum_edits;
 use crate::edit_distance::EditOperation;
 use crate::gui::Item;
 use crate::gui::ItemPayload;
+use crate::gui::ThreeNode;
+use crate::gui::ThreePropValue;
 use crate::types::AddFront;
 use crate::types::ClientAction;
 use crate::types::InsertAt;
@@ -10,13 +12,24 @@ use crate::types::PropKey;
 use crate::types::RemoveInx;
 use crate::types::Replace;
 use crate::types::SetProp;
+use crate::types::ThreeOp;
 use crate::types::Value;
+use std::collections::HashMap;
 
 fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: ItemPath) {
 	log::trace!("{:?} inner_dif", path);
 	let mut sets: Vec<SetProp> = Vec::new();
 
 	match (&old.payload, &new.payload) {
+		(ItemPayload::ThreeView { root: old_root }, ItemPayload::ThreeView { root: new_root }) => {
+			let ops = diff_three_nodes(old_root, new_root);
+			if !ops.is_empty() {
+				changes.push(ClientAction::ThreePatch {
+					path: path.clone(),
+					ops,
+				});
+			}
+		}
 		(ItemPayload::Layout(old_layout), ItemPayload::Layout(new_layout)) => {
 			log::trace!("{:?} layout", path);
 
@@ -228,6 +241,148 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 	//         }
 	//     }
 	// }
+}
+
+#[derive(Clone)]
+struct ThreeIndexEntry {
+	kind: crate::gui::ThreeKind,
+	props: HashMap<String, ThreePropValue>,
+	children: Vec<u32>,
+	parent: Option<u32>,
+}
+
+fn index_three_tree(root: &ThreeNode) -> HashMap<u32, ThreeIndexEntry> {
+	let mut index = HashMap::new();
+	let mut stack: Vec<(&ThreeNode, Option<u32>)> = vec![(root, None)];
+	while let Some((node, parent)) = stack.pop() {
+		let mut props = HashMap::new();
+		for prop in &node.props {
+			props.insert(prop.key.clone(), prop.value.clone());
+		}
+		let children: Vec<u32> = node.children.iter().map(|child| child.id).collect();
+		index.insert(
+			node.id,
+			ThreeIndexEntry {
+				kind: node.kind.clone(),
+				props,
+				children,
+				parent,
+			},
+		);
+		for child in &node.children {
+			stack.push((child, Some(node.id)));
+		}
+	}
+	index
+}
+
+fn collect_three_nodes<'a>(
+	root: &'a ThreeNode,
+	depth: usize,
+	out: &mut Vec<(usize, &'a ThreeNode)>,
+) {
+	out.push((depth, root));
+	for child in &root.children {
+		collect_three_nodes(child, depth + 1, out);
+	}
+}
+
+fn diff_three_nodes(old_root: &ThreeNode, new_root: &ThreeNode) -> Vec<ThreeOp> {
+	let old_index = index_three_tree(old_root);
+	let new_index = index_three_tree(new_root);
+
+	let mut ops: Vec<ThreeOp> = Vec::new();
+
+	let mut recreate_ids: HashMap<u32, bool> = HashMap::new();
+	for (id, new_entry) in &new_index {
+		if let Some(old_entry) = old_index.get(id) {
+			if old_entry.kind != new_entry.kind {
+				recreate_ids.insert(*id, true);
+			}
+		}
+	}
+
+	let mut old_nodes: Vec<(usize, &ThreeNode)> = Vec::new();
+	collect_three_nodes(old_root, 0, &mut old_nodes);
+	old_nodes.sort_by(|a, b| b.0.cmp(&a.0));
+	for (_, node) in old_nodes {
+		if !new_index.contains_key(&node.id) || recreate_ids.contains_key(&node.id) {
+			if let Some(old_entry) = old_index.get(&node.id) {
+				if let Some(parent_id) = old_entry.parent {
+					ops.push(ThreeOp::Detach {
+						parent_id,
+						child_id: node.id,
+					});
+				}
+			}
+			ops.push(ThreeOp::Delete { id: node.id });
+		}
+	}
+
+	let mut new_nodes: Vec<(usize, &ThreeNode)> = Vec::new();
+	collect_three_nodes(new_root, 0, &mut new_nodes);
+	new_nodes.sort_by(|a, b| a.0.cmp(&b.0));
+	for (_, node) in &new_nodes {
+		if !old_index.contains_key(&node.id) || recreate_ids.contains_key(&node.id) {
+			ops.push(ThreeOp::Create {
+				id: node.id,
+				kind: node.kind.clone(),
+				props: node.props.clone(),
+			});
+		}
+	}
+
+	for (_, node) in &new_nodes {
+		let new_entry = match new_index.get(&node.id) {
+			Some(entry) => entry,
+			None => continue,
+		};
+
+		let old_entry = old_index.get(&node.id);
+		let old_parent = old_entry.and_then(|entry| entry.parent);
+		let new_parent = new_entry.parent;
+		if old_parent != new_parent || recreate_ids.contains_key(&node.id) {
+			if let Some(parent_id) = old_parent {
+				ops.push(ThreeOp::Detach {
+					parent_id,
+					child_id: node.id,
+				});
+			}
+			if let Some(parent_id) = new_parent {
+				ops.push(ThreeOp::Attach {
+					parent_id,
+					child_id: node.id,
+				});
+			}
+		}
+
+		if recreate_ids.contains_key(&node.id) {
+			continue;
+		}
+
+		if let Some(old_entry) = old_entry {
+			for (key, new_value) in &new_entry.props {
+				let old_value = old_entry.props.get(key);
+				if old_value != Some(new_value) {
+					ops.push(ThreeOp::SetProp {
+						id: node.id,
+						key: key.clone(),
+						value: new_value.clone(),
+					});
+				}
+			}
+			for key in old_entry.props.keys() {
+				if !new_entry.props.contains_key(key) {
+					ops.push(ThreeOp::UnsetProp {
+						id: node.id,
+						key: key.clone(),
+					});
+				}
+			}
+		}
+	}
+
+	ops
 }
 
 pub fn diff(old: &Item, new: &Item) -> Vec<ClientAction> {

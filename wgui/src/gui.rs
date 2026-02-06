@@ -43,6 +43,54 @@ pub struct Layout {
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ThreeKind {
+	Scene,
+	Group,
+	Mesh,
+	PerspectiveCamera,
+	OrthographicCamera,
+	BoxGeometry,
+	SphereGeometry,
+	MeshStandardMaterial,
+	MeshBasicMaterial,
+	AmbientLight,
+	DirectionalLight,
+	PointLight,
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ThreePropValue {
+	Number { value: f32 },
+	Bool { value: bool },
+	String { value: String },
+	Vec3 { x: f32, y: f32, z: f32 },
+	Color {
+		r: u8,
+		g: u8,
+		b: u8,
+		a: Option<f32>,
+	},
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreeProp {
+	pub key: String,
+	pub value: ThreePropValue,
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreeNode {
+	pub id: u32,
+	pub kind: ThreeKind,
+	pub props: Vec<ThreeProp>,
+	pub children: Vec<ThreeNode>,
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ItemPayload {
 	Layout(Layout),
@@ -106,6 +154,9 @@ pub enum ItemPayload {
 	Modal {
 		body: Vec<Item>,
 		open: bool,
+	},
+	ThreeView {
+		root: ThreeNode,
 	},
 	None,
 }
@@ -230,6 +281,117 @@ where
 			open: true,
 		},
 		..Default::default()
+	}
+}
+
+pub fn three_view(root: ThreeNode) -> Item {
+	Item {
+		payload: ItemPayload::ThreeView { root },
+		..Default::default()
+	}
+}
+
+pub fn three_node(kind: ThreeKind, id: u32) -> ThreeNode {
+	ThreeNode {
+		id,
+		kind,
+		props: Vec::new(),
+		children: Vec::new(),
+	}
+}
+
+pub fn scene<I>(id: u32, children: I) -> ThreeNode
+where
+	I: IntoIterator<Item = ThreeNode>,
+{
+	ThreeNode {
+		id,
+		kind: ThreeKind::Scene,
+		props: Vec::new(),
+		children: children.into_iter().collect(),
+	}
+}
+
+pub fn group<I>(id: u32, children: I) -> ThreeNode
+where
+	I: IntoIterator<Item = ThreeNode>,
+{
+	ThreeNode {
+		id,
+		kind: ThreeKind::Group,
+		props: Vec::new(),
+		children: children.into_iter().collect(),
+	}
+}
+
+pub fn mesh<I>(id: u32, children: I) -> ThreeNode
+where
+	I: IntoIterator<Item = ThreeNode>,
+{
+	ThreeNode {
+		id,
+		kind: ThreeKind::Mesh,
+		props: Vec::new(),
+		children: children.into_iter().collect(),
+	}
+}
+
+pub fn perspective_camera(id: u32) -> ThreeNode {
+	three_node(ThreeKind::PerspectiveCamera, id)
+}
+
+pub fn orthographic_camera(id: u32) -> ThreeNode {
+	three_node(ThreeKind::OrthographicCamera, id)
+}
+
+pub fn box_geometry(id: u32) -> ThreeNode {
+	three_node(ThreeKind::BoxGeometry, id)
+}
+
+pub fn sphere_geometry(id: u32) -> ThreeNode {
+	three_node(ThreeKind::SphereGeometry, id)
+}
+
+pub fn mesh_standard_material(id: u32) -> ThreeNode {
+	three_node(ThreeKind::MeshStandardMaterial, id)
+}
+
+pub fn mesh_basic_material(id: u32) -> ThreeNode {
+	three_node(ThreeKind::MeshBasicMaterial, id)
+}
+
+pub fn ambient_light(id: u32) -> ThreeNode {
+	three_node(ThreeKind::AmbientLight, id)
+}
+
+pub fn directional_light(id: u32) -> ThreeNode {
+	three_node(ThreeKind::DirectionalLight, id)
+}
+
+pub fn point_light(id: u32) -> ThreeNode {
+	three_node(ThreeKind::PointLight, id)
+}
+
+impl ThreeNode {
+	pub fn prop(mut self, key: &str, value: ThreePropValue) -> Self {
+		self.props.push(ThreeProp {
+			key: key.to_string(),
+			value,
+		});
+		self
+	}
+
+	pub fn child(mut self, child: ThreeNode) -> Self {
+		self.children.push(child);
+		self
+	}
+
+	pub fn children<I>(mut self, children: I) -> Self
+	where
+		I: IntoIterator<Item = ThreeNode>,
+	{
+		self.children.extend(children);
+		self
 	}
 }
 

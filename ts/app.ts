@@ -1,6 +1,7 @@
 import { Deboncer } from "./debouncer.ts";
 import { getPathItem } from "./path.ts";
 import { renderItem } from "./render.ts";
+import { applyThreePatch } from "./three_host.ts";
 import { Context, PropValue, SetPropSet, SrvMessage } from "./types.ts";
 import { connectWebsocket } from "./ws.ts";
 
@@ -146,6 +147,14 @@ window.onload = () => {
                     document.title = message.title
                     continue
                 }
+
+				if (message.type === "threePatch") {
+					const target = getPathItem(message.path, root)
+					if (target) {
+						applyThreePatch(target, message.ops)
+					}
+					continue
+				}
 
                 if (message.type === "setProp") {
                     const target = getPathItem(message.path, root)

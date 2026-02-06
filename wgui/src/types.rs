@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 
-use crate::gui::Item;
+use crate::gui::{Item, ThreeKind, ThreeProp, ThreePropValue};
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
@@ -152,6 +152,40 @@ pub struct SetProp {
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ThreeOp {
+	Create {
+		id: u32,
+		kind: ThreeKind,
+		props: Vec<ThreeProp>,
+	},
+	Attach {
+		#[serde(rename = "parentId")]
+		parent_id: u32,
+		#[serde(rename = "childId")]
+		child_id: u32,
+	},
+	Detach {
+		#[serde(rename = "parentId")]
+		parent_id: u32,
+		#[serde(rename = "childId")]
+		child_id: u32,
+	},
+	SetProp {
+		id: u32,
+		key: String,
+		value: ThreePropValue,
+	},
+	UnsetProp {
+		id: u32,
+		key: String,
+	},
+	Delete {
+		id: u32,
+	},
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum ClientAction {
 	Replace(Replace),
@@ -164,6 +198,7 @@ pub enum ClientAction {
 	ReplaceState(ReplaceState),
 	SetQuery(SetQuery),
 	SetProp { path: ItemPath, sets: Vec<SetProp> },
+	ThreePatch { path: ItemPath, ops: Vec<ThreeOp> },
 	SetTitle { title: String },
 }
 
