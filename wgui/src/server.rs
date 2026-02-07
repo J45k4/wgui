@@ -79,7 +79,7 @@ fn sanitize_fs_path(uri_path: &str) -> Option<PathBuf> {
 struct Ctx {
 	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	clients: Clients,
-	ssr: Option<Arc<dyn Fn() -> Item + Send + Sync>>,
+	ssr: Option<Arc<dyn Fn(&str) -> Option<Item> + Send + Sync>>,
 }
 
 async fn handle_req(
@@ -153,9 +153,12 @@ async fn handle_req(
 		}
 		_ => {
 			if let Some(renderer) = ctx.ssr {
-				let item = (renderer)();
-				let html = ssr::render_document(&item);
-				Ok(Response::new(Full::new(Bytes::from(html))))
+				if let Some(item) = (renderer)(req.uri().path()) {
+					let html = ssr::render_document(&item);
+					Ok(Response::new(Full::new(Bytes::from(html))))
+				} else {
+					Ok(Response::new(Full::new(Bytes::from(INDEX_HTML_BYTES))))
+				}
 			} else {
 				Ok(Response::new(Full::new(Bytes::from(INDEX_HTML_BYTES))))
 			}
@@ -167,7 +170,7 @@ pub struct Server {
 	listener: TcpListener,
 	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	clients: Clients,
-	ssr: Option<Arc<dyn Fn() -> Item + Send + Sync>>,
+	ssr: Option<Arc<dyn Fn(&str) -> Option<Item> + Send + Sync>>,
 }
 
 impl Server {
@@ -175,7 +178,7 @@ impl Server {
 		addr: SocketAddr,
 		event_tx: mpsc::UnboundedSender<ClientMessage>,
 		clients: Clients,
-		ssr: Option<Arc<dyn Fn() -> Item + Send + Sync>>,
+		ssr: Option<Arc<dyn Fn(&str) -> Option<Item> + Send + Sync>>,
 	) -> Self {
 		let listener = TcpListener::bind(addr).await.unwrap();
 		log::info!("listening on http://localhost:{}", addr.port());

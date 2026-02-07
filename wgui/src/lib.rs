@@ -39,6 +39,8 @@ pub(crate) type Sessions = Arc<RwLock<HashMap<usize, Option<String>>>>;
 type BoxedController = Box<dyn crate::wui::runtime::WuiController + Send>;
 type ControllerFuture = Pin<Box<dyn Future<Output = BoxedController> + Send>>;
 type ControllerFactory = Arc<dyn Fn() -> ControllerFuture + Send + Sync>;
+type SsrRenderer = Arc<dyn Fn(&str) -> Option<Item> + Send + Sync>;
+type SsrComponentFactories = Arc<std::sync::RwLock<Vec<(String, ControllerFactory)>>>;
 
 #[derive(Clone)]
 pub struct WguiHandle {
@@ -145,6 +147,7 @@ pub struct Wgui {
 	events_rx: mpsc::UnboundedReceiver<ClientMessage>,
 	handle: WguiHandle,
 	components: Vec<ComponentRegistration>,
+	ssr_components: SsrComponentFactories,
 }
 
 impl Wgui {
@@ -164,12 +167,27 @@ impl Wgui {
 		let (events_tx, events_rx) = mpsc::unbounded_channel();
 		let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
 		let sessions: Sessions = Arc::new(RwLock::new(HashMap::new()));
+		let ssr_components: SsrComponentFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 
 		{
 			let clients = clients.clone();
 			let event_tx = events_tx.clone();
+			let ssr_components = ssr_components.clone();
+			let ssr: Option<SsrRenderer> = Some(Arc::new(move |path: &str| {
+				let factories = ssr_components.read().unwrap();
+				for (route_path, factory) in factories.iter() {
+					if !Wgui::path_matches(route_path, path) {
+						continue;
+					}
+					let controller = tokio::task::block_in_place(|| {
+						tokio::runtime::Handle::current().block_on((factory)())
+					});
+					return Some(controller.render_with_path(path));
+				}
+				None
+			}));
 			tokio::spawn(async move {
-				Server::new(addr, event_tx, clients, None).await.run().await;
+				Server::new(addr, event_tx, clients, ssr).await.run().await;
 			});
 		}
 
@@ -177,6 +195,7 @@ impl Wgui {
 			events_rx,
 			handle: WguiHandle::new(events_tx, clients, sessions),
 			components: Vec::new(),
+			ssr_components,
 		}
 	}
 
@@ -188,11 +207,12 @@ impl Wgui {
 		let (events_tx, events_rx) = mpsc::unbounded_channel();
 		let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
 		let sessions: Sessions = Arc::new(RwLock::new(HashMap::new()));
+		let ssr_components: SsrComponentFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 
 		{
 			let clients = clients.clone();
 			let event_tx = events_tx.clone();
-			let ssr = Some(renderer);
+			let ssr: Option<SsrRenderer> = Some(Arc::new(move |_path: &str| Some((renderer)())));
 			tokio::spawn(async move {
 				Server::new(addr, event_tx, clients, ssr).await.run().await;
 			});
@@ -202,6 +222,7 @@ impl Wgui {
 			events_rx,
 			handle: WguiHandle::new(events_tx, clients, sessions),
 			components: Vec::new(),
+			ssr_components,
 		}
 	}
 
@@ -209,11 +230,13 @@ impl Wgui {
 		let (events_tx, events_rx) = mpsc::unbounded_channel();
 		let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
 		let sessions: Sessions = Arc::new(RwLock::new(HashMap::new()));
+		let ssr_components: SsrComponentFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 
 		Self {
 			events_rx,
 			handle: WguiHandle::new(events_tx, clients, sessions),
 			components: Vec::new(),
+			ssr_components,
 		}
 	}
 
@@ -251,6 +274,10 @@ impl Wgui {
 			let fut = controller();
 			Box::pin(async move { Box::new(fut.await) as BoxedController })
 		});
+		self.ssr_components
+			.write()
+			.unwrap()
+			.push((path.to_string(), factory.clone()));
 		self.components
 			.push(ComponentRegistration::new(path.to_string(), factory));
 	}

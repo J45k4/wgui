@@ -4,16 +4,7 @@ pub struct RouteDef {
 }
 
 pub const ROUTES: &[RouteDef] = &[
-	RouteDef {
-		module: "todo",
-		route: "/",
-	},
-	RouteDef {
-		module: "todo",
-		route: "/todo/{todoId}",
-	},
-	RouteDef {
-		module: "todo",
-		route: "/{*wildcard}",
-	},
+	RouteDef { module: "todo", route: "/" },
+	RouteDef { module: "todo", route: "/todo/{todoId}" },
+	RouteDef { module: "todo", route: "/{*wildcard}" },
 ];

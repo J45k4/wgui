@@ -1,6 +1,6 @@
 use log::Level;
 use std::sync::Arc;
-use wgui::wui::runtime::{Component, Ctx, WuiController};
+use wgui::wui::runtime::{Component, Ctx};
 use wgui::Wgui;
 use wgui::WuiModel;
 
@@ -26,17 +26,7 @@ async fn main() {
 	simple_logger::init_with_level(Level::Info).unwrap();
 
 	let ctx = Arc::new(Ctx::new(context::SharedContext::default()));
-	let ssr_ctx = ctx.clone();
-	let mut wgui = Wgui::new_with_ssr(
-		"0.0.0.0:12345".parse().unwrap(),
-		Arc::new(move || {
-			let controller = tokio::task::block_in_place(|| {
-				tokio::runtime::Handle::current()
-					.block_on(components::todo::Todo::mount(ssr_ctx.clone()))
-			});
-			WuiController::render(&controller)
-		}),
-	);
+	let mut wgui = Wgui::new("0.0.0.0:12345".parse().unwrap());
 	wgui.add_component("/", move || {
 		let ctx = ctx.clone();
 		async move { components::todo::Todo::mount(ctx).await }

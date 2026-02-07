@@ -4,12 +4,6 @@ pub struct RouteDef {
 }
 
 pub const ROUTES: &[RouteDef] = &[
-	RouteDef {
-		module: "puppychat",
-		route: "/",
-	},
-	RouteDef {
-		module: "puppychat",
-		route: "/{*wildcard}",
-	},
+	RouteDef { module: "puppychat", route: "/" },
+	RouteDef { module: "puppychat", route: "/{*wildcard}" },
 ];

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use wgui::Wgui;
 use wgui::WuiModel;
-use wgui::wui::runtime::{Component, Ctx, WuiController};
+use wgui::wui::runtime::{Component, Ctx};
 
 mod components;
 mod context;
@@ -109,17 +109,7 @@ async fn main() {
 	simple_logger::init_with_level(Level::Info).unwrap();
 
 	let ctx = Arc::new(Ctx::new(context::SharedContext::default()));
-	let ssr_ctx = ctx.clone();
-	let mut wgui = Wgui::new_with_ssr(
-		"0.0.0.0:5545".parse().unwrap(),
-		Arc::new(move || {
-			let controller = tokio::task::block_in_place(|| {
-				tokio::runtime::Handle::current()
-					.block_on(components::puppychat::Puppychat::mount(ssr_ctx.clone()))
-			});
-			WuiController::render(&controller)
-		}),
-	);
+	let mut wgui = Wgui::new("0.0.0.0:5545".parse().unwrap());
 	wgui.add_component("/", move || {
 		let ctx = ctx.clone();
 		async move { components::puppychat::Puppychat::mount(ctx).await }
