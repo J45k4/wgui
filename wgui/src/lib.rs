@@ -1,8 +1,10 @@
 #[cfg(feature = "hyper")]
 use server::Server;
 use std::collections::HashMap;
+use std::future::Future;
 #[cfg(feature = "hyper")]
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
@@ -34,6 +36,9 @@ pub use ws::TungsteniteWs;
 pub use ws::{next_client_id, WsMessage, WsStream};
 
 pub(crate) type Sessions = Arc<RwLock<HashMap<usize, Option<String>>>>;
+type BoxedController = Box<dyn crate::wui::runtime::WuiController + Send>;
+type ControllerFuture = Pin<Box<dyn Future<Output = BoxedController> + Send>>;
+type ControllerFactory = Arc<dyn Fn() -> ControllerFuture + Send + Sync>;
 
 #[derive(Clone)]
 pub struct WguiHandle {
@@ -120,12 +125,40 @@ impl WguiHandle {
 	}
 }
 
+struct ComponentRegistration {
+	route_path: String,
+	factory: ControllerFactory,
+	controllers: HashMap<usize, BoxedController>,
+}
+
+impl ComponentRegistration {
+	fn new(route_path: String, factory: ControllerFactory) -> Self {
+		Self {
+			route_path,
+			factory,
+			controllers: HashMap::new(),
+		}
+	}
+}
+
 pub struct Wgui {
 	events_rx: mpsc::UnboundedReceiver<ClientMessage>,
 	handle: WguiHandle,
+	components: Vec<ComponentRegistration>,
 }
 
 impl Wgui {
+	fn path_matches(route_path: &str, current_path: &str) -> bool {
+		if route_path == "/" {
+			return true;
+		}
+		if current_path == route_path {
+			return true;
+		}
+		let prefix = format!("{}/", route_path.trim_end_matches('/'));
+		current_path.starts_with(&prefix)
+	}
+
 	#[cfg(feature = "hyper")]
 	pub fn new(addr: SocketAddr) -> Self {
 		let (events_tx, events_rx) = mpsc::unbounded_channel();
@@ -143,6 +176,7 @@ impl Wgui {
 		Self {
 			events_rx,
 			handle: WguiHandle::new(events_tx, clients, sessions),
+			components: Vec::new(),
 		}
 	}
 
@@ -167,6 +201,7 @@ impl Wgui {
 		Self {
 			events_rx,
 			handle: WguiHandle::new(events_tx, clients, sessions),
+			components: Vec::new(),
 		}
 	}
 
@@ -178,6 +213,7 @@ impl Wgui {
 		Self {
 			events_rx,
 			handle: WguiHandle::new(events_tx, clients, sessions),
+			components: Vec::new(),
 		}
 	}
 
@@ -203,5 +239,117 @@ impl Wgui {
 
 	pub async fn clear_session(&self, client_id: usize) {
 		self.handle.clear_session(client_id).await
+	}
+
+	pub fn add_component<C, F, Fut>(&mut self, path: &str, controller: F)
+	where
+		C: crate::wui::runtime::WuiController + Send + 'static,
+		F: Fn() -> Fut + Send + Sync + 'static,
+		Fut: Future<Output = C> + Send + 'static,
+	{
+		let factory: ControllerFactory = Arc::new(move || {
+			let fut = controller();
+			Box::pin(async move { Box::new(fut.await) as BoxedController })
+		});
+		self.components
+			.push(ComponentRegistration::new(path.to_string(), factory));
+	}
+
+	pub async fn run(&mut self) {
+		let handle = self.handle();
+		let mut paths: HashMap<usize, String> = HashMap::new();
+
+		while let Some(message) = self.next().await {
+			let client_id = message.client_id;
+			match &message.event {
+				ClientEvent::Connected { id: _ } => {
+					let current_path = paths
+						.get(&client_id)
+						.cloned()
+						.unwrap_or_else(|| "/".to_string());
+
+					for component in self.components.iter_mut() {
+						if !Self::path_matches(&component.route_path, &current_path) {
+							continue;
+						}
+						let controller = (component.factory)().await;
+						let item = controller.render_with_path(&current_path);
+						let title = controller.route_title(&current_path);
+						if let Some(title) = title {
+							handle.set_title(client_id, &title).await;
+						}
+						handle.render(client_id, item).await;
+						component.controllers.insert(client_id, controller);
+					}
+				}
+				ClientEvent::Disconnected { id: _ } => {
+					for component in self.components.iter_mut() {
+						component.controllers.remove(&client_id);
+					}
+					paths.remove(&client_id);
+					handle.clear_session(client_id).await;
+				}
+				ClientEvent::PathChanged(change) => {
+					paths.insert(client_id, change.path.clone());
+
+					for component in self.components.iter_mut() {
+						if !Self::path_matches(&component.route_path, &change.path) {
+							component.controllers.remove(&client_id);
+							continue;
+						}
+
+						if let Some(controller) = component.controllers.get_mut(&client_id) {
+							let item = controller.render_with_path(&change.path);
+							let title = controller.route_title(&change.path);
+							if let Some(title) = title {
+								handle.set_title(client_id, &title).await;
+							}
+							handle.render(client_id, item).await;
+						} else {
+							let controller = (component.factory)().await;
+							let item = controller.render_with_path(&change.path);
+							let title = controller.route_title(&change.path);
+							if let Some(title) = title {
+								handle.set_title(client_id, &title).await;
+							}
+							handle.render(client_id, item).await;
+							component.controllers.insert(client_id, controller);
+						}
+					}
+				}
+				ClientEvent::Input(_) => {}
+				_ => {
+					for component in self.components.iter_mut() {
+						let handled = component
+							.controllers
+							.get_mut(&client_id)
+							.map(|controller| controller.handle(&message.event))
+							.unwrap_or(false);
+
+						if handled {
+							let mut updates: Vec<(usize, Item, Option<String>)> = Vec::new();
+							for (mounted_client_id, mounted_controller) in
+								component.controllers.iter_mut()
+							{
+								let current_path = paths
+									.get(mounted_client_id)
+									.cloned()
+									.unwrap_or_else(|| "/".to_string());
+								let item = mounted_controller.render_with_path(&current_path);
+								let title = mounted_controller.route_title(&current_path);
+								updates.push((*mounted_client_id, item, title));
+							}
+
+							for (mounted_client_id, item, title) in updates {
+								if let Some(title) = title {
+									handle.set_title(mounted_client_id, &title).await;
+								}
+								handle.render(mounted_client_id, item).await;
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 }

@@ -1,7 +1,7 @@
 use crate::context::SharedContext;
 use async_trait::async_trait;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use wgui::wgui_controller;
 use wgui::wui::runtime::{Component, Ctx};
 
@@ -14,7 +14,10 @@ pub struct Puppychat {
 
 impl Puppychat {
 	pub fn new(ctx: Arc<Ctx<SharedContext>>) -> Self {
-		let session_key = format!("client-{}", NEXT_SESSION_KEY.fetch_add(1, Ordering::Relaxed));
+		let session_key = format!(
+			"client-{}",
+			NEXT_SESSION_KEY.fetch_add(1, Ordering::Relaxed)
+		);
 		Self { ctx, session_key }
 	}
 
