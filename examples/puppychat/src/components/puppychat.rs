@@ -14,10 +14,22 @@ pub struct Puppychat {
 
 impl Puppychat {
 	pub fn new(ctx: Arc<Ctx<SharedContext>>) -> Self {
-		let session_key = format!(
-			"client-{}",
-			NEXT_SESSION_KEY.fetch_add(1, Ordering::Relaxed)
-		);
+		let session_key = {
+			let sessions = ctx.state.sessions.lock().unwrap();
+			if sessions.len() == 1 {
+				sessions.keys().next().cloned().unwrap_or_else(|| {
+					format!(
+						"client-{}",
+						NEXT_SESSION_KEY.fetch_add(1, Ordering::Relaxed)
+					)
+				})
+			} else {
+				format!(
+					"client-{}",
+					NEXT_SESSION_KEY.fetch_add(1, Ordering::Relaxed)
+				)
+			}
+		};
 		Self { ctx, session_key }
 	}
 
