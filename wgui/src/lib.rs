@@ -1,5 +1,6 @@
 #[cfg(feature = "hyper")]
 use server::Server;
+use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::future::Future;
 #[cfg(feature = "hyper")]
@@ -148,6 +149,7 @@ pub struct Wgui {
 	handle: WguiHandle,
 	components: Vec<ComponentRegistration>,
 	ssr_components: SsrComponentFactories,
+	contexts: HashMap<TypeId, Arc<dyn Any + Send + Sync>>,
 }
 
 impl Wgui {
@@ -196,6 +198,7 @@ impl Wgui {
 			handle: WguiHandle::new(events_tx, clients, sessions),
 			components: Vec::new(),
 			ssr_components,
+			contexts: HashMap::new(),
 		}
 	}
 
@@ -223,6 +226,7 @@ impl Wgui {
 			handle: WguiHandle::new(events_tx, clients, sessions),
 			components: Vec::new(),
 			ssr_components,
+			contexts: HashMap::new(),
 		}
 	}
 
@@ -237,6 +241,7 @@ impl Wgui {
 			handle: WguiHandle::new(events_tx, clients, sessions),
 			components: Vec::new(),
 			ssr_components,
+			contexts: HashMap::new(),
 		}
 	}
 
@@ -264,7 +269,39 @@ impl Wgui {
 		self.handle.clear_session(client_id).await
 	}
 
-	pub fn add_component<C, F, Fut>(&mut self, path: &str, controller: F)
+	pub fn set_ctx<T>(&mut self, ctx: Arc<crate::wui::runtime::Ctx<T>>)
+	where
+		T: Send + Sync + 'static,
+	{
+		self.contexts.insert(TypeId::of::<T>(), ctx);
+	}
+
+	pub fn add_component<C>(&mut self, path: &str)
+	where
+		C: crate::wui::runtime::Component + crate::wui::runtime::WuiController + Send + 'static,
+		<C as crate::wui::runtime::Component>::Context: Send + Sync + 'static,
+	{
+		let Some(ctx_any) = self
+			.contexts
+			.get(&TypeId::of::<<C as crate::wui::runtime::Component>::Context>())
+		else {
+			panic!("missing context for component; call wgui.set_ctx(...) first");
+		};
+		let Some(ctx) = ctx_any
+			.downcast_ref::<Arc<crate::wui::runtime::Ctx<<C as crate::wui::runtime::Component>::Context>>>(
+			)
+			.cloned()
+		else {
+			panic!("invalid context type for component");
+		};
+
+		self.add_component_with(path, move || {
+			let ctx = ctx.clone();
+			async move { C::mount(ctx).await }
+		});
+	}
+
+	pub fn add_component_with<C, F, Fut>(&mut self, path: &str, controller: F)
 	where
 		C: crate::wui::runtime::WuiController + Send + 'static,
 		F: Fn() -> Fut + Send + Sync + 'static,
