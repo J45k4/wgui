@@ -1,7 +1,7 @@
 use crate::wui::ast::{BinaryOp, Expr, Literal, UnaryOp};
 use crate::wui::compiler::ir::{
-	ActionDef, ActionPayload, EventKind, IrDocument, IrFor, IrIf, IrNode, IrProp, IrScope, IrSwitch,
-	IrWidget,
+	ActionDef, ActionPayload, EventKind, IrDocument, IrFor, IrIf, IrNode, IrProp, IrScope,
+	IrSwitch, IrWidget,
 };
 use std::collections::BTreeSet;
 
@@ -66,9 +66,7 @@ pub fn generate(doc: &IrDocument) -> String {
 	out.push_str("\tlet __path = path;\n");
 	out.push_str(&emit_nodes(&doc.nodes, 1));
 	out.push_str("}\n\n");
-	out.push_str(
-		"fn __wui_route_params(route: &str, path: &str) -> Option<__WuiParams> {\n",
-	);
+	out.push_str("fn __wui_route_params(route: &str, path: &str) -> Option<__WuiParams> {\n");
 	out.push_str("\tif route == path { return Some(__WuiParams::default()); }\n");
 	out.push_str("\tlet route_parts: Vec<&str> = route.trim_matches('/').split('/').filter(|s| !s.is_empty()).collect();\n");
 	out.push_str("\tlet path_parts: Vec<&str> = path.trim_matches('/').split('/').filter(|s| !s.is_empty()).collect();\n");
@@ -94,9 +92,7 @@ pub fn generate(doc: &IrDocument) -> String {
 	out.push_str("\t}\n");
 	out.push_str("\tSome(params)\n");
 	out.push_str("}\n");
-	out.push_str(
-		"fn __wui_param_name(segment: &str) -> Option<&str> {\n",
-	);
+	out.push_str("fn __wui_param_name(segment: &str) -> Option<&str> {\n");
 	out.push_str("\tif let Some(name) = segment.strip_prefix(':') {\n");
 	out.push_str("\t\tif !name.is_empty() { return Some(name); }\n");
 	out.push_str("\t}\n");

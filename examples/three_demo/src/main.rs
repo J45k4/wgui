@@ -59,12 +59,67 @@ fn render(state: &State) -> Item {
 					y: rotation,
 					z: 0.0,
 				},
+			)
+			.prop(
+				"position",
+				ThreePropValue::Vec3 {
+					x: -1.5,
+					y: 0.0,
+					z: 0.0,
+				},
+			),
+			mesh(
+				8,
+				[
+					stl_geometry(9).prop(
+						"src",
+						ThreePropValue::String {
+							value: "/assets/puppyarm/meshes/Part_1__2.stl".to_string(),
+						},
+					),
+					mesh_standard_material(10)
+						.prop(
+							"color",
+							ThreePropValue::Color {
+								r: 220,
+								g: 130,
+								b: 80,
+								a: None,
+							},
+						)
+						.prop("metalness", ThreePropValue::Number { value: 0.1 })
+						.prop("roughness", ThreePropValue::Number { value: 0.8 }),
+				],
+			)
+			.prop(
+				"position",
+				ThreePropValue::Vec3 {
+					x: 1.5,
+					y: -0.4,
+					z: 0.0,
+				},
+			)
+			.prop(
+				"rotation",
+				ThreePropValue::Vec3 {
+					x: -1.57,
+					y: rotation * 0.5,
+					z: 0.0,
+				},
+			)
+			.prop(
+				"scale",
+				ThreePropValue::Vec3 {
+					x: 0.03,
+					y: 0.03,
+					z: 0.03,
+				},
 			),
 		],
 	);
 
 	vstack([
-		text("3D demo (requires window.THREE)").margin_bottom(10),
+		text("3D demo (cube + STL)").margin_bottom(10),
 		hstack([
 			three_view(scene)
 				.height(420)

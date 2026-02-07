@@ -170,8 +170,8 @@ fn lower_nodes(nodes: &[Node], ctx: &mut LowerContext, diags: &mut Vec<Diagnosti
 					if case_el.name != "Case" {
 						continue;
 					}
-					let route =
-						get_string_attr(case_el, "path").or_else(|| get_string_attr(case_el, "route"));
+					let route = get_string_attr(case_el, "path")
+						.or_else(|| get_string_attr(case_el, "route"));
 					let title = get_string_attr(case_el, "title");
 					let state_type = get_string_attr(case_el, "state");
 					ctx.pages.push(PageMeta {

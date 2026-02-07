@@ -52,6 +52,7 @@ pub enum ThreeKind {
 	OrthographicCamera,
 	BoxGeometry,
 	SphereGeometry,
+	StlGeometry,
 	MeshStandardMaterial,
 	MeshBasicMaterial,
 	AmbientLight,
@@ -66,12 +67,7 @@ pub enum ThreePropValue {
 	Bool { value: bool },
 	String { value: String },
 	Vec3 { x: f32, y: f32, z: f32 },
-	Color {
-		r: u8,
-		g: u8,
-		b: u8,
-		a: Option<f32>,
-	},
+	Color { r: u8, g: u8, b: u8, a: Option<f32> },
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
@@ -350,6 +346,10 @@ pub fn box_geometry(id: u32) -> ThreeNode {
 
 pub fn sphere_geometry(id: u32) -> ThreeNode {
 	three_node(ThreeKind::SphereGeometry, id)
+}
+
+pub fn stl_geometry(id: u32) -> ThreeNode {
+	three_node(ThreeKind::StlGeometry, id)
 }
 
 pub fn mesh_standard_material(id: u32) -> ThreeNode {

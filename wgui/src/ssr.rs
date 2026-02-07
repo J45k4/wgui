@@ -312,7 +312,6 @@ fn render_children(items: &[Item]) -> String {
 	out
 }
 
-
 fn render_element(
 	tag: &str,
 	classes: &[String],

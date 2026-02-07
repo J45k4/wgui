@@ -8,6 +8,7 @@ use hyper::Request;
 use hyper::Response;
 use hyper_util::rt::TokioIo;
 use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -21,6 +22,41 @@ use crate::WguiHandle;
 const INDEX_HTML_BYTES: &[u8] = include_bytes!("../../dist/index.html");
 const INDEX_JS_BYTES: &[u8] = include_bytes!("../../dist/index.js");
 const CSS_JS_BYTES: &[u8] = include_bytes!("../../dist/index.css");
+
+fn content_type_for(path: &Path) -> &'static str {
+	match path
+		.extension()
+		.and_then(|ext| ext.to_str())
+		.unwrap_or_default()
+	{
+		"css" => "text/css",
+		"js" => "text/javascript",
+		"html" => "text/html",
+		"stl" => "model/stl",
+		"jpg" | "jpeg" => "image/jpeg",
+		"png" => "image/png",
+		"svg" => "image/svg+xml",
+		_ => "application/octet-stream",
+	}
+}
+
+fn sanitize_asset_path(uri_path: &str) -> Option<PathBuf> {
+	if !uri_path.starts_with("/assets/") {
+		return None;
+	}
+	let relative = uri_path.trim_start_matches("/assets/");
+	if relative.is_empty() {
+		return None;
+	}
+	let mut out = PathBuf::from("assets");
+	for part in relative.split('/') {
+		if part.is_empty() || part == "." || part == ".." {
+			return None;
+		}
+		out.push(part);
+	}
+	Some(out)
+}
 
 struct Ctx {
 	event_tx: mpsc::UnboundedSender<ClientMessage>,
@@ -61,6 +97,24 @@ async fn handle_req(
 	match req.uri().path() {
 		"/index.js" => Ok(Response::new(Full::new(Bytes::from(INDEX_JS_BYTES)))),
 		"/index.css" => Ok(Response::new(Full::new(Bytes::from(CSS_JS_BYTES)))),
+		path if path.starts_with("/assets/") => {
+			let Some(asset_path) = sanitize_asset_path(path) else {
+				return Ok(Response::builder()
+					.status(400)
+					.body(Full::new(Bytes::from("bad asset path")))
+					.unwrap());
+			};
+			match tokio::fs::read(&asset_path).await {
+				Ok(bytes) => Ok(Response::builder()
+					.header("content-type", content_type_for(&asset_path))
+					.body(Full::new(Bytes::from(bytes)))
+					.unwrap()),
+				Err(_) => Ok(Response::builder()
+					.status(404)
+					.body(Full::new(Bytes::from("asset not found")))
+					.unwrap()),
+			}
+		}
 		_ => {
 			if let Some(renderer) = ctx.ssr {
 				let item = (renderer)();

@@ -282,10 +282,7 @@ impl Template {
 }
 
 #[cfg(feature = "axum")]
-pub fn router_with_component<T>(
-	ctx: Arc<Ctx<T::Context>>,
-	routes: &[&'static str],
-) -> axum::Router
+pub fn router_with_component<T>(ctx: Arc<Ctx<T::Context>>, routes: &[&'static str]) -> axum::Router
 where
 	T: Component + WuiController,
 {

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use wgui::wui::build::{generate, BuildConfig};
+use wgui::wui::build::{BuildConfig, generate};
 
 fn main() {
 	println!("cargo:rerun-if-changed=wui");

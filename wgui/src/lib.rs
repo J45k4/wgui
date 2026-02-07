@@ -14,18 +14,18 @@ pub mod diff;
 pub mod dist;
 pub mod edit_distance;
 pub mod gui;
+pub mod pubsub;
 #[cfg(feature = "hyper")]
 mod server;
-pub mod pubsub;
 pub mod ssr;
 pub mod types;
 mod ui_client;
 pub mod ws;
 pub mod wui;
 
-pub use wui_derive::{wgui_controller, WuiModel};
-pub use wui::runtime::WuiModel;
 pub use pubsub::PubSub;
+pub use wui::runtime::WuiModel;
+pub use wui_derive::{wgui_controller, WuiModel};
 
 use crate::ui_client::UiWsWorker;
 

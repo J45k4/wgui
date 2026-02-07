@@ -1,8 +1,8 @@
+use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::io;
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::wui::compiler;
@@ -123,10 +123,12 @@ pub fn generate(config: &BuildConfig) -> Result<BuildResult, BuildError> {
 				source_files.push(import_path);
 			}
 		}
-		let generated = compiler::compile_nodes(&resolved.nodes, &module_name)
-			.map_err(|diags| BuildError::Compile {
-				path: wui_path.clone(),
-				diagnostics: diags,
+		let generated =
+			compiler::compile_nodes(&resolved.nodes, &module_name).map_err(|diags| {
+				BuildError::Compile {
+					path: wui_path.clone(),
+					diagnostics: diags,
+				}
 			})?;
 		for (module, route) in generated.routes {
 			routes.push((module, route));

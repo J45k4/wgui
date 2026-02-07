@@ -174,6 +174,19 @@ class ThreeHost {
   running;
   pendingRoot;
   pendingOps;
+  stlLoadTokens;
+  isMiddlePanning;
+  isRightRotating;
+  panLastX;
+  panLastY;
+  rotateLastX;
+  rotateLastY;
+  onMouseDown;
+  onMouseMove;
+  onMouseUp;
+  onAuxClick;
+  onContextMenu;
+  onWheel;
   constructor(canvas) {
     this.canvas = canvas;
     this.three = getThree();
@@ -187,6 +200,19 @@ class ThreeHost {
     this.running = false;
     this.pendingRoot = null;
     this.pendingOps = [];
+    this.stlLoadTokens = new Map;
+    this.isMiddlePanning = false;
+    this.isRightRotating = false;
+    this.panLastX = 0;
+    this.panLastY = 0;
+    this.rotateLastX = 0;
+    this.rotateLastY = 0;
+    this.onMouseDown = null;
+    this.onMouseMove = null;
+    this.onMouseUp = null;
+    this.onAuxClick = null;
+    this.onContextMenu = null;
+    this.onWheel = null;
     if (!this.three) {
       loadThree().then((three) => {
         this.initWithThree(three);
@@ -216,6 +242,7 @@ class ThreeHost {
   }
   dispose() {
     this.stop();
+    this.teardownPanControls();
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
@@ -255,6 +282,7 @@ class ThreeHost {
     this.renderer.setPixelRatio(window.devicePixelRatio || 1);
     this.scene = new THREE.Scene;
     this.setupResizeObserver();
+    this.setupPanControls();
     this.start();
     if (this.pendingRoot) {
       const root = this.pendingRoot;
@@ -280,6 +308,7 @@ class ThreeHost {
     this.objects.clear();
     this.kinds.clear();
     this.parents.clear();
+    this.stlLoadTokens.clear();
     this.activeCamera = null;
   }
   buildFromTree(root) {
@@ -354,6 +383,9 @@ class ThreeHost {
         break;
       case "sphereGeometry":
         obj = new THREE.SphereGeometry(1, 32, 16);
+        break;
+      case "stlGeometry":
+        obj = new THREE.BufferGeometry;
         break;
       case "meshStandardMaterial":
         obj = new THREE.MeshStandardMaterial({ color: 16777215 });
@@ -446,6 +478,7 @@ class ThreeHost {
     this.objects.delete(id);
     this.kinds.delete(id);
     this.parents.delete(id);
+    this.stlLoadTokens.delete(id);
     if (obj.dispose) {
       obj.dispose();
     }
@@ -558,6 +591,12 @@ class ThreeHost {
       }
       return;
     }
+    if (kind === "stlGeometry") {
+      if (key === "src" && typeof decoded === "string") {
+        this.loadStlGeometry(id, decoded);
+      }
+      return;
+    }
     if (kind && kind.endsWith("Material")) {
       if (key === "metalness" && typeof decoded === "number") {
         obj.metalness = decoded;
@@ -586,6 +625,9 @@ class ThreeHost {
     if (key === "active" && this.activeCamera === obj) {
       this.activeCamera = null;
     }
+    if (key === "src" && this.kinds.get(id) === "stlGeometry") {
+      this.stlLoadTokens.set(id, (this.stlLoadTokens.get(id) ?? 0) + 1);
+    }
   }
   replaceGeometry(id, geometry) {
     const obj = this.objects.get(id);
@@ -600,6 +642,30 @@ class ThreeHost {
       }
     }
     this.objects.set(id, geometry);
+  }
+  loadStlGeometry(id, src) {
+    if (!this.three) {
+      return;
+    }
+    const token = (this.stlLoadTokens.get(id) ?? 0) + 1;
+    this.stlLoadTokens.set(id, token);
+    fetch(src).then((response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return response.arrayBuffer();
+    }).then((buffer) => {
+      if (this.stlLoadTokens.get(id) !== token) {
+        return;
+      }
+      const geometry = parseStl(this.three, buffer);
+      this.replaceGeometry(id, geometry);
+    }).catch((err) => {
+      if (this.stlLoadTokens.get(id) !== token) {
+        return;
+      }
+      console.warn(`Failed to load STL geometry from "${src}"`, err);
+    });
   }
   setupResizeObserver() {
     if (!this.renderer) {
@@ -626,6 +692,158 @@ class ThreeHost {
     this.resizeObserver.observe(this.canvas);
     resize();
   }
+  setupPanControls() {
+    if (this.onMouseDown || this.onMouseMove || this.onMouseUp || this.onWheel) {
+      return;
+    }
+    this.onMouseDown = (event) => {
+      if (event.button !== 1 && event.button !== 2) {
+        return;
+      }
+      event.preventDefault();
+      if (event.button === 1) {
+        this.isMiddlePanning = true;
+        this.panLastX = event.clientX;
+        this.panLastY = event.clientY;
+      }
+      if (event.button === 2) {
+        this.isRightRotating = true;
+        this.rotateLastX = event.clientX;
+        this.rotateLastY = event.clientY;
+      }
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "grabbing";
+    };
+    this.onMouseMove = (event) => {
+      if (this.isMiddlePanning) {
+        event.preventDefault();
+        const dx = event.clientX - this.panLastX;
+        const dy = event.clientY - this.panLastY;
+        this.panLastX = event.clientX;
+        this.panLastY = event.clientY;
+        this.panFromCamera(dx, dy);
+      }
+      if (this.isRightRotating) {
+        event.preventDefault();
+        const dx = event.clientX - this.rotateLastX;
+        const dy = event.clientY - this.rotateLastY;
+        this.rotateLastX = event.clientX;
+        this.rotateLastY = event.clientY;
+        this.rotateFromCamera(dx, dy);
+      }
+    };
+    this.onMouseUp = (event) => {
+      if (event.button === 1) {
+        this.isMiddlePanning = false;
+      }
+      if (event.button === 2) {
+        this.isRightRotating = false;
+      }
+      this.stopControlsInteraction();
+    };
+    this.onAuxClick = (event) => {
+      if (event.button === 1) {
+        event.preventDefault();
+      }
+    };
+    this.onContextMenu = (event) => {
+      event.preventDefault();
+    };
+    this.onWheel = (event) => {
+      event.preventDefault();
+      this.zoomFromWheel(event.deltaY);
+    };
+    this.canvas.addEventListener("mousedown", this.onMouseDown);
+    window.addEventListener("mousemove", this.onMouseMove);
+    window.addEventListener("mouseup", this.onMouseUp);
+    this.canvas.addEventListener("auxclick", this.onAuxClick);
+    this.canvas.addEventListener("contextmenu", this.onContextMenu);
+    this.canvas.addEventListener("wheel", this.onWheel, { passive: false });
+  }
+  teardownPanControls() {
+    this.isMiddlePanning = false;
+    this.isRightRotating = false;
+    this.stopControlsInteraction();
+    if (this.onMouseDown) {
+      this.canvas.removeEventListener("mousedown", this.onMouseDown);
+      this.onMouseDown = null;
+    }
+    if (this.onMouseMove) {
+      window.removeEventListener("mousemove", this.onMouseMove);
+      this.onMouseMove = null;
+    }
+    if (this.onMouseUp) {
+      window.removeEventListener("mouseup", this.onMouseUp);
+      this.onMouseUp = null;
+    }
+    if (this.onAuxClick) {
+      this.canvas.removeEventListener("auxclick", this.onAuxClick);
+      this.onAuxClick = null;
+    }
+    if (this.onContextMenu) {
+      this.canvas.removeEventListener("contextmenu", this.onContextMenu);
+      this.onContextMenu = null;
+    }
+    if (this.onWheel) {
+      this.canvas.removeEventListener("wheel", this.onWheel);
+      this.onWheel = null;
+    }
+  }
+  stopControlsInteraction() {
+    if (this.isMiddlePanning || this.isRightRotating) {
+      return;
+    }
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+  }
+  panFromCamera(dx, dy) {
+    if (!this.three || !this.activeCamera || !this.activeCamera.position) {
+      return;
+    }
+    const THREE = this.three;
+    const camera = this.activeCamera;
+    const cameraPos = camera.position;
+    const distance = Math.max(1, cameraPos.length ? cameraPos.length() : 1);
+    const factor = distance / Math.max(this.canvas.clientHeight || 1, 1);
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+    const delta = right.multiplyScalar(-dx * factor).add(up.multiplyScalar(dy * factor));
+    cameraPos.add(delta);
+  }
+  zoomFromWheel(deltaY) {
+    if (!this.three || !this.activeCamera) {
+      return;
+    }
+    const THREE = this.three;
+    const camera = this.activeCamera;
+    if (camera.isPerspectiveCamera && camera.position) {
+      const amount = Math.max(-1, Math.min(1, -deltaY)) * 0.1;
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+      camera.position.add(forward.multiplyScalar(amount));
+      return;
+    }
+    if (camera.isOrthographicCamera) {
+      const factor = deltaY > 0 ? 0.9 : 1.1;
+      camera.zoom = Math.max(0.05, Math.min(100, camera.zoom / factor));
+      camera.updateProjectionMatrix();
+    }
+  }
+  rotateFromCamera(dx, dy) {
+    if (!this.three || !this.activeCamera) {
+      return;
+    }
+    const THREE = this.three;
+    const camera = this.activeCamera;
+    if (!camera.quaternion) {
+      return;
+    }
+    const yaw = -dx * 0.005;
+    const pitch = -dy * 0.005;
+    const up = new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+    camera.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(up, yaw));
+    camera.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(right, pitch));
+  }
 }
 var decodeValue = (value) => {
   switch (value.type) {
@@ -640,6 +858,71 @@ var decodeValue = (value) => {
     case "color":
       return { r: value.r, g: value.g, b: value.b, a: value.a };
   }
+};
+var parseStl = (THREE, arrayBuffer) => {
+  if (isBinaryStl(arrayBuffer)) {
+    return parseBinaryStl(THREE, arrayBuffer);
+  }
+  return parseAsciiStl(THREE, arrayBuffer);
+};
+var isBinaryStl = (arrayBuffer) => {
+  if (arrayBuffer.byteLength < 84) {
+    return false;
+  }
+  const dataView = new DataView(arrayBuffer);
+  const triangleCount = dataView.getUint32(80, true);
+  const expected = 84 + triangleCount * 50;
+  return expected === arrayBuffer.byteLength;
+};
+var parseBinaryStl = (THREE, arrayBuffer) => {
+  const dataView = new DataView(arrayBuffer);
+  const triangleCount = dataView.getUint32(80, true);
+  const positions = [];
+  const normals = [];
+  let offset = 84;
+  for (let i = 0;i < triangleCount; i++) {
+    const nx = dataView.getFloat32(offset, true);
+    const ny = dataView.getFloat32(offset + 4, true);
+    const nz = dataView.getFloat32(offset + 8, true);
+    offset += 12;
+    for (let v = 0;v < 3; v++) {
+      const x = dataView.getFloat32(offset, true);
+      const y = dataView.getFloat32(offset + 4, true);
+      const z = dataView.getFloat32(offset + 8, true);
+      positions.push(x, y, z);
+      normals.push(nx, ny, nz);
+      offset += 12;
+    }
+    offset += 2;
+  }
+  return buildGeometry(THREE, positions, normals);
+};
+var parseAsciiStl = (THREE, arrayBuffer) => {
+  const text = new TextDecoder().decode(arrayBuffer);
+  const positions = [];
+  const normals = [];
+  const facetRegex = /facet\s+normal\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+outer\s+loop\s+vertex\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+vertex\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+vertex\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+endloop\s+endfacet/gi;
+  let match;
+  while ((match = facetRegex.exec(text)) !== null) {
+    const numbers = match.slice(1).map(Number);
+    const [nx, ny, nz, x1, y1, z1, x2, y2, z2, x3, y3, z3] = numbers;
+    positions.push(x1, y1, z1, x2, y2, z2, x3, y3, z3);
+    normals.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
+  }
+  return buildGeometry(THREE, positions, normals);
+};
+var buildGeometry = (THREE, positions, normals) => {
+  const geometry = new THREE.BufferGeometry;
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  if (normals.length === positions.length) {
+    geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  } else {
+    geometry.computeVertexNormals();
+  }
+  if (geometry.computeBoundingSphere) {
+    geometry.computeBoundingSphere();
+  }
+  return geometry;
 };
 
 // ts/render.ts

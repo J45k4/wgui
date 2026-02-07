@@ -1,10 +1,10 @@
 use ::axum::Router;
 use log::Level;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use wgui::WuiModel;
 use wgui::wui::runtime::Ctx;
-use std::collections::HashMap;
 
 mod components;
 mod context;
@@ -57,11 +57,7 @@ pub struct SessionState {
 impl SessionState {
 	fn new(shared: &ChatState) -> Self {
 		let (active_kind, active_id, active_name) = if let Some(first) = shared.channels.first() {
-			(
-				"channel".to_string(),
-				first.id,
-				first.display_name.clone(),
-			)
+			("channel".to_string(), first.id, first.display_name.clone())
 		} else {
 			("".to_string(), 0, "".to_string())
 		};

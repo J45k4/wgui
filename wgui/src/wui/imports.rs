@@ -58,10 +58,7 @@ fn expand_nodes(
 		match node {
 			Node::Element(el) if el.name == "Import" => {
 				if !el.children.is_empty() {
-					diags.push(Diagnostic::new(
-						"Import tags cannot have children",
-						el.span,
-					));
+					diags.push(Diagnostic::new("Import tags cannot have children", el.span));
 				}
 				let Some(src) = import_src(el, diags) else {
 					continue;
@@ -76,8 +73,7 @@ fn expand_nodes(
 			}
 			Node::Element(el) => {
 				let mut updated = el.clone();
-				updated.children =
-					expand_nodes(&el.children, base_dir, module_name, ctx, diags);
+				updated.children = expand_nodes(&el.children, base_dir, module_name, ctx, diags);
 				out.push(Node::Element(updated));
 			}
 			_ => out.push(node.clone()),
@@ -88,10 +84,7 @@ fn expand_nodes(
 
 fn import_src(el: &Element, diags: &mut Vec<Diagnostic>) -> Option<String> {
 	let Some(attr) = el.attrs.iter().find(|attr| attr.name == "src") else {
-		diags.push(Diagnostic::new(
-			"Import requires src=\"...\"",
-			el.span,
-		));
+		diags.push(Diagnostic::new("Import requires src=\"...\"", el.span));
 		return None;
 	};
 	match &attr.value {
