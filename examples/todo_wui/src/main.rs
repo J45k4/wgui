@@ -1,6 +1,6 @@
 use log::Level;
 use std::sync::Arc;
-use wgui::wui::runtime::{Component, Ctx};
+use wgui::wui::runtime::Ctx;
 use wgui::Wgui;
 use wgui::WuiModel;
 
@@ -27,9 +27,7 @@ async fn main() {
 
 	let ctx = Arc::new(Ctx::new(context::SharedContext::default()));
 	let mut wgui = Wgui::new("0.0.0.0:12345".parse().unwrap());
-	wgui.add_component("/", move || {
-		let ctx = ctx.clone();
-		async move { components::todo::Todo::mount(ctx).await }
-	});
+	wgui.set_ctx(ctx.clone());
+	wgui.add_component::<components::todo::Todo>("/");
 	wgui.run().await;
 }
