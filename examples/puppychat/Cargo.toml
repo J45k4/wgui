@@ -5,8 +5,7 @@ edition = "2024"
 build = "build.rs"
 
 [dependencies]
-wgui = { path = "../../wgui", default-features = false, features = ["axum"] }
-axum = { workspace = true }
+wgui = { path = "../../wgui", features = ["hyper"] }
 log = "0.4"
 simple_logger = "5"
 tokio = { version = "1", features = ["full"] }
@@ -14,7 +13,3 @@ async-trait = "0.1"
 
 [build-dependencies]
 wgui = { path = "../../wgui" }
-
-[features]
-default = ["axum"]
-axum = []

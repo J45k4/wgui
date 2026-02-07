@@ -44,7 +44,7 @@ async fn main() {
 - Component showcase (text input, select, slider, modal, table): `cargo run -p allcomponents`
 - Three.js scene demo (procedural + STL geometry): `cargo run -p three_demo`
 - URDF viewer (STL meshes + joint sliders): `cargo run -p urdf -- assets/puppyarm/puppyarm.urdf`
-- WUI template example with hot reload: `cargo run -p todo_wui`
+- WUI template examples: `cargo run -p todo_wui` and `cargo run -p puppychat`
 
 ## WUI templates
 
@@ -57,7 +57,7 @@ See `docs/lsp.md` for setting up the `wui-lsp` server in Zed or other editors.
 ## API overview
 
 - Core runtime: `Wgui::new(addr)`, `wgui.next().await`, `wgui.render(client_id, item)`
-- SSR snapshot: `Wgui::new_with_ssr(addr, || render())` or `axum::router_with_ssr(...)`
+- SSR snapshot: `Wgui::new_with_ssr(addr, || render())`
 - Events: `ClientEvent::{Connected, Disconnected, OnClick, OnTextChanged, OnSliderChange, OnSelect, PathChanged}`
 
 Component builders

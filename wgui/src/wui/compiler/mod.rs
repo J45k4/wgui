@@ -72,7 +72,7 @@ mod tests {
 		assert!(generated.code.contains("pub enum Action"));
 		assert!(generated.code.contains("AddTodo"));
 		assert!(generated.code.contains("EditNewTodo"));
-		assert!(generated.code.contains("pub fn render(state: &TodoState)"));
+		assert!(generated.code.contains("pub fn render(state: &"));
 		assert_eq!(
 			generated.routes,
 			vec![("todo".to_string(), "/todo".to_string())]

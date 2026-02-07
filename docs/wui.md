@@ -120,20 +120,6 @@ There are two ways to use WUI today:
 
 2) Runtime templates (hot reload)
 - Use `wgui::wui::runtime::Template` to parse and render at runtime.
-- See `examples/todo_wui` for file watching and re-render on change.
-
-## Hot reload (runtime)
-
-The `todo_wui` example demonstrates hot reload:
-
-- It watches `wui/todo.wui` for changes.
-- On update, it re-parses the template and re-renders all connected clients.
-
-Run it with:
-
-```
-cargo run -p todo_wui
-```
 
 ## Current limits
 
@@ -145,7 +131,7 @@ cargo run -p todo_wui
 
 ## SSR snapshot
 
-If you need a server-rendered first paint, use `Wgui::new_with_ssr` or `axum::router_with_ssr`
+If you need a server-rendered first paint, use `Wgui::new_with_ssr`
 to render an `Item` tree as HTML on initial load. The JS bundle will take over and apply updates.
 
 ## LSP support

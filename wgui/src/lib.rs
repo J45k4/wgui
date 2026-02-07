@@ -1,5 +1,4 @@
 #[cfg(feature = "hyper")]
-#[cfg(feature = "hyper")]
 use server::Server;
 use std::collections::HashMap;
 #[cfg(feature = "hyper")]
@@ -8,8 +7,6 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 
-#[cfg(feature = "axum")]
-pub mod axum;
 pub mod diff;
 pub mod dist;
 pub mod edit_distance;
@@ -28,11 +25,6 @@ pub use wui::runtime::WuiModel;
 pub use wui_derive::{wgui_controller, WuiModel};
 
 use crate::ui_client::UiWsWorker;
-
-#[cfg(feature = "axum")]
-use crate::axum::router as axum_router;
-#[cfg(feature = "axum")]
-use ::axum::Router;
 
 pub use dist::*;
 pub use gui::*;
@@ -191,11 +183,6 @@ impl Wgui {
 
 	pub fn handle(&self) -> WguiHandle {
 		self.handle.clone()
-	}
-
-	#[cfg(feature = "axum")]
-	pub fn router(&self) -> Router {
-		axum_router(self.handle.clone())
 	}
 
 	pub async fn next(&mut self) -> Option<ClientMessage> {

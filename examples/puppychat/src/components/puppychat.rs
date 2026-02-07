@@ -1,26 +1,25 @@
 use crate::context::SharedContext;
 use async_trait::async_trait;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use wgui::wgui_controller;
 use wgui::wui::runtime::{Component, Ctx};
 
+static NEXT_SESSION_KEY: AtomicUsize = AtomicUsize::new(1);
+
 pub struct Puppychat {
 	ctx: Arc<Ctx<SharedContext>>,
+	session_key: String,
 }
 
 impl Puppychat {
 	pub fn new(ctx: Arc<Ctx<SharedContext>>) -> Self {
-		Self { ctx }
+		let session_key = format!("client-{}", NEXT_SESSION_KEY.fetch_add(1, Ordering::Relaxed));
+		Self { ctx, session_key }
 	}
 
 	fn session_key(&self) -> String {
-		if let Some(session_id) = self.ctx.session_id() {
-			return session_id;
-		}
-		if let Some(client_id) = self.ctx.client_id() {
-			return format!("client-{}", client_id);
-		}
-		"client-local".to_string()
+		self.session_key.clone()
 	}
 
 	fn ensure_session_state<'a>(

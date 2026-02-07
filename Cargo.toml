@@ -4,8 +4,10 @@ members = [
     "wui-lsp",
     "wui-derive",
     "zed-wui",
-    "examples/*"
+    "examples/allcomponents",
+    "examples/puppychat",
+    "examples/todo",
+    "examples/todo_wui",
+    "examples/three_demo",
+    "examples/urdf"
 ]
-
-[workspace.dependencies]
-axum = "0.8"
