@@ -162,6 +162,7 @@ export type ThreeKind =
 	| "orthographicCamera"
 	| "boxGeometry"
 	| "sphereGeometry"
+	| "cylinderGeometry"
 	| "stlGeometry"
 	| "meshStandardMaterial"
 	| "meshBasicMaterial"

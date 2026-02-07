@@ -5,14 +5,24 @@ use std::path::{Component, Path, PathBuf};
 use wgui::*;
 
 const JOINT_SLIDER_BASE_ID: u32 = 10_000;
+const URDF_TEXTAREA_ID: u32 = 20_001;
+const APPLY_URDF_BUTTON_ID: u32 = 20_002;
 const VALUE_SCALE: f32 = 1000.0;
 
 #[derive(Clone)]
 struct LinkVisual {
-	mesh_src: String,
 	origin_xyz: [f32; 3],
 	origin_rpy: [f32; 3],
-	mesh_scale: [f32; 3],
+	color_rgb: [u8; 3],
+	geometry: VisualGeometry,
+}
+
+#[derive(Clone)]
+enum VisualGeometry {
+	Mesh { src: String, scale: [f32; 3] },
+	Box { size: [f32; 3] },
+	Cylinder { radius: f32, length: f32 },
+	Sphere { radius: f32 },
 }
 
 #[derive(Clone)]
@@ -57,6 +67,9 @@ struct State {
 	robot: RobotModel,
 	joint_values: Vec<i32>,
 	urdf_label: String,
+	urdf_xml: String,
+	urdf_base_dir: PathBuf,
+	status_message: String,
 }
 
 fn parse_vec3(input: Option<&str>) -> [f32; 3] {
@@ -84,6 +97,34 @@ fn parse_vec3_or(input: Option<&str>, default: [f32; 3]) -> [f32; 3] {
 		}
 		None => default,
 	}
+}
+
+fn parse_f32_or(input: Option<&str>, default: f32) -> f32 {
+	match input.and_then(|s| s.parse::<f32>().ok()) {
+		Some(value) => value,
+		None => default,
+	}
+}
+
+fn parse_color_rgb(visual_node: roxmltree::Node<'_, '_>) -> [u8; 3] {
+	let rgba = visual_node
+		.children()
+		.find(|n| n.has_tag_name("material"))
+		.and_then(|mat| mat.children().find(|n| n.has_tag_name("color")))
+		.and_then(|color| color.attribute("rgba"));
+
+	let Some(rgba) = rgba else {
+		return [190, 190, 205];
+	};
+	let parts: Vec<f32> = rgba
+		.split_whitespace()
+		.filter_map(|part| part.parse::<f32>().ok())
+		.collect();
+	if parts.len() < 3 {
+		return [190, 190, 205];
+	}
+	let to_u8 = |v: f32| -> u8 { (v.clamp(0.0, 1.0) * 255.0).round() as u8 };
+	[to_u8(parts[0]), to_u8(parts[1]), to_u8(parts[2])]
 }
 
 fn parse_joint_type(input: &str) -> JointType {
@@ -202,12 +243,12 @@ fn parse_mesh_src(urdf_dir: &Path, workspace_root: &Path, filename: &str) -> Opt
 	None
 }
 
-fn parse_robot(urdf_path: &Path, workspace_root: &Path) -> RobotModel {
-	let xml = std::fs::read_to_string(urdf_path)
-		.unwrap_or_else(|err| panic!("failed to read URDF {}: {err}", urdf_path.display()));
-	let doc = Document::parse(&xml)
-		.unwrap_or_else(|err| panic!("failed to parse URDF {}: {err}", urdf_path.display()));
-	let urdf_dir = urdf_path.parent().unwrap_or(Path::new("."));
+fn parse_robot_from_xml(
+	xml: &str,
+	urdf_dir: &Path,
+	workspace_root: &Path,
+) -> Result<RobotModel, String> {
+	let doc = Document::parse(&xml).map_err(|err| format!("failed to parse URDF XML: {err}"))?;
 
 	let mut links: HashMap<String, LinkDef> = HashMap::new();
 	for link_node in doc.descendants().filter(|n| n.has_tag_name("link")) {
@@ -219,28 +260,55 @@ fn parse_robot(urdf_path: &Path, workspace_root: &Path) -> RobotModel {
 			let origin_node = visual_node.children().find(|n| n.has_tag_name("origin"));
 			let origin_xyz = parse_vec3(origin_node.and_then(|n| n.attribute("xyz")));
 			let origin_rpy = parse_vec3(origin_node.and_then(|n| n.attribute("rpy")));
+			let color_rgb = parse_color_rgb(visual_node);
 
-			let mesh_node = visual_node
+			let geometry_node = visual_node.children().find(|n| n.has_tag_name("geometry"));
+			let Some(geometry_node) = geometry_node else {
+				continue;
+			};
+
+			let geometry = if let Some(mesh_node) =
+				geometry_node.children().find(|n| n.has_tag_name("mesh"))
+			{
+				let Some(mesh_filename) = mesh_node.attribute("filename") else {
+					continue;
+				};
+				let mesh_scale = parse_vec3_or(mesh_node.attribute("scale"), [1.0, 1.0, 1.0]);
+				let Some(mesh_src) = parse_mesh_src(urdf_dir, workspace_root, mesh_filename) else {
+					continue;
+				};
+				VisualGeometry::Mesh {
+					src: mesh_src,
+					scale: mesh_scale,
+				}
+			} else if let Some(box_node) = geometry_node.children().find(|n| n.has_tag_name("box"))
+			{
+				VisualGeometry::Box {
+					size: parse_vec3_or(box_node.attribute("size"), [0.05, 0.05, 0.05]),
+				}
+			} else if let Some(cylinder_node) = geometry_node
 				.children()
-				.find(|n| n.has_tag_name("geometry"))
-				.and_then(|geometry| geometry.children().find(|n| n.has_tag_name("mesh")));
-
-			let Some(mesh_node) = mesh_node else {
-				continue;
-			};
-			let Some(mesh_filename) = mesh_node.attribute("filename") else {
-				continue;
-			};
-			let mesh_scale = parse_vec3_or(mesh_node.attribute("scale"), [1.0, 1.0, 1.0]);
-			let Some(mesh_src) = parse_mesh_src(urdf_dir, workspace_root, mesh_filename) else {
+				.find(|n| n.has_tag_name("cylinder"))
+			{
+				VisualGeometry::Cylinder {
+					radius: parse_f32_or(cylinder_node.attribute("radius"), 0.05),
+					length: parse_f32_or(cylinder_node.attribute("length"), 0.1),
+				}
+			} else if let Some(sphere_node) =
+				geometry_node.children().find(|n| n.has_tag_name("sphere"))
+			{
+				VisualGeometry::Sphere {
+					radius: parse_f32_or(sphere_node.attribute("radius"), 0.05),
+				}
+			} else {
 				continue;
 			};
 
 			visuals.push(LinkVisual {
-				mesh_src,
 				origin_xyz,
 				origin_rpy,
-				mesh_scale,
+				color_rgb,
+				geometry,
 			});
 		}
 
@@ -340,13 +408,21 @@ fn parse_robot(urdf_path: &Path, workspace_root: &Path) -> RobotModel {
 		})
 		.collect();
 
-	RobotModel {
+	Ok(RobotModel {
 		links,
 		children_by_parent,
 		joints,
 		roots,
 		movable_joint_indices,
-	}
+	})
+}
+
+fn parse_robot(urdf_path: &Path, workspace_root: &Path) -> Result<(RobotModel, String), String> {
+	let xml = std::fs::read_to_string(urdf_path)
+		.map_err(|err| format!("failed to read URDF {}: {err}", urdf_path.display()))?;
+	let urdf_dir = urdf_path.parent().unwrap_or(Path::new("."));
+	let robot = parse_robot_from_xml(&xml, urdf_dir, workspace_root)?;
+	Ok((robot, xml))
 }
 
 fn axis_to_euler(axis: [f32; 3], value: f32) -> [f32; 3] {
@@ -400,55 +476,82 @@ fn push_link_visuals(link: &LinkDef, id_gen: &mut u32, children: &mut Vec<ThreeN
 		let geom_id = *id_gen;
 		*id_gen += 1;
 		let mat_id = *id_gen;
+		*id_gen += 1;
+		let visual_group_id = *id_gen;
+		let geometry_node = match &visual.geometry {
+			VisualGeometry::Mesh { src, .. } => {
+				stl_geometry(geom_id).prop("src", ThreePropValue::String { value: src.clone() })
+			}
+			VisualGeometry::Box { size } => box_geometry(geom_id)
+				.prop("width", ThreePropValue::Number { value: size[0] })
+				.prop("height", ThreePropValue::Number { value: size[1] })
+				.prop("depth", ThreePropValue::Number { value: size[2] }),
+			VisualGeometry::Cylinder { radius, length } => cylinder_geometry(geom_id)
+				.prop("radiusTop", ThreePropValue::Number { value: *radius })
+				.prop("radiusBottom", ThreePropValue::Number { value: *radius })
+				.prop("height", ThreePropValue::Number { value: *length }),
+			VisualGeometry::Sphere { radius } => {
+				sphere_geometry(geom_id).prop("radius", ThreePropValue::Number { value: *radius })
+			}
+		};
 
-		children.push(
-			mesh(
-				mesh_id,
-				[
-					stl_geometry(geom_id).prop(
-						"src",
-						ThreePropValue::String {
-							value: visual.mesh_src.clone(),
+		let mut mesh_node = mesh(
+			mesh_id,
+			[
+				geometry_node,
+				mesh_standard_material(mat_id)
+					.prop(
+						"color",
+						ThreePropValue::Color {
+							r: visual.color_rgb[0],
+							g: visual.color_rgb[1],
+							b: visual.color_rgb[2],
+							a: None,
 						},
-					),
-					mesh_standard_material(mat_id)
-						.prop(
-							"color",
-							ThreePropValue::Color {
-								r: 190,
-								g: 190,
-								b: 205,
-								a: None,
-							},
-						)
-						.prop("metalness", ThreePropValue::Number { value: 0.15 })
-						.prop("roughness", ThreePropValue::Number { value: 0.7 }),
-				],
-			)
-			.prop(
-				"position",
-				ThreePropValue::Vec3 {
-					x: visual.origin_xyz[0],
-					y: visual.origin_xyz[1],
-					z: visual.origin_xyz[2],
-				},
-			)
-			.prop(
+					)
+					.prop("metalness", ThreePropValue::Number { value: 0.15 })
+					.prop("roughness", ThreePropValue::Number { value: 0.7 }),
+			],
+		);
+		if let VisualGeometry::Cylinder { .. } = &visual.geometry {
+			mesh_node = mesh_node.prop(
 				"rotation",
 				ThreePropValue::Vec3 {
-					x: visual.origin_rpy[0],
-					y: visual.origin_rpy[1],
-					z: visual.origin_rpy[2],
+					x: std::f32::consts::FRAC_PI_2,
+					y: 0.0,
+					z: 0.0,
 				},
-			)
-			.prop(
+			);
+		}
+		if let VisualGeometry::Mesh { scale, .. } = &visual.geometry {
+			mesh_node = mesh_node.prop(
 				"scale",
 				ThreePropValue::Vec3 {
-					x: visual.mesh_scale[0],
-					y: visual.mesh_scale[1],
-					z: visual.mesh_scale[2],
+					x: scale[0],
+					y: scale[1],
+					z: scale[2],
 				},
-			),
+			);
+		}
+
+		children.push(
+			group(visual_group_id, [mesh_node])
+				.prop(
+					"position",
+					ThreePropValue::Vec3 {
+						x: visual.origin_xyz[0],
+						y: visual.origin_xyz[1],
+						z: visual.origin_xyz[2],
+					},
+				)
+				.prop(
+					"rotation",
+					ThreePropValue::Vec3 {
+						x: visual.origin_rpy[0],
+						y: visual.origin_rpy[1],
+						z: visual.origin_rpy[2],
+					},
+				),
 		);
 	}
 }
@@ -571,13 +674,15 @@ fn render(state: &State) -> Item {
 			.prop("intensity", ThreePropValue::Number { value: 1.1 }),
 	];
 
+	let mut model_children: Vec<ThreeNode> = Vec::new();
 	for root in &state.robot.roots {
 		if let Some(root_tree) =
 			build_link_subtree(&state.robot, root, &state.joint_values, &mut id_gen)
 		{
-			scene_children.push(root_tree);
+			model_children.push(root_tree);
 		}
 	}
+	scene_children.push(group(90, model_children));
 
 	let three_panel = three_view(scene(1, scene_children))
 		.height(680)
@@ -587,6 +692,7 @@ fn render(state: &State) -> Item {
 	let mut controls = vec![
 		text("URDF viewer").margin_bottom(8),
 		text(&format!("Model: {}", state.urdf_label)).margin_bottom(8),
+		text(&state.status_message).margin_bottom(8),
 		text(&format!(
 			"Loaded links: {}, joints: {}",
 			state.robot.links.len(),
@@ -625,10 +731,27 @@ fn render(state: &State) -> Item {
 		.background_color("#fafafa")
 		.overflow("scroll")
 		.height(680);
+	let editor_panel = vstack([
+		text("URDF XML"),
+		textarea()
+			.id(URDF_TEXTAREA_ID)
+			.svalue(&state.urdf_xml)
+			.placeholder("Paste URDF XML here")
+			.height(260),
+		button("Apply URDF from text")
+			.id(APPLY_URDF_BUTTON_ID)
+			.margin_top(8),
+	])
+	.padding(12)
+	.border("1px solid #d0d0d0")
+	.background_color("#fafafa");
 
-	hstack([three_panel, controls_panel])
-		.spacing(14)
-		.padding(14)
+	vstack([
+		hstack([three_panel, controls_panel]).spacing(14),
+		editor_panel,
+	])
+	.spacing(12)
+	.padding(14)
 }
 
 #[tokio::main]
@@ -645,11 +768,16 @@ async fn main() {
 	};
 	let urdf_path = PathBuf::from(&urdf_arg);
 	let workspace_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-	let robot = parse_robot(&urdf_path, &workspace_root);
+	let (robot, urdf_xml) =
+		parse_robot(&urdf_path, &workspace_root).unwrap_or_else(|err| panic!("{err}"));
+	let urdf_base_dir = urdf_path.parent().unwrap_or(Path::new(".")).to_path_buf();
 	let mut state = State {
 		joint_values: vec![0; robot.joints.len()],
 		robot,
 		urdf_label: urdf_arg,
+		urdf_xml,
+		urdf_base_dir,
+		status_message: "Loaded URDF from path".to_string(),
 	};
 
 	let mut client_ids = HashSet::new();
@@ -671,6 +799,35 @@ async fn main() {
 					if let Some(joint_index) = state.robot.movable_joint_indices.get(slot) {
 						if let Some(value) = state.joint_values.get_mut(*joint_index) {
 							*value = change.value;
+						}
+					}
+				}
+			}
+			ClientEvent::OnTextChanged(change) => {
+				if change.id == URDF_TEXTAREA_ID {
+					state.urdf_xml = change.value;
+				}
+			}
+			ClientEvent::OnClick(click) => {
+				if click.id == APPLY_URDF_BUTTON_ID {
+					match parse_robot_from_xml(
+						&state.urdf_xml,
+						&state.urdf_base_dir,
+						&workspace_root,
+					) {
+						Ok(robot) => {
+							let old_values = state.joint_values.clone();
+							state.joint_values = vec![0; robot.joints.len()];
+							for (slot, value) in old_values.iter().enumerate() {
+								if slot < state.joint_values.len() {
+									state.joint_values[slot] = *value;
+								}
+							}
+							state.robot = robot;
+							state.status_message = "Applied URDF from editor".to_string();
+						}
+						Err(err) => {
+							state.status_message = err;
 						}
 					}
 				}

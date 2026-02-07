@@ -384,6 +384,9 @@ class ThreeHost {
       case "sphereGeometry":
         obj = new THREE.SphereGeometry(1, 32, 16);
         break;
+      case "cylinderGeometry":
+        obj = new THREE.CylinderGeometry(1, 1, 1, 24);
+        break;
       case "stlGeometry":
         obj = new THREE.BufferGeometry;
         break;
@@ -511,6 +514,11 @@ class ThreeHost {
           obj.lookAt(decoded.x, decoded.y, decoded.z);
         }
         return;
+      case "up":
+        if (decoded && obj.up) {
+          obj.up.set(decoded.x, decoded.y, decoded.z);
+        }
+        return;
       case "visible":
         if (typeof decoded === "boolean") {
           obj.visible = decoded;
@@ -588,6 +596,16 @@ class ThreeHost {
         const widthSegments = key === "widthSegments" ? decoded : obj.parameters.widthSegments ?? 32;
         const heightSegments = key === "heightSegments" ? decoded : obj.parameters.heightSegments ?? 16;
         this.replaceGeometry(id, new THREE.SphereGeometry(radius, widthSegments, heightSegments));
+      }
+      return;
+    }
+    if (kind === "cylinderGeometry" && typeof decoded === "number" && obj.parameters) {
+      if (key === "radiusTop" || key === "radiusBottom" || key === "height" || key === "radialSegments") {
+        const radiusTop = key === "radiusTop" ? decoded : obj.parameters.radiusTop ?? 1;
+        const radiusBottom = key === "radiusBottom" ? decoded : obj.parameters.radiusBottom ?? 1;
+        const height = key === "height" ? decoded : obj.parameters.height ?? 1;
+        const radialSegments = key === "radialSegments" ? decoded : obj.parameters.radialSegments ?? 24;
+        this.replaceGeometry(id, new THREE.CylinderGeometry(radiusTop, radiusBottom, height, radialSegments));
       }
       return;
     }

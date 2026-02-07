@@ -1,11 +1,11 @@
 #[cfg(feature = "axum")]
-use crate::components::todo::Todo;
-use crate::context::SharedContext;
+use std::sync::Arc;
 #[cfg(feature = "axum")]
 use axum::Router;
 #[cfg(feature = "axum")]
-use std::sync::Arc;
+use crate::components::todo::Todo;
 use wgui::wui::runtime::Ctx;
+use crate::context::SharedContext;
 
 #[cfg(feature = "axum")]
 pub fn router(ctx: Arc<Ctx<SharedContext>>) -> Router {
@@ -19,16 +19,7 @@ pub struct RouteDef {
 }
 
 pub const ROUTES: &[RouteDef] = &[
-	RouteDef {
-		module: "todo",
-		route: "/",
-	},
-	RouteDef {
-		module: "todo",
-		route: "/todo/{todoId}",
-	},
-	RouteDef {
-		module: "todo",
-		route: "/{*wildcard}",
-	},
+	RouteDef { module: "todo", route: "/" },
+	RouteDef { module: "todo", route: "/todo/{todoId}" },
+	RouteDef { module: "todo", route: "/{*wildcard}" },
 ];

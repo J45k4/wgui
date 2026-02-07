@@ -52,6 +52,7 @@ pub enum ThreeKind {
 	OrthographicCamera,
 	BoxGeometry,
 	SphereGeometry,
+	CylinderGeometry,
 	StlGeometry,
 	MeshStandardMaterial,
 	MeshBasicMaterial,
@@ -346,6 +347,10 @@ pub fn box_geometry(id: u32) -> ThreeNode {
 
 pub fn sphere_geometry(id: u32) -> ThreeNode {
 	three_node(ThreeKind::SphereGeometry, id)
+}
+
+pub fn cylinder_geometry(id: u32) -> ThreeNode {
+	three_node(ThreeKind::CylinderGeometry, id)
 }
 
 pub fn stl_geometry(id: u32) -> ThreeNode {
