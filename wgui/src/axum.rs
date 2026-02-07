@@ -95,6 +95,7 @@ pub fn router(handle: WguiHandle) -> Router {
 		.route("/index.js", get(index_js))
 		.route("/index.css", get(index_css))
 		.route("/assets/{*path}", get(asset_file))
+		.route("/fs/{*path}", get(fs_file))
 }
 
 /// Convenience router that issues a session cookie on initial HTML responses.
@@ -128,6 +129,7 @@ pub fn router_with_session(handle: WguiHandle, session: SessionCookieConfig) -> 
 		.route("/index.js", get(index_js))
 		.route("/index.css", get(index_css))
 		.route("/assets/{*path}", get(asset_file))
+		.route("/fs/{*path}", get(fs_file))
 }
 
 /// Convenience router that serves a server-rendered HTML snapshot on first load.
@@ -167,7 +169,8 @@ pub fn router_with_ssr_routes_and_session(
 		)
 		.route("/index.js", get(index_js))
 		.route("/index.css", get(index_css))
-		.route("/assets/{*path}", get(asset_file));
+		.route("/assets/{*path}", get(asset_file))
+		.route("/fs/{*path}", get(fs_file));
 
 	for route in routes {
 		let renderer = ssr_renderer.clone();
@@ -209,7 +212,8 @@ pub fn router_with_ssr_routes(
 		)
 		.route("/index.js", get(index_js))
 		.route("/index.css", get(index_css))
-		.route("/assets/{*path}", get(asset_file));
+		.route("/assets/{*path}", get(asset_file))
+		.route("/fs/{*path}", get(fs_file));
 
 	for route in routes {
 		let renderer = ssr_renderer.clone();
@@ -305,9 +309,34 @@ fn sanitize_asset_path(path: &str) -> Option<PathBuf> {
 	Some(out)
 }
 
+fn sanitize_fs_path(path: &str) -> Option<PathBuf> {
+	let mut out = std::env::current_dir().ok()?;
+	for part in path.split('/') {
+		if part.is_empty() || part == "." || part == ".." {
+			return None;
+		}
+		out.push(part);
+	}
+	Some(out)
+}
+
 async fn asset_file(Path(path): Path<String>) -> impl IntoResponse {
 	let Some(full_path) = sanitize_asset_path(&path) else {
 		return ([(header::CONTENT_TYPE, "text/plain")], "bad asset path").into_response();
+	};
+	match tokio::fs::read(&full_path).await {
+		Ok(bytes) => (
+			[(header::CONTENT_TYPE, content_type_for(&full_path))],
+			bytes,
+		)
+			.into_response(),
+		Err(_) => axum::http::StatusCode::NOT_FOUND.into_response(),
+	}
+}
+
+async fn fs_file(Path(path): Path<String>) -> impl IntoResponse {
+	let Some(full_path) = sanitize_fs_path(&path) else {
+		return ([(header::CONTENT_TYPE, "text/plain")], "bad file path").into_response();
 	};
 	match tokio::fs::read(&full_path).await {
 		Ok(bytes) => (

@@ -58,6 +58,24 @@ fn sanitize_asset_path(uri_path: &str) -> Option<PathBuf> {
 	Some(out)
 }
 
+fn sanitize_fs_path(uri_path: &str) -> Option<PathBuf> {
+	if !uri_path.starts_with("/fs/") {
+		return None;
+	}
+	let relative = uri_path.trim_start_matches("/fs/");
+	if relative.is_empty() {
+		return None;
+	}
+	let mut out = std::env::current_dir().ok()?;
+	for part in relative.split('/') {
+		if part.is_empty() || part == "." || part == ".." {
+			return None;
+		}
+		out.push(part);
+	}
+	Some(out)
+}
+
 struct Ctx {
 	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	clients: Clients,
@@ -112,6 +130,24 @@ async fn handle_req(
 				Err(_) => Ok(Response::builder()
 					.status(404)
 					.body(Full::new(Bytes::from("asset not found")))
+					.unwrap()),
+			}
+		}
+		path if path.starts_with("/fs/") => {
+			let Some(file_path) = sanitize_fs_path(path) else {
+				return Ok(Response::builder()
+					.status(400)
+					.body(Full::new(Bytes::from("bad file path")))
+					.unwrap());
+			};
+			match tokio::fs::read(&file_path).await {
+				Ok(bytes) => Ok(Response::builder()
+					.header("content-type", content_type_for(&file_path))
+					.body(Full::new(Bytes::from(bytes)))
+					.unwrap()),
+				Err(_) => Ok(Response::builder()
+					.status(404)
+					.body(Full::new(Bytes::from("file not found")))
 					.unwrap()),
 			}
 		}

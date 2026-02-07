@@ -1,11 +1,11 @@
 #[cfg(feature = "axum")]
-use std::sync::Arc;
+use crate::components::puppychat::Puppychat;
+use crate::context::SharedContext;
 #[cfg(feature = "axum")]
 use axum::Router;
 #[cfg(feature = "axum")]
-use crate::components::puppychat::Puppychat;
+use std::sync::Arc;
 use wgui::wui::runtime::Ctx;
-use crate::context::SharedContext;
 
 #[cfg(feature = "axum")]
 pub fn router(ctx: Arc<Ctx<SharedContext>>) -> Router {
@@ -19,6 +19,12 @@ pub struct RouteDef {
 }
 
 pub const ROUTES: &[RouteDef] = &[
-	RouteDef { module: "puppychat", route: "/" },
-	RouteDef { module: "puppychat", route: "/{*wildcard}" },
+	RouteDef {
+		module: "puppychat",
+		route: "/",
+	},
+	RouteDef {
+		module: "puppychat",
+		route: "/{*wildcard}",
+	},
 ];

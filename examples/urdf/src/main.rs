@@ -1,7 +1,7 @@
 use log::Level;
 use roxmltree::Document;
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 use wgui::*;
 
 const JOINT_SLIDER_BASE_ID: u32 = 10_000;
@@ -12,6 +12,7 @@ struct LinkVisual {
 	mesh_src: String,
 	origin_xyz: [f32; 3],
 	origin_rpy: [f32; 3],
+	mesh_scale: [f32; 3],
 }
 
 #[derive(Clone)]
@@ -55,6 +56,7 @@ struct RobotModel {
 struct State {
 	robot: RobotModel,
 	joint_values: Vec<i32>,
+	urdf_label: String,
 }
 
 fn parse_vec3(input: Option<&str>) -> [f32; 3] {
@@ -70,6 +72,20 @@ fn parse_vec3(input: Option<&str>) -> [f32; 3] {
 	out
 }
 
+fn parse_vec3_or(input: Option<&str>, default: [f32; 3]) -> [f32; 3] {
+	match input {
+		Some(raw) => {
+			let parsed = parse_vec3(Some(raw));
+			if parsed == [0.0, 0.0, 0.0] && default != [0.0, 0.0, 0.0] {
+				default
+			} else {
+				parsed
+			}
+		}
+		None => default,
+	}
+}
+
 fn parse_joint_type(input: &str) -> JointType {
 	match input {
 		"fixed" => JointType::Fixed,
@@ -80,16 +96,118 @@ fn parse_joint_type(input: &str) -> JointType {
 	}
 }
 
-fn parse_mesh_src(filename: &str) -> Option<String> {
-	let file_name = Path::new(filename).file_name()?.to_str()?;
-	Some(format!("/assets/puppyarm/meshes/{file_name}"))
+fn path_to_assets_url(path: &Path) -> Option<String> {
+	let mut saw_assets = false;
+	let mut rest = Vec::<String>::new();
+	for component in path.components() {
+		match component {
+			Component::Normal(part) => {
+				let text = part.to_string_lossy().to_string();
+				if !saw_assets {
+					if text == "assets" {
+						saw_assets = true;
+					}
+					continue;
+				}
+				rest.push(text);
+			}
+			Component::CurDir => {}
+			Component::ParentDir => return None,
+			Component::RootDir | Component::Prefix(_) => {}
+		}
+	}
+	if !saw_assets || rest.is_empty() {
+		None
+	} else {
+		Some(format!("/assets/{}", rest.join("/")))
+	}
 }
 
-fn parse_robot(urdf_path: &str) -> RobotModel {
+fn path_to_workspace_url(path: &Path, workspace_root: &Path) -> Option<String> {
+	let relative = path.strip_prefix(workspace_root).ok()?;
+	let mut rest = Vec::<String>::new();
+	for component in relative.components() {
+		match component {
+			Component::Normal(part) => rest.push(part.to_string_lossy().to_string()),
+			Component::CurDir => {}
+			Component::ParentDir => return None,
+			Component::RootDir | Component::Prefix(_) => return None,
+		}
+	}
+	if rest.is_empty() {
+		None
+	} else {
+		Some(format!("/fs/{}", rest.join("/")))
+	}
+}
+
+fn parse_mesh_src(urdf_dir: &Path, workspace_root: &Path, filename: &str) -> Option<String> {
+	let mut package_path: Option<PathBuf> = None;
+	let trimmed = if let Some(without_scheme) = filename.strip_prefix("package://") {
+		let mut parts = without_scheme.splitn(2, '/');
+		let _package_name = parts.next();
+		if let Some(rest) = parts.next() {
+			package_path = Some(PathBuf::from(rest));
+			rest
+		} else {
+			without_scheme
+		}
+	} else {
+		filename
+	};
+	let mesh_path = Path::new(trimmed);
+	let mut candidates = Vec::<PathBuf>::new();
+
+	if mesh_path.is_absolute() {
+		candidates.push(mesh_path.to_path_buf());
+	} else {
+		candidates.push(urdf_dir.join(mesh_path));
+		if let Some(file_name) = mesh_path.file_name() {
+			candidates.push(urdf_dir.join(file_name));
+			candidates.push(urdf_dir.join("meshes").join(file_name));
+		}
+		if let Some(parent) = urdf_dir.parent() {
+			candidates.push(parent.join(mesh_path));
+		}
+	}
+
+	if let Some(package_rel) = package_path {
+		candidates.push(urdf_dir.join(&package_rel));
+		if let Some(parent) = urdf_dir.parent() {
+			candidates.push(parent.join(&package_rel));
+		}
+		if let Some(file_name) = package_rel.file_name() {
+			candidates.push(urdf_dir.join(file_name));
+		}
+	}
+
+	for candidate in candidates {
+		if let Ok(canonical) = std::fs::canonicalize(&candidate) {
+			if let Some(url) = path_to_assets_url(&canonical) {
+				return Some(url);
+			}
+			if let Some(url) = path_to_workspace_url(&canonical, workspace_root) {
+				return Some(url);
+			}
+		} else if candidate.exists() {
+			if let Some(url) = path_to_assets_url(&candidate) {
+				return Some(url);
+			}
+			if let Some(url) = path_to_workspace_url(&candidate, workspace_root) {
+				return Some(url);
+			}
+		}
+	}
+
+	None
+}
+
+fn parse_robot(urdf_path: &Path, workspace_root: &Path) -> RobotModel {
 	let xml = std::fs::read_to_string(urdf_path)
-		.unwrap_or_else(|err| panic!("failed to read URDF {urdf_path}: {err}"));
+		.unwrap_or_else(|err| panic!("failed to read URDF {}: {err}", urdf_path.display()));
 	let doc = Document::parse(&xml)
-		.unwrap_or_else(|err| panic!("failed to parse URDF {urdf_path}: {err}"));
+		.unwrap_or_else(|err| panic!("failed to parse URDF {}: {err}", urdf_path.display()));
+	let urdf_dir = urdf_path.parent().unwrap_or(Path::new("."));
 
 	let mut links: HashMap<String, LinkDef> = HashMap::new();
 	for link_node in doc.descendants().filter(|n| n.has_tag_name("link")) {
@@ -102,16 +220,19 @@ fn parse_robot(urdf_path: &str) -> RobotModel {
 			let origin_xyz = parse_vec3(origin_node.and_then(|n| n.attribute("xyz")));
 			let origin_rpy = parse_vec3(origin_node.and_then(|n| n.attribute("rpy")));
 
-			let mesh_filename = visual_node
+			let mesh_node = visual_node
 				.children()
 				.find(|n| n.has_tag_name("geometry"))
-				.and_then(|geometry| geometry.children().find(|n| n.has_tag_name("mesh")))
-				.and_then(|mesh| mesh.attribute("filename"));
+				.and_then(|geometry| geometry.children().find(|n| n.has_tag_name("mesh")));
 
-			let Some(mesh_filename) = mesh_filename else {
+			let Some(mesh_node) = mesh_node else {
 				continue;
 			};
-			let Some(mesh_src) = parse_mesh_src(mesh_filename) else {
+			let Some(mesh_filename) = mesh_node.attribute("filename") else {
+				continue;
+			};
+			let mesh_scale = parse_vec3_or(mesh_node.attribute("scale"), [1.0, 1.0, 1.0]);
+			let Some(mesh_src) = parse_mesh_src(urdf_dir, workspace_root, mesh_filename) else {
 				continue;
 			};
 
@@ -119,6 +240,7 @@ fn parse_robot(urdf_path: &str) -> RobotModel {
 				mesh_src,
 				origin_xyz,
 				origin_rpy,
+				mesh_scale,
 			});
 		}
 
@@ -318,6 +440,14 @@ fn push_link_visuals(link: &LinkDef, id_gen: &mut u32, children: &mut Vec<ThreeN
 					y: visual.origin_rpy[1],
 					z: visual.origin_rpy[2],
 				},
+			)
+			.prop(
+				"scale",
+				ThreePropValue::Vec3 {
+					x: visual.mesh_scale[0],
+					y: visual.mesh_scale[1],
+					z: visual.mesh_scale[2],
+				},
 			),
 		);
 	}
@@ -455,7 +585,8 @@ fn render(state: &State) -> Item {
 		.grow(1);
 
 	let mut controls = vec![
-		text("PuppyArm URDF viewer").margin_bottom(8),
+		text("URDF viewer").margin_bottom(8),
+		text(&format!("Model: {}", state.urdf_label)).margin_bottom(8),
 		text(&format!(
 			"Loaded links: {}, joints: {}",
 			state.robot.links.len(),
@@ -504,10 +635,21 @@ fn render(state: &State) -> Item {
 async fn main() {
 	simple_logger::init_with_level(Level::Info).unwrap();
 
-	let robot = parse_robot("assets/puppyarm/puppyarm.urdf");
+	let urdf_arg = match std::env::args().nth(1) {
+		Some(arg) => arg,
+		None => {
+			eprintln!("missing required argument: <path-to-urdf>");
+			eprintln!("usage: cargo run -p urdf -- <path-to-urdf>");
+			std::process::exit(2);
+		}
+	};
+	let urdf_path = PathBuf::from(&urdf_arg);
+	let workspace_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+	let robot = parse_robot(&urdf_path, &workspace_root);
 	let mut state = State {
 		joint_values: vec![0; robot.joints.len()],
 		robot,
+		urdf_label: urdf_arg,
 	};
 
 	let mut client_ids = HashSet::new();

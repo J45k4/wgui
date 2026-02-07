@@ -914,7 +914,8 @@ var parseAsciiStl = (THREE, arrayBuffer) => {
 var buildGeometry = (THREE, positions, normals) => {
   const geometry = new THREE.BufferGeometry;
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  if (normals.length === positions.length) {
+  const hasUsableNormals = normals.length === positions.length && normals.some((component) => Math.abs(component) > 0.000001);
+  if (hasUsableNormals) {
     geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
   } else {
     geometry.computeVertexNormals();

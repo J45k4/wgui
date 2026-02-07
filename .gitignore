@@ -15,3 +15,5 @@ android/.externalNativeBuild/
 android/.cxx/
 android/.kotlin/
 android/captures/
+
+workdir
