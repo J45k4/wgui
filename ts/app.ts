@@ -217,7 +217,7 @@ window.onload = () => {
             }
         },
         onOpen: (sender) => {
-            const params = new URLSearchParams(location.href)
+            const params = new URLSearchParams(location.search)
             const query: { [key: string]: string } = {}
             params.forEach((value, key) => {
                 query[key] = value
@@ -233,7 +233,7 @@ window.onload = () => {
     })
 
     window.addEventListener("popstate", (evet) => {
-        const params = new URLSearchParams(location.href)
+        const params = new URLSearchParams(location.search)
         const query: { [key: string]: string } = {}
         params.forEach((value, key) => {
             query[key] = value

@@ -9,6 +9,7 @@ export const connectWebsocket = (args: {
     onOpen: OnOpen
 }) => {
     let ws: WebSocket | undefined
+    const sessionStorageKey = "wgui.sid"
 
     const sender = new MessageSender((msgs: MessageToSrv[]) => {
         if (!ws) {
@@ -18,11 +19,22 @@ export const connectWebsocket = (args: {
         ws.send(JSON.stringify(msgs))
     })
 
+    const getSessionId = () => {
+        const existing = window.sessionStorage.getItem(sessionStorageKey)
+        if (existing) {
+            return existing
+        }
+        const sid = (window.crypto?.randomUUID?.() ?? `sid-${Date.now()}-${Math.floor(Math.random() * 1_000_000_000)}`).replace(/[^a-zA-Z0-9_-]/g, "")
+        window.sessionStorage.setItem(sessionStorageKey, sid)
+        return sid
+    }
+
     const createConnection = () => {
         const href = window.location.href
         const url = new URL(href)
         const wsProtocol = url.protocol === "https:" ? "wss" : "ws"
-        const wsUrl = `${wsProtocol}://${url.host}/ws`
+        const sid = encodeURIComponent(getSessionId())
+        const wsUrl = `${wsProtocol}://${url.host}/ws?sid=${sid}`
         ws = new WebSocket(wsUrl)
 
         ws.onmessage = (e) => {

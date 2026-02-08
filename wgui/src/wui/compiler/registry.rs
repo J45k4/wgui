@@ -164,6 +164,18 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 					name: "maxWidth",
 					kind: PropKind::Value(ValueType::Number),
 				},
+				PropSchema {
+					name: "maxHeight",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "onClick",
+					kind: PropKind::Event(EventKind::Click),
+				},
+				PropSchema {
+					name: "arg",
+					kind: PropKind::Value(ValueType::Number),
+				},
 			],
 		}),
 		"FolderPicker" => Some(TagSchema {

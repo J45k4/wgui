@@ -1,28 +1,22 @@
 use crate::context::SharedContext;
 use async_trait::async_trait;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use wgui::wgui_controller;
 use wgui::wui::runtime::{Component, Ctx};
 
-static NEXT_SESSION_KEY: AtomicUsize = AtomicUsize::new(1);
-
 pub struct Puppychat {
 	ctx: Arc<Ctx<SharedContext>>,
-	session_key: String,
 }
 
 impl Puppychat {
 	pub fn new(ctx: Arc<Ctx<SharedContext>>) -> Self {
-		let session_key = format!(
-			"client-{}",
-			NEXT_SESSION_KEY.fetch_add(1, Ordering::Relaxed)
-		);
-		Self { ctx, session_key }
+		Self { ctx }
 	}
 
 	fn session_key(&self) -> String {
-		self.session_key.clone()
+		self.ctx
+			.session_id()
+			.unwrap_or_else(|| format!("client-{}", self.ctx.client_id().unwrap_or(0)))
 	}
 
 	fn ensure_session_state<'a>(
@@ -69,6 +63,46 @@ impl Puppychat {
 			}
 		}
 	}
+
+	fn active_image_by_id(
+		shared: &crate::ChatState,
+		session: &crate::SessionState,
+		message_id: u32,
+	) -> Option<String> {
+		if session.active_kind == "channel" {
+			return shared
+				.channels
+				.iter()
+				.find(|c| c.id == session.active_id)
+				.and_then(|channel| {
+					channel
+						.messages
+						.iter()
+						.find(|msg| msg.id == message_id)
+						.map(|msg| msg.image_url.clone())
+				})
+				.filter(|url| !url.is_empty());
+		}
+		if session.active_kind == "dm" {
+			let other_name = shared
+				.directs
+				.iter()
+				.find(|dm| dm.id == session.active_id)
+				.map(|dm| dm.name.clone())?;
+			let key = Self::dm_thread_key(&session.user_name, &other_name);
+			return shared
+				.dm_threads
+				.get(&key)
+				.and_then(|messages| {
+					messages
+						.iter()
+						.find(|msg| msg.id == message_id)
+						.map(|msg| msg.image_url.clone())
+				})
+				.filter(|url| !url.is_empty());
+		}
+		None
+	}
 }
 
 #[wgui_controller]
@@ -86,6 +120,8 @@ impl Puppychat {
 			new_channel_name: session.new_channel_name.clone(),
 			show_create_channel: session.show_create_channel,
 			show_attach_menu: session.show_attach_menu,
+			show_image_modal: session.show_image_modal,
+			selected_image_url: session.selected_image_url.clone(),
 			active_kind: session.active_kind.clone(),
 			active_id: session.active_id,
 			active_name: session.active_name.clone(),
@@ -194,6 +230,26 @@ impl Puppychat {
 		let mut sessions = self.ctx.state.sessions.lock().unwrap();
 		let session = self.ensure_session_state(&shared, &mut sessions);
 		session.show_attach_menu = false;
+	}
+
+	pub(crate) fn open_message_image(&mut self, arg: u32) {
+		let shared = self.ctx.state.state.lock().unwrap();
+		let mut sessions = self.ctx.state.sessions.lock().unwrap();
+		let session = self.ensure_session_state(&shared, &mut sessions);
+		if let Some(url) = Self::active_image_by_id(&shared, session, arg) {
+			session.selected_image_url = url;
+			session.show_image_modal = true;
+			self.ctx.pubsub().publish("rerender", ());
+		}
+	}
+
+	pub(crate) fn close_image_modal(&mut self) {
+		let shared = self.ctx.state.state.lock().unwrap();
+		let mut sessions = self.ctx.state.sessions.lock().unwrap();
+		let session = self.ensure_session_state(&shared, &mut sessions);
+		session.show_image_modal = false;
+		session.selected_image_url.clear();
+		self.ctx.pubsub().publish("rerender", ());
 	}
 
 	pub(crate) fn open_create_channel(&mut self) {

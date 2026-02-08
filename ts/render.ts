@@ -37,6 +37,9 @@ const hasFileDragPayload = (event: DragEvent): boolean => {
 	if (!dt) {
 		return false
 	}
+	if (dt.files && dt.files.length > 0) {
+		return true
+	}
 	if (dt.items && dt.items.length > 0) {
 		for (const item of dt.items) {
 			if (item.kind === "file") {
@@ -66,6 +69,28 @@ const sendImageFileAsTextChanged = async (ctx: Context, id: number, inx: number 
 		value,
 	})
 	ctx.sender.sendNow()
+}
+
+const bindAutoClick = (element: HTMLElement, item: Item, ctx: Context) => {
+	const autoKey = "1"
+	if (item.id) {
+		if (!element.onclick) {
+			element.dataset.wguiAutoClick = autoKey
+			element.onclick = () => {
+				ctx.sender.send({
+					type: "onClick",
+					id: item.id,
+					inx: item.inx,
+				})
+				ctx.sender.sendNow()
+			}
+		}
+		return
+	}
+	if (element.dataset.wguiAutoClick === autoKey) {
+		element.onclick = null
+		delete element.dataset.wguiAutoClick
+	}
 }
 
 const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
@@ -538,6 +563,12 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		overlay.setAttribute("aria-hidden", payload.open ? "false" : "true")
 
 		renderChildren(overlay, payload.body, ctx)
+		for (const child of overlay.children) {
+			if (child instanceof HTMLElement) {
+				child.style.maxWidth = "calc(100vw - 64px)"
+				child.style.maxHeight = "calc(100vh - 64px)"
+			}
+		}
 
 		if (item.id) {
 			overlay.onclick = (event: MouseEvent) => {
@@ -664,5 +695,13 @@ export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 		element.contentEditable = "true"
 	}
 	if (item.overflow) element.style.overflow = item.overflow
+	if (
+		item.payload.type !== "modal" &&
+		!(element instanceof HTMLInputElement) &&
+		!(element instanceof HTMLSelectElement) &&
+		!(element instanceof HTMLTextAreaElement)
+	) {
+		bindAutoClick(element, item, ctx)
+	}
 	return element
 }

@@ -975,6 +975,9 @@ var hasFileDragPayload = (event) => {
   if (!dt) {
     return false;
   }
+  if (dt.files && dt.files.length > 0) {
+    return true;
+  }
   if (dt.items && dt.items.length > 0) {
     for (const item of dt.items) {
       if (item.kind === "file") {
@@ -1003,6 +1006,27 @@ var sendImageFileAsTextChanged = async (ctx, id, inx, file) => {
     value
   });
   ctx.sender.sendNow();
+};
+var bindAutoClick = (element, item, ctx) => {
+  const autoKey = "1";
+  if (item.id) {
+    if (!element.onclick) {
+      element.dataset.wguiAutoClick = autoKey;
+      element.onclick = () => {
+        ctx.sender.send({
+          type: "onClick",
+          id: item.id,
+          inx: item.inx
+        });
+        ctx.sender.sendNow();
+      };
+    }
+    return;
+  }
+  if (element.dataset.wguiAutoClick === autoKey) {
+    element.onclick = null;
+    delete element.dataset.wguiAutoClick;
+  }
 };
 var renderPayload = (item, ctx, old) => {
   const payload = item.payload;
@@ -1469,6 +1493,12 @@ var renderPayload = (item, ctx, old) => {
     overlay.style.pointerEvents = payload.open ? "auto" : "none";
     overlay.setAttribute("aria-hidden", payload.open ? "false" : "true");
     renderChildren(overlay, payload.body, ctx);
+    for (const child of overlay.children) {
+      if (child instanceof HTMLElement) {
+        child.style.maxWidth = "calc(100vw - 64px)";
+        child.style.maxHeight = "calc(100vh - 64px)";
+      }
+    }
     if (item.id) {
       overlay.onclick = (event) => {
         if (event.target === overlay) {
@@ -1593,6 +1623,9 @@ var renderItem = (item, ctx, old) => {
   }
   if (item.overflow)
     element.style.overflow = item.overflow;
+  if (item.payload.type !== "modal" && !(element instanceof HTMLInputElement) && !(element instanceof HTMLSelectElement) && !(element instanceof HTMLTextAreaElement)) {
+    bindAutoClick(element, item, ctx);
+  }
   return element;
 };
 
@@ -1636,17 +1669,28 @@ class MessageSender {
 // ts/ws.ts
 var connectWebsocket = (args) => {
   let ws;
+  const sessionStorageKey = "wgui.sid";
   const sender = new MessageSender((msgs) => {
     if (!ws) {
       return;
     }
     ws.send(JSON.stringify(msgs));
   });
+  const getSessionId = () => {
+    const existing = window.sessionStorage.getItem(sessionStorageKey);
+    if (existing) {
+      return existing;
+    }
+    const sid = (window.crypto?.randomUUID?.() ?? `sid-${Date.now()}-${Math.floor(Math.random() * 1e9)}`).replace(/[^a-zA-Z0-9_-]/g, "");
+    window.sessionStorage.setItem(sessionStorageKey, sid);
+    return sid;
+  };
   const createConnection = () => {
     const href = window.location.href;
     const url = new URL(href);
     const wsProtocol = url.protocol === "https:" ? "wss" : "ws";
-    const wsUrl = `${wsProtocol}://${url.host}/ws`;
+    const sid = encodeURIComponent(getSessionId());
+    const wsUrl = `${wsProtocol}://${url.host}/ws?sid=${sid}`;
     ws = new WebSocket(wsUrl);
     ws.onmessage = (e) => {
       const data = e.data.toString();
@@ -1856,7 +1900,7 @@ window.onload = () => {
       }
     },
     onOpen: (sender2) => {
-      const params = new URLSearchParams(location.href);
+      const params = new URLSearchParams(location.search);
       const query = {};
       params.forEach((value, key) => {
         query[key] = value;
@@ -1870,7 +1914,7 @@ window.onload = () => {
     }
   });
   window.addEventListener("popstate", (evet) => {
-    const params = new URLSearchParams(location.href);
+    const params = new URLSearchParams(location.search);
     const query = {};
     params.forEach((value, key) => {
       query[key] = value;

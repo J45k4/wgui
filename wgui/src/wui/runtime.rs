@@ -28,6 +28,7 @@ pub trait WuiController {
 	fn route_title(&self, _path: &str) -> Option<String> {
 		None
 	}
+	fn set_runtime_context(&mut self, _client_id: Option<usize>, _session: Option<String>) {}
 	fn handle(&mut self, event: &crate::types::ClientEvent) -> bool;
 }
 

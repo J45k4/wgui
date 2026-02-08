@@ -144,6 +144,43 @@ impl ComponentRegistration {
 	}
 }
 
+struct ContextAwareController<C, T>
+where
+	C: crate::wui::runtime::WuiController + Send + 'static,
+	T: Send + Sync + 'static,
+{
+	inner: C,
+	ctx: Arc<crate::wui::runtime::Ctx<T>>,
+}
+
+impl<C, T> crate::wui::runtime::WuiController for ContextAwareController<C, T>
+where
+	C: crate::wui::runtime::WuiController + Send + 'static,
+	T: Send + Sync + 'static,
+{
+	fn render(&self) -> Item {
+		self.inner.render()
+	}
+
+	fn render_with_path(&self, path: &str) -> Item {
+		self.inner.render_with_path(path)
+	}
+
+	fn route_title(&self, path: &str) -> Option<String> {
+		self.inner.route_title(path)
+	}
+
+	fn set_runtime_context(&mut self, client_id: Option<usize>, session: Option<String>) {
+		self.ctx.set_current_client(client_id);
+		self.ctx.set_current_session(session.clone());
+		self.inner.set_runtime_context(client_id, session);
+	}
+
+	fn handle(&mut self, event: &crate::types::ClientEvent) -> bool {
+		self.inner.handle(event)
+	}
+}
+
 pub struct Wgui {
 	events_rx: mpsc::UnboundedReceiver<ClientMessage>,
 	handle: WguiHandle,
@@ -174,6 +211,7 @@ impl Wgui {
 		{
 			let clients = clients.clone();
 			let event_tx = events_tx.clone();
+			let sessions = sessions.clone();
 			let ssr_components = ssr_components.clone();
 			let ssr: Option<SsrRenderer> = Some(Arc::new(move |path: &str| {
 				let factories = ssr_components.read().unwrap();
@@ -189,7 +227,10 @@ impl Wgui {
 				None
 			}));
 			tokio::spawn(async move {
-				Server::new(addr, event_tx, clients, ssr).await.run().await;
+				Server::new(addr, event_tx, clients, sessions, ssr)
+					.await
+					.run()
+					.await;
 			});
 		}
 
@@ -215,9 +256,13 @@ impl Wgui {
 		{
 			let clients = clients.clone();
 			let event_tx = events_tx.clone();
+			let sessions = sessions.clone();
 			let ssr: Option<SsrRenderer> = Some(Arc::new(move |_path: &str| Some((renderer)())));
 			tokio::spawn(async move {
-				Server::new(addr, event_tx, clients, ssr).await.run().await;
+				Server::new(addr, event_tx, clients, sessions, ssr)
+					.await
+					.run()
+					.await;
 			});
 		}
 
@@ -297,7 +342,12 @@ impl Wgui {
 
 		self.add_component_with(path, move || {
 			let ctx = ctx.clone();
-			async move { C::mount(ctx).await }
+			async move {
+				ContextAwareController {
+					inner: C::mount(ctx.clone()).await,
+					ctx,
+				}
+			}
 		});
 	}
 
@@ -331,12 +381,14 @@ impl Wgui {
 						.get(&client_id)
 						.cloned()
 						.unwrap_or_else(|| "/".to_string());
+					let session = handle.session_for_client(client_id).await;
 
 					for component in self.components.iter_mut() {
 						if !Self::path_matches(&component.route_path, &current_path) {
 							continue;
 						}
-						let controller = (component.factory)().await;
+						let mut controller = (component.factory)().await;
+						controller.set_runtime_context(Some(client_id), session.clone());
 						let item = controller.render_with_path(&current_path);
 						let title = controller.route_title(&current_path);
 						if let Some(title) = title {
@@ -355,6 +407,7 @@ impl Wgui {
 				}
 				ClientEvent::PathChanged(change) => {
 					paths.insert(client_id, change.path.clone());
+					let session = handle.session_for_client(client_id).await;
 
 					for component in self.components.iter_mut() {
 						if !Self::path_matches(&component.route_path, &change.path) {
@@ -363,6 +416,7 @@ impl Wgui {
 						}
 
 						if let Some(controller) = component.controllers.get_mut(&client_id) {
+							controller.set_runtime_context(Some(client_id), session.clone());
 							let item = controller.render_with_path(&change.path);
 							let title = controller.route_title(&change.path);
 							if let Some(title) = title {
@@ -370,7 +424,8 @@ impl Wgui {
 							}
 							handle.render(client_id, item).await;
 						} else {
-							let controller = (component.factory)().await;
+							let mut controller = (component.factory)().await;
+							controller.set_runtime_context(Some(client_id), session.clone());
 							let item = controller.render_with_path(&change.path);
 							let title = controller.route_title(&change.path);
 							if let Some(title) = title {
@@ -383,11 +438,15 @@ impl Wgui {
 				}
 				ClientEvent::Input(_) => {}
 				_ => {
+					let session = handle.session_for_client(client_id).await;
 					for component in self.components.iter_mut() {
 						let handled = component
 							.controllers
 							.get_mut(&client_id)
-							.map(|controller| controller.handle(&message.event))
+							.map(|controller| {
+								controller.set_runtime_context(Some(client_id), session.clone());
+								controller.handle(&message.event)
+							})
 							.unwrap_or(false);
 
 						if handled {
@@ -395,6 +454,10 @@ impl Wgui {
 							for (mounted_client_id, mounted_controller) in
 								component.controllers.iter_mut()
 							{
+								let mounted_session =
+									handle.session_for_client(*mounted_client_id).await;
+								mounted_controller
+									.set_runtime_context(Some(*mounted_client_id), mounted_session);
 								let current_path = paths
 									.get(mounted_client_id)
 									.cloned()

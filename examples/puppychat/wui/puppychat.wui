@@ -53,7 +53,15 @@
                         <Text value={msg.body} />
                       </If>
                       <If test={msg.image_url != ""}>
-                        <Image src={msg.image_url} alt="picture" maxWidth=480 />
+                        <Image
+                          src={msg.image_url}
+                          alt="picture"
+                          objectFit="contain"
+                          maxWidth=320
+                          maxHeight=220
+                          onClick="OpenMessageImage"
+                          arg={msg.id}
+                        />
                       </If>
                     </VStack>
                   </For>
@@ -73,7 +81,15 @@
                         <Text value={msg.body} />
                       </If>
                       <If test={msg.image_url != ""}>
-                        <Image src={msg.image_url} alt="picture" maxWidth=480 />
+                        <Image
+                          src={msg.image_url}
+                          alt="picture"
+                          objectFit="contain"
+                          maxWidth=320
+                          maxHeight=220
+                          onClick="OpenMessageImage"
+                          arg={msg.id}
+                        />
                       </If>
                     </VStack>
                   </For>
@@ -117,6 +133,21 @@
             <Button text="Cancel" onClick="CloseCreateChannel" />
             <Button text="Create" onClick="CreateChannel" />
           </HStack>
+        </VStack>
+      </Modal>
+      <Modal open={state.show_image_modal} onClick="CloseImageModal">
+        <VStack
+          padding=12
+          spacing=8
+          backgroundColor="#ffffff"
+          border="1px solid #d9d9d9"
+        >
+          <Image
+            src={state.selected_image_url}
+            alt="full image"
+            objectFit="contain"
+          />
+          <Button text="Close" onClick="CloseImageModal" />
         </VStack>
       </Modal>
     </Else>

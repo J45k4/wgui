@@ -17,7 +17,7 @@ use crate::gui::Item;
 use crate::ssr;
 use crate::types::{ClientMessage, Clients};
 use crate::ws::TungsteniteWs;
-use crate::WguiHandle;
+use crate::{Sessions, WguiHandle};
 
 const INDEX_HTML_BYTES: &[u8] = include_bytes!("../../dist/index.html");
 const INDEX_JS_BYTES: &[u8] = include_bytes!("../../dist/index.js");
@@ -79,7 +79,21 @@ fn sanitize_fs_path(uri_path: &str) -> Option<PathBuf> {
 struct Ctx {
 	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	clients: Clients,
+	sessions: Sessions,
 	ssr: Option<Arc<dyn Fn(&str) -> Option<Item> + Send + Sync>>,
+}
+
+fn session_from_query(req: &Request<hyper::body::Incoming>) -> Option<String> {
+	let query = req.uri().query()?;
+	for pair in query.split('&') {
+		let mut parts = pair.splitn(2, '=');
+		let key = parts.next().unwrap_or("");
+		let value = parts.next().unwrap_or("");
+		if key == "sid" && !value.is_empty() {
+			return Some(value.to_string());
+		}
+	}
+	None
 }
 
 async fn handle_req(
@@ -93,16 +107,15 @@ async fn handle_req(
 		let (response, websocket) = hyper_tungstenite::upgrade(&mut req, None).unwrap();
 		let event_tx = ctx.event_tx.clone();
 		let clients = ctx.clients.clone();
+		let sessions = ctx.sessions.clone();
+		let session = session_from_query(&req);
 		tokio::spawn(async move {
 			match websocket.await {
 				Ok(ws) => {
 					log::info!("websocket connected");
 					let ws = TungsteniteWs::new(ws);
-					let sessions: crate::Sessions = std::sync::Arc::new(tokio::sync::RwLock::new(
-						std::collections::HashMap::new(),
-					));
 					let handle = WguiHandle::new(event_tx, clients, sessions);
-					handle.handle_ws(ws).await;
+					handle.handle_ws_with_session(ws, session).await;
 				}
 				Err(err) => {
 					log::error!("websocket error: {:?}", err);
@@ -170,6 +183,7 @@ pub struct Server {
 	listener: TcpListener,
 	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	clients: Clients,
+	sessions: Sessions,
 	ssr: Option<Arc<dyn Fn(&str) -> Option<Item> + Send + Sync>>,
 }
 
@@ -178,6 +192,7 @@ impl Server {
 		addr: SocketAddr,
 		event_tx: mpsc::UnboundedSender<ClientMessage>,
 		clients: Clients,
+		sessions: Sessions,
 		ssr: Option<Arc<dyn Fn(&str) -> Option<Item> + Send + Sync>>,
 	) -> Self {
 		let listener = TcpListener::bind(addr).await.unwrap();
@@ -187,6 +202,7 @@ impl Server {
 			listener,
 			event_tx,
 			clients,
+			sessions,
 			ssr,
 		}
 	}
@@ -201,12 +217,14 @@ impl Server {
 							let io = TokioIo::new(socket);
 							let event_tx = self.event_tx.clone();
 							let clients = self.clients.clone();
+							let sessions = self.sessions.clone();
 							let ssr = self.ssr.clone();
 							tokio::spawn(async move {
 								let service = service_fn(move |req| {
 									handle_req(req, Ctx {
 										event_tx: event_tx.clone(),
 										clients: clients.clone(),
+										sessions: sessions.clone(),
 										ssr: ssr.clone(),
 									})
 								});
