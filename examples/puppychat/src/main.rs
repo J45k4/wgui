@@ -39,12 +39,15 @@ pub struct ChatState {
 	channels: Vec<Channel>,
 	directs: Vec<DirectMessage>,
 	dm_threads: HashMap<String, Vec<Message>>,
+	users: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct SessionState {
 	pub user_name: String,
 	pub login_name: String,
+	pub login_password: String,
+	pub auth_error: String,
 	pub new_message: String,
 	pub new_picture_url: String,
 	pub new_channel_name: String,
@@ -67,6 +70,8 @@ impl SessionState {
 		Self {
 			user_name: String::new(),
 			login_name: String::new(),
+			login_password: String::new(),
+			auth_error: String::new(),
 			new_message: String::new(),
 			new_picture_url: String::new(),
 			new_channel_name: String::new(),
@@ -85,6 +90,8 @@ impl SessionState {
 pub struct ChatViewState {
 	user_name: String,
 	login_name: String,
+	login_password: String,
+	auth_error: String,
 	new_message: String,
 	new_picture_url: String,
 	new_channel_name: String,
@@ -112,6 +119,7 @@ impl Default for ChatState {
 			channels,
 			directs,
 			dm_threads: HashMap::new(),
+			users: HashMap::new(),
 		}
 	}
 }

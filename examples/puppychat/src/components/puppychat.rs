@@ -64,6 +64,26 @@ impl Puppychat {
 		}
 	}
 
+	fn ensure_direct_entry(shared: &mut crate::ChatState, user_name: &str) {
+		if shared.directs.iter().any(|dm| dm.name == user_name) {
+			return;
+		}
+		let next_id = shared
+			.directs
+			.iter()
+			.map(|dm| dm.id)
+			.max()
+			.unwrap_or(0)
+			.saturating_add(1);
+		shared.directs.push(crate::DirectMessage {
+			id: next_id,
+			name: user_name.to_string(),
+			display_name: format!("@ {}", user_name),
+			online: true,
+			messages: Vec::new(),
+		});
+	}
+
 	fn active_image_by_id(
 		shared: &crate::ChatState,
 		session: &crate::SessionState,
@@ -115,6 +135,8 @@ impl Puppychat {
 		crate::ChatViewState {
 			user_name: user_name.clone(),
 			login_name: session.login_name.clone(),
+			login_password: session.login_password.clone(),
+			auth_error: session.auth_error.clone(),
 			new_message: session.new_message.clone(),
 			new_picture_url: session.new_picture_url.clone(),
 			new_channel_name: session.new_channel_name.clone(),
@@ -156,6 +178,23 @@ impl Puppychat {
 		let mut sessions = self.ctx.state.sessions.lock().unwrap();
 		let session = self.ensure_session_state(&shared, &mut sessions);
 		session.login_name = value;
+		session.auth_error.clear();
+	}
+
+	pub(crate) fn edit_login_password(&mut self, value: String) {
+		let shared = self.ctx.state.state.lock().unwrap();
+		let mut sessions = self.ctx.state.sessions.lock().unwrap();
+		let session = self.ensure_session_state(&shared, &mut sessions);
+		session.login_password = value;
+		session.auth_error.clear();
+	}
+
+	pub(crate) fn open_register_page(&mut self) {
+		self.ctx.push_state("/register");
+	}
+
+	pub(crate) fn open_login_page(&mut self) {
+		self.ctx.push_state("/");
 	}
 
 	pub(crate) fn login(&mut self) {
@@ -163,29 +202,51 @@ impl Puppychat {
 		let mut sessions = self.ctx.state.sessions.lock().unwrap();
 		let session = self.ensure_session_state(&shared, &mut sessions);
 		let name = session.login_name.trim().to_string();
-		if name.is_empty() {
+		let password = session.login_password.clone();
+		if name.is_empty() || password.trim().is_empty() {
+			session.auth_error = "username and password are required".to_string();
 			return;
+		}
+		match shared.users.get(&name) {
+			Some(saved) if saved == &password => {}
+			Some(_) => {
+				session.auth_error = "invalid username or password".to_string();
+				return;
+			}
+			None => {
+				session.auth_error = "account not found, register first".to_string();
+				return;
+			}
 		}
 		session.user_name = name;
 		let user_name = session.user_name.clone();
 		session.login_name.clear();
-		if !shared.directs.iter().any(|dm| dm.name == user_name) {
-			let next_id = shared
-				.directs
-				.iter()
-				.map(|dm| dm.id)
-				.max()
-				.unwrap_or(0)
-				.saturating_add(1);
-			shared.directs.push(crate::DirectMessage {
-				id: next_id,
-				name: user_name.clone(),
-				display_name: format!("@ {}", user_name),
-				online: true,
-				messages: Vec::new(),
-			});
-		}
+		session.login_password.clear();
+		session.auth_error.clear();
+		Self::ensure_direct_entry(&mut shared, &user_name);
 		self.ctx.pubsub().publish("rerender", ());
+	}
+
+	pub(crate) fn register(&mut self) {
+		let mut shared = self.ctx.state.state.lock().unwrap();
+		let mut sessions = self.ctx.state.sessions.lock().unwrap();
+		let session = self.ensure_session_state(&shared, &mut sessions);
+		let name = session.login_name.trim().to_string();
+		let password = session.login_password.clone();
+		if name.is_empty() || password.trim().is_empty() {
+			session.auth_error = "username and password are required".to_string();
+			return;
+		}
+		if shared.users.contains_key(&name) {
+			session.auth_error = "username already exists".to_string();
+			return;
+		}
+		shared.users.insert(name.clone(), password);
+		session.login_name = name.clone();
+		session.login_password.clear();
+		session.auth_error = "account created, please login".to_string();
+		Self::ensure_direct_entry(&mut shared, &name);
+		self.ctx.push_state("/");
 	}
 
 	pub(crate) fn edit_new_message(&mut self, value: String) {

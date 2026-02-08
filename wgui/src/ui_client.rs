@@ -129,6 +129,11 @@ where
 				let str = serde_json::to_string(&changes).unwrap();
 				self.ws.send(WsMessage::Text(str)).await?;
 			}
+			Command::PushState(url) => {
+				let changes = vec![ClientAction::PushState(crate::types::PushState { url })];
+				let str = serde_json::to_string(&changes).unwrap();
+				self.ws.send(WsMessage::Text(str)).await?;
+			}
 		};
 
 		Ok(())

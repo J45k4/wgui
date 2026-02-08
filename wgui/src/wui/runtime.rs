@@ -71,6 +71,15 @@ impl<T> Ctx<T> {
 		}
 	}
 
+	pub fn push_state(&self, url: impl Into<String>) {
+		let url = url.into();
+		if let Some(client_id) = *self.current_client.lock().unwrap() {
+			let _ = self
+				.command_tx
+				.send(RuntimeCommand::PushState { client_id, url });
+		}
+	}
+
 	pub fn session_id(&self) -> Option<String> {
 		self.current_session.lock().unwrap().clone()
 	}
@@ -121,6 +130,7 @@ pub enum RuntimeAction {
 #[derive(Debug, Clone)]
 pub enum RuntimeCommand {
 	SetTitle { client_id: usize, title: String },
+	PushState { client_id: usize, url: String },
 }
 
 #[derive(Debug, Clone)]

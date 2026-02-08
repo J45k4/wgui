@@ -2,13 +2,22 @@
   <Case path="/" title="PuppyChat">
     <If test={state.user_name == ""}>
       <VStack padding=16 spacing=12 width=360>
-        <Text value="Welcome to PuppyChat" />
+        <Text value="Login to PuppyChat" />
         <TextInput
           value={state.login_name}
-          placeholder="Your name"
+          placeholder="Username"
           onTextChanged="EditLoginName"
         />
-        <Button text="Enter" onClick="Login" />
+        <TextInput
+          value={state.login_password}
+          placeholder="Password"
+          onTextChanged="EditLoginPassword"
+        />
+        <If test={state.auth_error != ""}>
+          <Text value={state.auth_error} color="#b30000" />
+        </If>
+        <Button text="Login" onClick="Login" />
+        <Button text="Register" onClick="OpenRegisterPage" />
       </VStack>
     </If>
     <Else>
@@ -150,6 +159,35 @@
           <Button text="Close" onClick="CloseImageModal" />
         </VStack>
       </Modal>
+    </Else>
+  </Case>
+  <Case path="/register" title="Register - PuppyChat">
+    <If test={state.user_name != ""}>
+      <VStack padding=16 spacing=12 width=360>
+        <Text value="Already logged in as" />
+        <Text value={state.user_name} />
+        <Button text="Go to chat" onClick="OpenLoginPage" />
+      </VStack>
+    </If>
+    <Else>
+      <VStack padding=16 spacing=12 width=360>
+        <Text value="Create account" />
+        <TextInput
+          value={state.login_name}
+          placeholder="Username"
+          onTextChanged="EditLoginName"
+        />
+        <TextInput
+          value={state.login_password}
+          placeholder="Password"
+          onTextChanged="EditLoginPassword"
+        />
+        <If test={state.auth_error != ""}>
+          <Text value={state.auth_error} color="#b30000" />
+        </If>
+        <Button text="Register" onClick="Register" />
+        <Button text="Back to login" onClick="OpenLoginPage" />
+      </VStack>
     </Else>
   </Case>
   <Case path="/*" title="Not Found">

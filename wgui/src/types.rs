@@ -216,6 +216,7 @@ pub enum ServerEvent {
 pub enum Command {
 	Render(Item),
 	SetTitle(String),
+	PushState(String),
 }
 
 pub type Clients = Arc<RwLock<HashMap<usize, mpsc::UnboundedSender<Command>>>>;

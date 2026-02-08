@@ -117,6 +117,18 @@ impl WguiHandle {
 		sender.send(Command::SetTitle(title.to_string())).unwrap();
 	}
 
+	pub async fn push_state(&self, client_id: usize, url: &str) {
+		let clients = self.clients.read().await;
+		let sender = match clients.get(&client_id) {
+			Some(sender) => sender,
+			None => {
+				println!("client not found");
+				return;
+			}
+		};
+		sender.send(Command::PushState(url.to_string())).unwrap();
+	}
+
 	pub async fn session_for_client(&self, client_id: usize) -> Option<String> {
 		let sessions = self.sessions.read().await;
 		sessions.get(&client_id).cloned().flatten()
@@ -318,6 +330,21 @@ impl Wgui {
 	where
 		T: Send + Sync + 'static,
 	{
+		let mut command_rx = ctx.take_command_rx();
+		let handle = self.handle();
+		tokio::spawn(async move {
+			while let Some(command) = command_rx.recv().await {
+				match command {
+					crate::wui::runtime::RuntimeCommand::SetTitle { client_id, title } => {
+						handle.set_title(client_id, &title).await;
+					}
+					crate::wui::runtime::RuntimeCommand::PushState { client_id, url } => {
+						handle.push_state(client_id, &url).await;
+					}
+				}
+			}
+		});
+
 		let erased: Arc<dyn Any + Send + Sync> = ctx;
 		self.contexts.insert(TypeId::of::<T>(), erased);
 	}
