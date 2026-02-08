@@ -67,10 +67,12 @@ pub fn generate(config: &BuildConfig) -> Result<BuildResult, BuildError> {
 	if !config.input_dir.exists() {
 		return Err(BuildError::MissingInput(config.input_dir.clone()));
 	}
-	fs::create_dir_all(&config.output_dir).map_err(|err| BuildError::Io {
-		path: config.output_dir.clone(),
-		source: err,
-	})?;
+	if config.emit_modules {
+		fs::create_dir_all(&config.output_dir).map_err(|err| BuildError::Io {
+			path: config.output_dir.clone(),
+			source: err,
+		})?;
+	}
 	let components_dir = config
 		.components_dir
 		.clone()
@@ -157,10 +159,7 @@ pub fn generate(config: &BuildConfig) -> Result<BuildResult, BuildError> {
 	}
 	if config.emit_modules {
 		write_mod_rs(&config.output_dir, &modules)?;
-	} else {
-		write_routes_mod(&config.output_dir)?;
 	}
-	write_routes(&config.output_dir, &routes)?;
 	if config.emit_modules {
 		write_components_mod(&components_dir, &modules)?;
 	}
@@ -176,38 +175,7 @@ fn write_mod_rs(dir: &Path, modules: &[String]) -> Result<(), BuildError> {
 	for module in modules {
 		contents.push_str(&format!("pub mod {}_gen;\n", module));
 	}
-	contents.push_str("\n#[path = \"routes.gen.rs\"]\npub mod routes;\n");
 	let out_path = dir.join("mod.rs");
-	fs::write(&out_path, contents).map_err(|err| BuildError::Io {
-		path: out_path.clone(),
-		source: err,
-	})
-}
-
-fn write_routes_mod(dir: &Path) -> Result<(), BuildError> {
-	let contents = "#[path = \"routes.gen.rs\"]\npub mod routes;\n";
-	let out_path = dir.join("mod.rs");
-	fs::write(&out_path, contents).map_err(|err| BuildError::Io {
-		path: out_path.clone(),
-		source: err,
-	})
-}
-
-fn write_routes(dir: &Path, routes: &[(String, String)]) -> Result<(), BuildError> {
-	let mut contents = String::new();
-	contents.push_str(
-		"pub struct RouteDef {\n\tpub module: &'static str,\n\tpub route: &'static str,\n}\n\n",
-	);
-	contents.push_str("pub const ROUTES: &[RouteDef] = &[\n");
-	for (module, route) in routes {
-		let route = normalize_route(route);
-		contents.push_str(&format!(
-			"\tRouteDef {{ module: \"{}\", route: \"{}\" }},\n",
-			module, route
-		));
-	}
-	contents.push_str("];\n");
-	let out_path = dir.join("routes.gen.rs");
 	fs::write(&out_path, contents).map_err(|err| BuildError::Io {
 		path: out_path.clone(),
 		source: err,
@@ -231,38 +199,6 @@ fn write_components_mod(dir: &Path, modules: &[String]) -> Result<(), BuildError
 		path: mod_path.clone(),
 		source: err,
 	})
-}
-
-fn normalize_route(route: &str) -> String {
-	let (base, has_wildcard) = if route.ends_with("/*") {
-		(route.trim_end_matches("/*"), true)
-	} else {
-		(route, false)
-	};
-	let mut segments = Vec::new();
-	for seg in base.split('/').filter(|seg| !seg.is_empty()) {
-		if let Some(name) = seg.strip_prefix(':') {
-			segments.push(format!("{{{}}}", name));
-		} else {
-			segments.push(seg.to_string());
-		}
-	}
-	let mut out = String::new();
-	if route.starts_with('/') {
-		out.push('/');
-	}
-	out.push_str(&segments.join("/"));
-	if out.is_empty() {
-		out.push('/');
-	}
-	if has_wildcard {
-		if out.ends_with('/') {
-			out.push_str("{*wildcard}");
-		} else {
-			out.push_str("/{*wildcard}");
-		}
-	}
-	out
 }
 
 fn default_components_dir(output_dir: &Path) -> PathBuf {

@@ -6,7 +6,6 @@ use wgui::WuiModel;
 
 mod components;
 mod context;
-mod generated;
 
 #[derive(Debug, Clone, WuiModel)]
 pub struct TodoItem {

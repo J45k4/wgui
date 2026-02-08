@@ -273,7 +273,8 @@ impl Wgui {
 	where
 		T: Send + Sync + 'static,
 	{
-		self.contexts.insert(TypeId::of::<T>(), ctx);
+		let erased: Arc<dyn Any + Send + Sync> = ctx;
+		self.contexts.insert(TypeId::of::<T>(), erased);
 	}
 
 	pub fn add_component<C>(&mut self, path: &str)
@@ -284,13 +285,12 @@ impl Wgui {
 		let Some(ctx_any) = self
 			.contexts
 			.get(&TypeId::of::<<C as crate::wui::runtime::Component>::Context>())
+			.cloned()
 		else {
 			panic!("missing context for component; call wgui.set_ctx(...) first");
 		};
-		let Some(ctx) = ctx_any
-			.downcast_ref::<Arc<crate::wui::runtime::Ctx<<C as crate::wui::runtime::Component>::Context>>>(
-			)
-			.cloned()
+		let Ok(ctx) = ctx_any
+			.downcast::<crate::wui::runtime::Ctx<<C as crate::wui::runtime::Component>::Context>>()
 		else {
 			panic!("invalid context type for component");
 		};

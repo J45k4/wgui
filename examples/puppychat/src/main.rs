@@ -7,7 +7,6 @@ use wgui::wui::runtime::Ctx;
 
 mod components;
 mod context;
-mod generated;
 
 #[derive(Debug, Clone, WuiModel)]
 pub struct Message {
