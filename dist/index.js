@@ -953,6 +953,57 @@ var renderChildren = (element, items, ctx) => {
     }
   }
 };
+var fileToDataUrl = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader;
+  reader.onload = () => resolve(reader.result || "");
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(file);
+});
+var setImageDropActive = (input, active) => {
+  if (active) {
+    input.style.outline = "2px dashed #2f7dd1";
+    input.style.outlineOffset = "2px";
+    input.style.backgroundColor = "rgba(47, 125, 209, 0.08)";
+    return;
+  }
+  input.style.outline = "";
+  input.style.outlineOffset = "";
+  input.style.backgroundColor = "";
+};
+var hasFileDragPayload = (event) => {
+  const dt = event.dataTransfer;
+  if (!dt) {
+    return false;
+  }
+  if (dt.items && dt.items.length > 0) {
+    for (const item of dt.items) {
+      if (item.kind === "file") {
+        return true;
+      }
+    }
+  }
+  if (dt.types && dt.types.length > 0) {
+    for (const t of dt.types) {
+      if (t === "Files") {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+var sendImageFileAsTextChanged = async (ctx, id, inx, file) => {
+  const value = await fileToDataUrl(file).catch(() => "");
+  if (!value) {
+    return;
+  }
+  ctx.sender.send({
+    type: "onTextChanged",
+    id,
+    inx,
+    value
+  });
+  ctx.sender.sendNow();
+};
 var renderPayload = (item, ctx, old) => {
   const payload = item.payload;
   if (payload.type === "checkbox") {
@@ -1191,6 +1242,45 @@ var renderPayload = (item, ctx, old) => {
         });
       };
     }
+    input.ondragover = (event) => {
+      if (!hasFileDragPayload(event)) {
+        setImageDropActive(input, false);
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = "copy";
+      }
+      setImageDropActive(input, true);
+    };
+    input.ondragenter = (event) => {
+      if (!hasFileDragPayload(event)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      setImageDropActive(input, true);
+    };
+    input.ondragleave = () => {
+      setImageDropActive(input, false);
+    };
+    input.ondrop = async (event) => {
+      const dropped = event.dataTransfer?.files?.[0];
+      if (!dropped || !dropped.type.startsWith("image/")) {
+        setImageDropActive(input, false);
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      setImageDropActive(input, false);
+      const picker = document.querySelector('input[data-wgui-role="folder-picker"]');
+      const pickerId = picker?.dataset.wguiId ? Number(picker.dataset.wguiId) : 0;
+      if (!pickerId) {
+        return;
+      }
+      await sendImageFileAsTextChanged(ctx, pickerId, undefined, dropped);
+    };
     return input;
   }
   if (payload.type === "textarea") {
@@ -1336,6 +1426,8 @@ var renderPayload = (item, ctx, old) => {
     element.webkitdirectory = false;
     element.multiple = false;
     element.accept = "image/*";
+    element.dataset.wguiRole = "folder-picker";
+    element.dataset.wguiId = item.id ? item.id.toString() : "";
     element.oninput = async (e) => {
       if (!item.id) {
         return;
@@ -1344,22 +1436,7 @@ var renderPayload = (item, ctx, old) => {
       if (!file) {
         return;
       }
-      const value = await new Promise((resolve, reject) => {
-        const reader = new FileReader;
-        reader.onload = () => resolve(reader.result || "");
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
-      }).catch(() => "");
-      if (!value) {
-        return;
-      }
-      ctx.sender.send({
-        type: "onTextChanged",
-        id: item.id,
-        inx: item.inx,
-        value
-      });
-      ctx.sender.sendNow();
+      await sendImageFileAsTextChanged(ctx, item.id, item.inx, file);
     };
     return element;
   }

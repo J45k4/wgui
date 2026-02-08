@@ -10,6 +10,19 @@ use crate::{
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 
+fn event_kind_name(event: &ClientEvent) -> &'static str {
+	match event {
+		ClientEvent::Disconnected { .. } => "Disconnected",
+		ClientEvent::Connected { .. } => "Connected",
+		ClientEvent::PathChanged(_) => "PathChanged",
+		ClientEvent::Input(_) => "Input",
+		ClientEvent::OnClick(_) => "OnClick",
+		ClientEvent::OnTextChanged(_) => "OnTextChanged",
+		ClientEvent::OnSliderChange(_) => "OnSliderChange",
+		ClientEvent::OnSelect(_) => "OnSelect",
+	}
+}
+
 pub struct UiWsWorker<S>
 where
 	S: WsStream,
@@ -54,11 +67,11 @@ where
 	pub async fn handle_websocket(&mut self, msg: WsMessage) -> anyhow::Result<()> {
 		match msg {
 			WsMessage::Text(msg) => {
-				log::info!("recieved message: {}", msg);
+				log::info!("received text frame ({} bytes)", msg.len());
 
 				let msgs: Vec<ClientEvent> = serde_json::from_str(&msg)?;
-
-				log::info!("received messages: {:?}", msgs);
+				let kinds: Vec<&str> = msgs.iter().map(event_kind_name).collect();
+				log::info!("received {} event(s): {:?}", msgs.len(), kinds);
 
 				for msg in msgs {
 					self.event_tx

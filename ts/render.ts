@@ -12,6 +12,62 @@ const renderChildren = (element: HTMLElement, items: Item[], ctx: Context) => {
 	}
 }
 
+const fileToDataUrl = (file: File): Promise<string> =>
+	new Promise<string>((resolve, reject) => {
+		const reader = new FileReader()
+		reader.onload = () => resolve((reader.result as string) || "")
+		reader.onerror = () => reject(reader.error)
+		reader.readAsDataURL(file)
+	})
+
+const setImageDropActive = (input: HTMLInputElement, active: boolean) => {
+	if (active) {
+		input.style.outline = "2px dashed #2f7dd1"
+		input.style.outlineOffset = "2px"
+		input.style.backgroundColor = "rgba(47, 125, 209, 0.08)"
+		return
+	}
+	input.style.outline = ""
+	input.style.outlineOffset = ""
+	input.style.backgroundColor = ""
+}
+
+const hasFileDragPayload = (event: DragEvent): boolean => {
+	const dt = event.dataTransfer
+	if (!dt) {
+		return false
+	}
+	if (dt.items && dt.items.length > 0) {
+		for (const item of dt.items) {
+			if (item.kind === "file") {
+				return true
+			}
+		}
+	}
+	if (dt.types && dt.types.length > 0) {
+		for (const t of dt.types) {
+			if (t === "Files") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+const sendImageFileAsTextChanged = async (ctx: Context, id: number, inx: number | undefined, file: File) => {
+	const value = await fileToDataUrl(file).catch(() => "")
+	if (!value) {
+		return
+	}
+	ctx.sender.send({
+		type: "onTextChanged",
+		id,
+		inx,
+		value,
+	})
+	ctx.sender.sendNow()
+}
+
 const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 	const payload = item.payload
 	if (payload.type === "checkbox") {
@@ -253,6 +309,45 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 				})
 			}
 		}
+		input.ondragover = (event: DragEvent) => {
+			if (!hasFileDragPayload(event)) {
+				setImageDropActive(input, false)
+				return
+			}
+			event.preventDefault()
+			event.stopPropagation()
+			if (event.dataTransfer) {
+				event.dataTransfer.dropEffect = "copy"
+			}
+			setImageDropActive(input, true)
+		}
+		input.ondragenter = (event: DragEvent) => {
+			if (!hasFileDragPayload(event)) {
+				return
+			}
+			event.preventDefault()
+			event.stopPropagation()
+			setImageDropActive(input, true)
+		}
+		input.ondragleave = () => {
+			setImageDropActive(input, false)
+		}
+		input.ondrop = async (event: DragEvent) => {
+			const dropped = event.dataTransfer?.files?.[0]
+			if (!dropped || !dropped.type.startsWith("image/")) {
+				setImageDropActive(input, false)
+				return
+			}
+			event.preventDefault()
+			event.stopPropagation()
+			setImageDropActive(input, false)
+			const picker = document.querySelector('input[data-wgui-role="folder-picker"]') as HTMLInputElement | null
+			const pickerId = picker?.dataset.wguiId ? Number(picker.dataset.wguiId) : 0
+			if (!pickerId) {
+				return
+			}
+			await sendImageFileAsTextChanged(ctx, pickerId, undefined, dropped)
+		}
 
 		return input
 	}
@@ -398,6 +493,8 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		element.webkitdirectory = false
 		element.multiple = false
 		element.accept = "image/*"
+		element.dataset.wguiRole = "folder-picker"
+		element.dataset.wguiId = item.id ? item.id.toString() : ""
 		element.oninput = async (e: any) => {
 			if (!item.id) {
 				return
@@ -406,22 +503,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			if (!file) {
 				return
 			}
-			const value = await new Promise<string>((resolve, reject) => {
-				const reader = new FileReader()
-				reader.onload = () => resolve((reader.result as string) || "")
-				reader.onerror = () => reject(reader.error)
-				reader.readAsDataURL(file)
-			}).catch(() => "")
-			if (!value) {
-				return
-			}
-			ctx.sender.send({
-				type: "onTextChanged",
-				id: item.id,
-				inx: item.inx,
-				value,
-			})
-			ctx.sender.sendNow()
+			await sendImageFileAsTextChanged(ctx, item.id, item.inx, file)
 		}
 		return element
 	}
