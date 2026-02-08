@@ -361,6 +361,7 @@ fn emit_widget(widget: &IrWidget, indent: usize) -> String {
 		"Checkbox" => "wgui::checkbox()".to_string(),
 		"Slider" => "wgui::slider()".to_string(),
 		"Image" => emit_image(widget),
+		"FolderPicker" => "wgui::folder_picker()".to_string(),
 		"Modal" => emit_container("modal", &widget.children, indent),
 		_ => "wgui::text(\"unsupported\")".to_string(),
 	};

@@ -395,10 +395,33 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			if (old) old.replaceWith(element)
 		}
 		element.type = "file"
-		element.webkitdirectory = true
-		// element.multiple = true
-		element.oninput = (e: any) => {
-			console.log("oninput", e)
+		element.webkitdirectory = false
+		element.multiple = false
+		element.accept = "image/*"
+		element.oninput = async (e: any) => {
+			if (!item.id) {
+				return
+			}
+			const file: File | undefined = e?.target?.files?.[0]
+			if (!file) {
+				return
+			}
+			const value = await new Promise<string>((resolve, reject) => {
+				const reader = new FileReader()
+				reader.onload = () => resolve((reader.result as string) || "")
+				reader.onerror = () => reject(reader.error)
+				reader.readAsDataURL(file)
+			}).catch(() => "")
+			if (!value) {
+				return
+			}
+			ctx.sender.send({
+				type: "onTextChanged",
+				id: item.id,
+				inx: item.inx,
+				value,
+			})
+			ctx.sender.sendNow()
 		}
 		return element
 	}

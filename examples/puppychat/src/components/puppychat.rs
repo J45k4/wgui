@@ -43,6 +43,32 @@ impl Puppychat {
 			format!("{}|{}", right, left)
 		}
 	}
+
+	fn push_message_to_active(
+		shared: &mut crate::ChatState,
+		session: &crate::SessionState,
+		message: crate::Message,
+	) {
+		if session.active_kind == "channel" {
+			if let Some(channel) = shared
+				.channels
+				.iter_mut()
+				.find(|c| c.id == session.active_id)
+			{
+				channel.messages.push(message);
+			}
+		} else if session.active_kind == "dm" {
+			let other_name = shared
+				.directs
+				.iter()
+				.find(|dm| dm.id == session.active_id)
+				.map(|dm| dm.name.clone());
+			if let Some(other_name) = other_name {
+				let key = Self::dm_thread_key(&session.user_name, &other_name);
+				shared.dm_threads.entry(key).or_default().push(message);
+			}
+		}
+	}
 }
 
 #[wgui_controller]
@@ -56,8 +82,10 @@ impl Puppychat {
 			user_name: user_name.clone(),
 			login_name: session.login_name.clone(),
 			new_message: session.new_message.clone(),
+			new_picture_url: session.new_picture_url.clone(),
 			new_channel_name: session.new_channel_name.clone(),
 			show_create_channel: session.show_create_channel,
+			show_attach_menu: session.show_attach_menu,
 			active_kind: session.active_kind.clone(),
 			active_id: session.active_id,
 			active_name: session.active_name.clone(),
@@ -129,6 +157,43 @@ impl Puppychat {
 		let mut sessions = self.ctx.state.sessions.lock().unwrap();
 		let session = self.ensure_session_state(&shared, &mut sessions);
 		session.new_message = value;
+	}
+
+	pub(crate) fn edit_new_picture_url(&mut self, value: String) {
+		let mut next_id = self.ctx.state.next_message_id.lock().unwrap();
+		let mut shared = self.ctx.state.state.lock().unwrap();
+		let mut sessions = self.ctx.state.sessions.lock().unwrap();
+		let session = self.ensure_session_state(&shared, &mut sessions);
+		let image_url = value.trim().to_string();
+		if image_url.is_empty() || session.user_name.is_empty() {
+			return;
+		}
+		let message = crate::Message {
+			id: *next_id,
+			author: session.user_name.clone(),
+			body: String::new(),
+			image_url,
+			time: "now".to_string(),
+		};
+		*next_id += 1;
+		Self::push_message_to_active(&mut shared, session, message);
+		session.new_picture_url.clear();
+		session.show_attach_menu = false;
+		self.ctx.pubsub().publish("rerender", ());
+	}
+
+	pub(crate) fn open_attach_menu(&mut self) {
+		let shared = self.ctx.state.state.lock().unwrap();
+		let mut sessions = self.ctx.state.sessions.lock().unwrap();
+		let session = self.ensure_session_state(&shared, &mut sessions);
+		session.show_attach_menu = true;
+	}
+
+	pub(crate) fn close_attach_menu(&mut self) {
+		let shared = self.ctx.state.state.lock().unwrap();
+		let mut sessions = self.ctx.state.sessions.lock().unwrap();
+		let session = self.ensure_session_state(&shared, &mut sessions);
+		session.show_attach_menu = false;
 	}
 
 	pub(crate) fn open_create_channel(&mut self) {
@@ -228,27 +293,35 @@ impl Puppychat {
 			id: *next_id,
 			author,
 			body,
+			image_url: String::new(),
 			time: "now".to_string(),
 		};
 		*next_id += 1;
-		let active_kind = session.active_kind.clone();
-		let active_id = session.active_id;
-		if active_kind == "channel" {
-			if let Some(channel) = shared.channels.iter_mut().find(|c| c.id == active_id) {
-				channel.messages.push(message);
-			}
-		} else if active_kind == "dm" {
-			let other_name = shared
-				.directs
-				.iter()
-				.find(|dm| dm.id == active_id)
-				.map(|dm| dm.name.clone());
-			if let Some(other_name) = other_name {
-				let key = Self::dm_thread_key(&session.user_name, &other_name);
-				shared.dm_threads.entry(key).or_default().push(message);
-			}
-		}
+		Self::push_message_to_active(&mut shared, session, message);
 		session.new_message.clear();
+		self.ctx.pubsub().publish("rerender", ());
+	}
+
+	pub(crate) fn send_picture(&mut self) {
+		let mut next_id = self.ctx.state.next_message_id.lock().unwrap();
+		let mut shared = self.ctx.state.state.lock().unwrap();
+		let mut sessions = self.ctx.state.sessions.lock().unwrap();
+		let session = self.ensure_session_state(&shared, &mut sessions);
+		let image_url = session.new_picture_url.trim().to_string();
+		if image_url.is_empty() || session.user_name.is_empty() {
+			return;
+		}
+		let author = session.user_name.clone();
+		let message = crate::Message {
+			id: *next_id,
+			author,
+			body: String::new(),
+			image_url,
+			time: "now".to_string(),
+		};
+		*next_id += 1;
+		Self::push_message_to_active(&mut shared, session, message);
+		session.new_picture_url.clear();
 		self.ctx.pubsub().publish("rerender", ());
 	}
 }

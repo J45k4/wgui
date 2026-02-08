@@ -49,7 +49,12 @@
                         <Text value={msg.author} />
                         <Text value={msg.time} />
                       </HStack>
-                      <Text value={msg.body} />
+                      <If test={msg.body != ""}>
+                        <Text value={msg.body} />
+                      </If>
+                      <If test={msg.image_url != ""}>
+                        <Image src={msg.image_url} alt="picture" maxWidth=480 />
+                      </If>
                     </VStack>
                   </For>
                 </If>
@@ -64,24 +69,42 @@
                         <Text value={msg.author} />
                         <Text value={msg.time} />
                       </HStack>
-                      <Text value={msg.body} />
+                      <If test={msg.body != ""}>
+                        <Text value={msg.body} />
+                      </If>
+                      <If test={msg.image_url != ""}>
+                        <Image src={msg.image_url} alt="picture" maxWidth=480 />
+                      </If>
                     </VStack>
                   </For>
                 </If>
               </For>
             </If>
           </VStack>
-          <HStack spacing=6>
-            <TextInput
-              value={state.new_message}
-              placeholder="Write a message"
-              onTextChanged="EditNewMessage"
-              grow=1
-            />
-            <Button text="Send" onClick="SendMessage" />
-          </HStack>
+          <VStack spacing=6>
+            <HStack spacing=6>
+              <Button text="+" onClick="OpenAttachMenu" />
+              <TextInput
+                value={state.new_message}
+                placeholder="Write a message"
+                onTextChanged="EditNewMessage"
+                grow=1
+              />
+              <Button text="Send" onClick="SendMessage" />
+            </HStack>
+          </VStack>
         </VStack>
       </HStack>
+      <Modal open={state.show_attach_menu} onClick="CloseAttachMenu">
+        <VStack padding=16 spacing=10 width=360 backgroundColor="#ffffff" border="1px solid #d9d9d9">
+          <Text value="Upload image" />
+          <FolderPicker onTextChanged="EditNewPictureUrl" />
+          <Text value="Choose a file to send it immediately" />
+          <HStack spacing=8>
+            <Button text="Close" onClick="CloseAttachMenu" />
+          </HStack>
+        </VStack>
+      </Modal>
       <Modal open={state.show_create_channel} onClick="CloseCreateChannel">
         <VStack padding=16 spacing=10 width=360 backgroundColor="#ffffff" border="1px solid #d9d9d9">
           <Text value="Create channel" />

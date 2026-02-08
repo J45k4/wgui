@@ -1333,9 +1333,33 @@ var renderPayload = (item, ctx, old) => {
         old.replaceWith(element);
     }
     element.type = "file";
-    element.webkitdirectory = true;
-    element.oninput = (e) => {
-      console.log("oninput", e);
+    element.webkitdirectory = false;
+    element.multiple = false;
+    element.accept = "image/*";
+    element.oninput = async (e) => {
+      if (!item.id) {
+        return;
+      }
+      const file = e?.target?.files?.[0];
+      if (!file) {
+        return;
+      }
+      const value = await new Promise((resolve, reject) => {
+        const reader = new FileReader;
+        reader.onload = () => resolve(reader.result || "");
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      }).catch(() => "");
+      if (!value) {
+        return;
+      }
+      ctx.sender.send({
+        type: "onTextChanged",
+        id: item.id,
+        inx: item.inx,
+        value
+      });
+      ctx.sender.sendNow();
     };
     return element;
   }

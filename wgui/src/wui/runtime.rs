@@ -468,6 +468,7 @@ fn render_widget(widget: &IrWidget, ctx: &mut EvalContext) -> Item {
 			let (src, alt) = image_values(widget, ctx);
 			gui::img(&src, &alt)
 		}
+		"FolderPicker" => gui::folder_picker(),
 		"Modal" => render_modal(widget, ctx),
 		_ => gui::text("unsupported"),
 	};

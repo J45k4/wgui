@@ -160,7 +160,18 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 					name: "objectFit",
 					kind: PropKind::Value(ValueType::String),
 				},
+				PropSchema {
+					name: "maxWidth",
+					kind: PropKind::Value(ValueType::Number),
+				},
 			],
+		}),
+		"FolderPicker" => Some(TagSchema {
+			name: "FolderPicker",
+			props: &[PropSchema {
+				name: "onTextChanged",
+				kind: PropKind::Event(EventKind::TextChanged),
+			}],
 		}),
 		"Modal" => Some(TagSchema {
 			name: "Modal",
