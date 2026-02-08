@@ -1556,22 +1556,12 @@ var renderItem = (item, ctx, old) => {
   if (!element) {
     return;
   }
-  if (item.width) {
-    element.style.width = item.width + "px";
-  }
-  if (item.height) {
-    element.style.height = item.height + "px";
-  }
-  if (item.minWidth)
-    element.style.minWidth = item.minWidth + "px";
-  if (item.maxWidth) {
-    element.style.maxWidth = item.maxWidth + "px";
-  }
-  if (item.minHeight)
-    element.style.minHeight = item.minHeight + "px";
-  if (item.maxHeight) {
-    element.style.maxHeight = item.maxHeight + "px";
-  }
+  element.style.width = item.width ? item.width + "px" : "";
+  element.style.height = item.height ? item.height + "px" : "";
+  element.style.minWidth = item.minWidth ? item.minWidth + "px" : "";
+  element.style.maxWidth = item.maxWidth ? item.maxWidth + "px" : "";
+  element.style.minHeight = item.minHeight ? item.minHeight + "px" : "";
+  element.style.maxHeight = item.maxHeight ? item.maxHeight + "px" : "";
   if (item.grow) {
     element.style.flexGrow = item.grow.toString();
     element.classList.add("grow");
