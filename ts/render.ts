@@ -686,7 +686,19 @@ export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 	if (item.editable) {
 		element.contentEditable = "true"
 	}
-	if (item.overflow) element.style.overflow = item.overflow
+	if (item.overflow) {
+		element.style.overflow = item.overflow
+	} else {
+		const isLayoutWithAutoOverflow =
+			item.payload.type === "layout" &&
+			(item.payload.horizontalResize ||
+				item.payload.horizontal_resize ||
+				item.payload.hresize ||
+				item.payload.vresize)
+		if (!isLayoutWithAutoOverflow) {
+			element.style.overflow = ""
+		}
+	}
 	if (
 		item.payload.type !== "modal" &&
 		!(element instanceof HTMLInputElement) &&

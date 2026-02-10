@@ -196,6 +196,12 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 			value: Value::String(new.background_color.clone()),
 		});
 	}
+	if old.overflow != new.overflow {
+		sets.push(SetProp {
+			key: PropKey::Overflow,
+			value: Value::String(new.overflow.clone()),
+		});
+	}
 
 	if sets.len() > 0 {
 		changes.push(ClientAction::SetProp {

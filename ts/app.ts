@@ -68,6 +68,9 @@ const applySetProp = (element: Element, set: SetPropSet) => {
         case "Padding":
             element.style.padding = value === "0" ? "" : `${value}px`
             break
+        case "Overflow":
+            element.style.overflow = value
+            break
         case "ID":
             element.id = value
             break

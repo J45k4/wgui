@@ -297,6 +297,7 @@ export type PropKey =
 	| "MinHeight"
 	| "MaxHeight"
 	| "Padding"
+	| "Overflow"
 
 export type PropValue = {
     String?: string

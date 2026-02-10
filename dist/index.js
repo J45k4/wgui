@@ -1611,8 +1611,14 @@ var renderItem = (item, ctx, old) => {
   if (item.editable) {
     element.contentEditable = "true";
   }
-  if (item.overflow)
+  if (item.overflow) {
     element.style.overflow = item.overflow;
+  } else {
+    const isLayoutWithAutoOverflow = item.payload.type === "layout" && (item.payload.horizontalResize || item.payload.horizontal_resize || item.payload.hresize || item.payload.vresize);
+    if (!isLayoutWithAutoOverflow) {
+      element.style.overflow = "";
+    }
+  }
   if (item.payload.type !== "modal" && !(element instanceof HTMLInputElement) && !(element instanceof HTMLSelectElement) && !(element instanceof HTMLTextAreaElement)) {
     bindAutoClick(element, item, ctx);
   }
@@ -1771,6 +1777,9 @@ var applySetProp = (element, set) => {
       break;
     case "Padding":
       element.style.padding = value === "0" ? "" : `${value}px`;
+      break;
+    case "Overflow":
+      element.style.overflow = value;
       break;
     case "ID":
       element.id = value;
