@@ -1,10 +1,10 @@
 use log::Level;
-use wgui::{HasId, Table, Wgui, WguiModel};
+use wgui::{Db, DbTable, HasId, Wdb, Wgui, WguiModel};
 
 mod components;
 mod context;
 
-#[derive(Debug, Clone, WguiModel)]
+#[derive(Debug, Clone, WguiModel, serde::Serialize, serde::Deserialize)]
 pub struct Message {
 	id: u32,
 	author: String,
@@ -31,7 +31,7 @@ impl Message {
 	}
 }
 
-#[derive(Debug, Clone, WguiModel)]
+#[derive(Debug, Clone, WguiModel, serde::Serialize, serde::Deserialize)]
 pub struct Channel {
 	id: u32,
 	name: String,
@@ -62,7 +62,7 @@ impl Channel {
 	}
 }
 
-#[derive(Debug, Clone, WguiModel)]
+#[derive(Debug, Clone, WguiModel, serde::Serialize, serde::Deserialize)]
 pub struct DirectMessage {
 	id: u32,
 	name: String,
@@ -81,7 +81,7 @@ impl HasId for DirectMessage {
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, WguiModel, serde::Serialize, serde::Deserialize)]
 pub struct User {
 	name: String,
 	password: String,
@@ -166,12 +166,12 @@ pub struct ChatViewState {
 	directs: Vec<DirectMessage>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Wdb)]
 pub struct PuppyDb {
-	pub channels: Table<Channel>,
-	pub directs: Table<DirectMessage>,
-	pub messages: Table<Message>,
-	pub users: Table<User>,
+	pub channels: DbTable<Channel>,
+	pub directs: DbTable<DirectMessage>,
+	pub messages: DbTable<Message>,
+	pub users: DbTable<User>,
 }
 
 impl PuppyDb {
@@ -184,17 +184,17 @@ impl PuppyDb {
 	}
 
 	pub fn new() -> Self {
-		let channels = vec![Channel {
-			id: 1,
-			name: "general".to_string(),
-			display_name: "# general".to_string(),
-			messages: Vec::new(),
-		}];
+		let db = Db::<PuppyDb>::new();
 		Self {
-			channels: Table::with_ids(channels),
-			directs: Table::with_ids(Vec::new()),
-			messages: Table::with_ids(Vec::new()),
-			users: Table::new(Vec::new()),
+			channels: db.table_with_ids(vec![Channel {
+				id: 1,
+				name: "general".to_string(),
+				display_name: "# general".to_string(),
+				messages: Vec::new(),
+			}]),
+			directs: db.table_with_ids(Vec::new()),
+			messages: db.table_with_ids(Vec::new()),
+			users: db.table(),
 		}
 	}
 

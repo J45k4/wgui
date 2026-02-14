@@ -10,6 +10,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 
+pub mod db_table;
 pub mod diff;
 pub mod dist;
 pub mod edit_distance;
@@ -17,6 +18,8 @@ pub mod gui;
 pub mod pubsub;
 #[cfg(feature = "hyper")]
 mod server;
+#[cfg(feature = "sqlite")]
+pub mod sqlite;
 pub mod ssr;
 pub mod table;
 pub mod types;
@@ -30,8 +33,11 @@ pub use wui_derive::{wgui_controller, Wdb, WguiModel};
 
 use crate::ui_client::UiWsWorker;
 
+pub use db_table::{Db, DbTable};
 pub use dist::*;
 pub use gui::*;
+#[cfg(feature = "sqlite")]
+pub use sqlite::{SQLLiteDB, SQLiteDB, SqliteDb, SqliteTable};
 pub use table::{HasId, Table};
 pub use types::*;
 #[cfg(feature = "hyper")]
