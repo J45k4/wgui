@@ -1080,7 +1080,11 @@ var renderPayload = (item, ctx, old) => {
       element.style.gap = payload.spacing + "px";
     }
     if (payload.wrap) {
+      element.style.flexWrap = "wrap";
       element.classList.add("flex-wrap");
+    } else {
+      element.style.flexWrap = "";
+      element.classList.remove("flex-wrap");
     }
     if (payload.flex) {
       element.style.display = "flex";
