@@ -4,7 +4,7 @@ use crate::wui::compiler::ir::{ActionDef, ActionPayload, EventKind, IrNode, IrPr
 use crate::wui::diagnostic::Diagnostic;
 use crate::wui::imports;
 
-use async_trait::async_trait;
+pub use async_trait::async_trait;
 use std::collections::HashMap;
 use std::fs;
 use std::future::Future;
@@ -19,6 +19,7 @@ pub struct Template {
 	doc: crate::wui::compiler::ir::IrDocument,
 }
 
+#[async_trait]
 pub trait WuiController {
 	fn render(&self) -> Item;
 	fn render_with_path(&self, path: &str) -> Item {
@@ -29,11 +30,12 @@ pub trait WuiController {
 		None
 	}
 	fn set_runtime_context(&mut self, _client_id: Option<usize>, _session: Option<String>) {}
-	fn handle(&mut self, event: &crate::types::ClientEvent) -> bool;
+	async fn handle(&mut self, event: &crate::types::ClientEvent) -> bool;
 }
 
-pub struct Ctx<T> {
+pub struct Ctx<T, DB = ()> {
 	pub state: Arc<T>,
+	pub db: Arc<DB>,
 	current_client: Arc<Mutex<Option<usize>>>,
 	current_session: Arc<Mutex<Option<String>>>,
 	pubsub: crate::PubSub<()>,
@@ -41,17 +43,34 @@ pub struct Ctx<T> {
 	command_rx: Mutex<Option<mpsc::UnboundedReceiver<RuntimeCommand>>>,
 }
 
-impl<T> Ctx<T> {
+impl<T> Ctx<T, ()> {
 	pub fn new(state: T) -> Self {
+		Self::new_with_db(state, ())
+	}
+}
+
+impl<T, DB> Ctx<T, DB>
+where
+	DB: Send + Sync + 'static,
+{
+	pub fn new_with_db<D>(state: T, db: D) -> Self
+	where
+		D: Into<Arc<DB>>,
+	{
 		let (command_tx, command_rx) = mpsc::unbounded_channel::<RuntimeCommand>();
 		Self {
 			state: Arc::new(state),
+			db: db.into(),
 			current_client: Arc::new(Mutex::new(None)),
 			current_session: Arc::new(Mutex::new(None)),
 			pubsub: crate::PubSub::new(),
 			command_tx,
 			command_rx: Mutex::new(Some(command_rx)),
 		}
+	}
+
+	pub fn db(&self) -> &DB {
+		self.db.as_ref()
 	}
 
 	pub fn spawn<F>(&self, fut: F)
@@ -112,11 +131,12 @@ impl<T> Ctx<T> {
 #[async_trait]
 pub trait Component: Send + Sync + 'static {
 	type Context: Send + Sync + 'static;
-	type Model: WuiModel;
+	type Db: Send + Sync + 'static;
+	type Model: WguiModel;
 
-	async fn mount(ctx: Arc<Ctx<Self::Context>>) -> Self;
-	fn render(&self, ctx: &Ctx<Self::Context>) -> Self::Model;
-	fn unmount(self, ctx: Arc<Ctx<Self::Context>>);
+	async fn mount(ctx: Arc<Ctx<Self::Context, Self::Db>>) -> Self;
+	fn render(&self, ctx: &Ctx<Self::Context, Self::Db>) -> Self::Model;
+	fn unmount(self, ctx: Arc<Ctx<Self::Context, Self::Db>>);
 }
 
 #[derive(Debug, Clone)]
@@ -151,9 +171,31 @@ pub trait WuiValueConvert {
 	fn to_wui_value(&self) -> WuiValue;
 }
 
-pub trait WuiModel: WuiValueConvert {}
+#[derive(Debug, Clone)]
+pub struct WdbFieldSchema {
+	pub name: &'static str,
+	pub rust_type: &'static str,
+}
 
-impl<T: WuiValueConvert + ?Sized> WuiModel for T {}
+#[derive(Debug, Clone)]
+pub struct WdbModelSchema {
+	pub model: &'static str,
+	pub fields: Vec<WdbFieldSchema>,
+}
+
+pub trait WdbModel {
+	fn schema() -> WdbModelSchema;
+}
+
+pub trait WdbSchema {
+	fn schema() -> Vec<WdbModelSchema>;
+}
+
+pub trait WguiModel: WuiValueConvert {
+	fn find_id(_id: &str) {}
+}
+
+impl<T: WuiValueConvert + ?Sized> WguiModel for T {}
 
 impl<T: WuiValueConvert + ?Sized> WuiValueProvider for T {
 	fn wui_value(&self) -> WuiValue {

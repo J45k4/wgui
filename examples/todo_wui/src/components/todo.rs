@@ -75,6 +75,7 @@ impl Todo {
 #[async_trait]
 impl Component for Todo {
 	type Context = SharedContext;
+	type Db = ();
 	type Model = crate::TodoState;
 
 	async fn mount(ctx: Arc<Ctx<SharedContext>>) -> Self {

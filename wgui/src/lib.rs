@@ -18,19 +18,21 @@ pub mod pubsub;
 #[cfg(feature = "hyper")]
 mod server;
 pub mod ssr;
+pub mod table;
 pub mod types;
 mod ui_client;
 pub mod ws;
 pub mod wui;
 
 pub use pubsub::PubSub;
-pub use wui::runtime::WuiModel;
-pub use wui_derive::{wgui_controller, WuiModel};
+pub use wui::runtime::{WdbModel, WdbSchema, WguiModel};
+pub use wui_derive::{wgui_controller, Wdb, WguiModel};
 
 use crate::ui_client::UiWsWorker;
 
 pub use dist::*;
 pub use gui::*;
+pub use table::{HasId, Table};
 pub use types::*;
 #[cfg(feature = "hyper")]
 pub use ws::TungsteniteWs;
@@ -42,6 +44,17 @@ type ControllerFuture = Pin<Box<dyn Future<Output = BoxedController> + Send>>;
 type ControllerFactory = Arc<dyn Fn() -> ControllerFuture + Send + Sync>;
 type SsrRenderer = Arc<dyn Fn(&str) -> Option<Item> + Send + Sync>;
 type SsrComponentFactories = Arc<std::sync::RwLock<Vec<(String, ControllerFactory)>>>;
+
+fn path_matches(route_path: &str, current_path: &str) -> bool {
+	if route_path == "/" {
+		return true;
+	}
+	if current_path == route_path {
+		return true;
+	}
+	let prefix = format!("{}/", route_path.trim_end_matches('/'));
+	current_path.starts_with(&prefix)
+}
 
 #[derive(Clone)]
 pub struct WguiHandle {
@@ -156,19 +169,22 @@ impl ComponentRegistration {
 	}
 }
 
-struct ContextAwareController<C, T>
+struct ContextAwareController<C, T, DB>
 where
 	C: crate::wui::runtime::WuiController + Send + 'static,
 	T: Send + Sync + 'static,
+	DB: Send + Sync + 'static,
 {
 	inner: C,
-	ctx: Arc<crate::wui::runtime::Ctx<T>>,
+	ctx: Arc<crate::wui::runtime::Ctx<T, DB>>,
 }
 
-impl<C, T> crate::wui::runtime::WuiController for ContextAwareController<C, T>
+#[crate::wui::runtime::async_trait]
+impl<C, T, DB> crate::wui::runtime::WuiController for ContextAwareController<C, T, DB>
 where
 	C: crate::wui::runtime::WuiController + Send + 'static,
 	T: Send + Sync + 'static,
+	DB: Send + Sync + 'static,
 {
 	fn render(&self) -> Item {
 		self.inner.render()
@@ -188,31 +204,21 @@ where
 		self.inner.set_runtime_context(client_id, session);
 	}
 
-	fn handle(&mut self, event: &crate::types::ClientEvent) -> bool {
-		self.inner.handle(event)
+	async fn handle(&mut self, event: &crate::types::ClientEvent) -> bool {
+		self.inner.handle(event).await
 	}
 }
 
-pub struct Wgui {
+pub struct Wgui<DB = ()> {
 	events_rx: mpsc::UnboundedReceiver<ClientMessage>,
 	handle: WguiHandle,
 	components: Vec<ComponentRegistration>,
 	ssr_components: SsrComponentFactories,
+	db: Arc<DB>,
 	contexts: HashMap<TypeId, Arc<dyn Any + Send + Sync>>,
 }
 
-impl Wgui {
-	fn path_matches(route_path: &str, current_path: &str) -> bool {
-		if route_path == "/" {
-			return true;
-		}
-		if current_path == route_path {
-			return true;
-		}
-		let prefix = format!("{}/", route_path.trim_end_matches('/'));
-		current_path.starts_with(&prefix)
-	}
-
+impl Wgui<()> {
 	#[cfg(feature = "hyper")]
 	pub fn new(addr: SocketAddr) -> Self {
 		let (events_tx, events_rx) = mpsc::unbounded_channel();
@@ -228,7 +234,7 @@ impl Wgui {
 			let ssr: Option<SsrRenderer> = Some(Arc::new(move |path: &str| {
 				let factories = ssr_components.read().unwrap();
 				for (route_path, factory) in factories.iter() {
-					if !Wgui::path_matches(route_path, path) {
+					if !path_matches(route_path, path) {
 						continue;
 					}
 					let controller = tokio::task::block_in_place(|| {
@@ -251,6 +257,7 @@ impl Wgui {
 			handle: WguiHandle::new(events_tx, clients, sessions),
 			components: Vec::new(),
 			ssr_components,
+			db: Arc::new(()),
 			contexts: HashMap::new(),
 		}
 	}
@@ -283,6 +290,7 @@ impl Wgui {
 			handle: WguiHandle::new(events_tx, clients, sessions),
 			components: Vec::new(),
 			ssr_components,
+			db: Arc::new(()),
 			contexts: HashMap::new(),
 		}
 	}
@@ -298,6 +306,26 @@ impl Wgui {
 			handle: WguiHandle::new(events_tx, clients, sessions),
 			components: Vec::new(),
 			ssr_components,
+			db: Arc::new(()),
+			contexts: HashMap::new(),
+		}
+	}
+}
+
+impl<DB> Wgui<DB>
+where
+	DB: Send + Sync + 'static,
+{
+	pub fn with_db<NewDB>(self, db: NewDB) -> Wgui<NewDB>
+	where
+		NewDB: Send + Sync + 'static,
+	{
+		Wgui {
+			events_rx: self.events_rx,
+			handle: self.handle,
+			components: self.components,
+			ssr_components: self.ssr_components,
+			db: Arc::new(db),
 			contexts: HashMap::new(),
 		}
 	}
@@ -326,7 +354,7 @@ impl Wgui {
 		self.handle.clear_session(client_id).await
 	}
 
-	pub fn set_ctx<T>(&mut self, ctx: Arc<crate::wui::runtime::Ctx<T>>)
+	pub fn set_ctx<T>(&mut self, ctx: Arc<crate::wui::runtime::Ctx<T, DB>>)
 	where
 		T: Send + Sync + 'static,
 	{
@@ -349,9 +377,23 @@ impl Wgui {
 		self.contexts.insert(TypeId::of::<T>(), erased);
 	}
 
+	pub fn set_ctx_state<T>(&mut self, state: T)
+	where
+		T: Send + Sync + 'static,
+	{
+		let ctx = Arc::new(crate::wui::runtime::Ctx::new_with_db(
+			state,
+			self.db.clone(),
+		));
+		self.set_ctx(ctx);
+	}
+
 	pub fn add_component<C>(&mut self, path: &str)
 	where
-		C: crate::wui::runtime::Component + crate::wui::runtime::WuiController + Send + 'static,
+		C: crate::wui::runtime::Component<Db = DB>
+			+ crate::wui::runtime::WuiController
+			+ Send
+			+ 'static,
 		<C as crate::wui::runtime::Component>::Context: Send + Sync + 'static,
 	{
 		let Some(ctx_any) = self
@@ -362,7 +404,8 @@ impl Wgui {
 			panic!("missing context for component; call wgui.set_ctx(...) first");
 		};
 		let Ok(ctx) = ctx_any
-			.downcast::<crate::wui::runtime::Ctx<<C as crate::wui::runtime::Component>::Context>>()
+			.downcast::<crate::wui::runtime::Ctx<<C as crate::wui::runtime::Component>::Context, DB>>(
+			)
 		else {
 			panic!("invalid context type for component");
 		};
@@ -411,7 +454,7 @@ impl Wgui {
 					let session = handle.session_for_client(client_id).await;
 
 					for component in self.components.iter_mut() {
-						if !Self::path_matches(&component.route_path, &current_path) {
+						if !path_matches(&component.route_path, &current_path) {
 							continue;
 						}
 						let mut controller = (component.factory)().await;
@@ -437,7 +480,7 @@ impl Wgui {
 					let session = handle.session_for_client(client_id).await;
 
 					for component in self.components.iter_mut() {
-						if !Self::path_matches(&component.route_path, &change.path) {
+						if !path_matches(&component.route_path, &change.path) {
 							component.controllers.remove(&client_id);
 							continue;
 						}
@@ -467,14 +510,13 @@ impl Wgui {
 				_ => {
 					let session = handle.session_for_client(client_id).await;
 					for component in self.components.iter_mut() {
-						let handled = component
-							.controllers
-							.get_mut(&client_id)
-							.map(|controller| {
+						let handled =
+							if let Some(controller) = component.controllers.get_mut(&client_id) {
 								controller.set_runtime_context(Some(client_id), session.clone());
-								controller.handle(&message.event)
-							})
-							.unwrap_or(false);
+								controller.handle(&message.event).await
+							} else {
+								false
+							};
 
 						if handled {
 							let mut updates: Vec<(usize, Item, Option<String>)> = Vec::new();

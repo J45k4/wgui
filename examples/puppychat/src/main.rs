@@ -1,23 +1,37 @@
 use log::Level;
-use std::collections::HashMap;
-use std::sync::Arc;
-use wgui::Wgui;
-use wgui::WuiModel;
-use wgui::wui::runtime::Ctx;
+use wgui::{HasId, Table, Wgui, WguiModel};
 
 mod components;
 mod context;
 
-#[derive(Debug, Clone, WuiModel)]
+#[derive(Debug, Clone, WguiModel)]
 pub struct Message {
 	id: u32,
 	author: String,
 	body: String,
 	image_url: String,
 	time: String,
+	channel_id: Option<u32>,
+	dm_thread_key: Option<String>,
 }
 
-#[derive(Debug, Clone, WuiModel)]
+impl HasId for Message {
+	fn id(&self) -> u32 {
+		self.id
+	}
+
+	fn set_id(&mut self, id: u32) {
+		self.id = id;
+	}
+}
+
+impl Message {
+	pub async fn save(self, db: &std::sync::Arc<PuppyDb>) -> Self {
+		db.messages.save(self).await
+	}
+}
+
+#[derive(Debug, Clone, WguiModel)]
 pub struct Channel {
 	id: u32,
 	name: String,
@@ -25,7 +39,30 @@ pub struct Channel {
 	messages: Vec<Message>,
 }
 
-#[derive(Debug, Clone, WuiModel)]
+impl HasId for Channel {
+	fn id(&self) -> u32 {
+		self.id
+	}
+
+	fn set_id(&mut self, id: u32) {
+		self.id = id;
+	}
+}
+
+impl Channel {
+	pub async fn save(mut self, db: &std::sync::Arc<PuppyDb>) -> Self {
+		if self.display_name.is_empty() {
+			self.display_name = if self.name.starts_with('#') {
+				self.name.clone()
+			} else {
+				format!("# {}", self.name)
+			};
+		}
+		db.channels.save(self).await
+	}
+}
+
+#[derive(Debug, Clone, WguiModel)]
 pub struct DirectMessage {
 	id: u32,
 	name: String,
@@ -34,12 +71,34 @@ pub struct DirectMessage {
 	messages: Vec<Message>,
 }
 
+impl HasId for DirectMessage {
+	fn id(&self) -> u32 {
+		self.id
+	}
+
+	fn set_id(&mut self, id: u32) {
+		self.id = id;
+	}
+}
+
 #[derive(Debug, Clone)]
-pub struct ChatState {
-	channels: Vec<Channel>,
-	directs: Vec<DirectMessage>,
-	dm_threads: HashMap<String, Vec<Message>>,
-	users: HashMap<String, String>,
+pub struct User {
+	name: String,
+	password: String,
+}
+
+impl User {
+	pub async fn save(self, db: &std::sync::Arc<PuppyDb>) -> Self {
+		db.users.insert(self.clone()).await;
+		self
+	}
+
+	pub async fn find(name: &str, db: &std::sync::Arc<PuppyDb>) -> Option<Self> {
+		db.users
+			.snapshot()
+			.into_iter()
+			.find(|user| user.name == name)
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -61,12 +120,13 @@ pub struct SessionState {
 }
 
 impl SessionState {
-	fn new(shared: &ChatState) -> Self {
-		let (active_kind, active_id, active_name) = if let Some(first) = shared.channels.first() {
-			("channel".to_string(), first.id, first.display_name.clone())
-		} else {
-			("".to_string(), 0, "".to_string())
-		};
+	fn new(default_channel: Option<(u32, String)>) -> Self {
+		let (active_kind, active_id, active_name) =
+			if let Some((id, display_name)) = default_channel {
+				("channel".to_string(), id, display_name)
+			} else {
+				("".to_string(), 0, "".to_string())
+			};
 		Self {
 			user_name: String::new(),
 			login_name: String::new(),
@@ -86,7 +146,7 @@ impl SessionState {
 	}
 }
 
-#[derive(Debug, Clone, WuiModel)]
+#[derive(Debug, Clone, WguiModel)]
 pub struct ChatViewState {
 	user_name: String,
 	login_name: String,
@@ -106,21 +166,63 @@ pub struct ChatViewState {
 	directs: Vec<DirectMessage>,
 }
 
-impl Default for ChatState {
-	fn default() -> Self {
+#[derive(Debug)]
+pub struct PuppyDb {
+	pub channels: Table<Channel>,
+	pub directs: Table<DirectMessage>,
+	pub messages: Table<Message>,
+	pub users: Table<User>,
+}
+
+impl PuppyDb {
+	fn dm_thread_key(left: &str, right: &str) -> String {
+		if left <= right {
+			format!("{}|{}", left, right)
+		} else {
+			format!("{}|{}", right, left)
+		}
+	}
+
+	pub fn new() -> Self {
 		let channels = vec![Channel {
 			id: 1,
 			name: "general".to_string(),
 			display_name: "# general".to_string(),
 			messages: Vec::new(),
 		}];
-		let directs = Vec::new();
 		Self {
-			channels,
-			directs,
-			dm_threads: HashMap::new(),
-			users: HashMap::new(),
+			channels: Table::with_ids(channels),
+			directs: Table::with_ids(Vec::new()),
+			messages: Table::with_ids(Vec::new()),
+			users: Table::new(Vec::new()),
 		}
+	}
+
+	pub fn ensure_direct_entry(&self, user_name: &str) {
+		let mut directs = self.directs.snapshot();
+		if directs.iter().any(|dm| dm.name == user_name) {
+			return;
+		}
+		directs.push(DirectMessage {
+			id: self.directs.next_id(),
+			name: user_name.to_string(),
+			display_name: format!("@ {}", user_name),
+			online: true,
+			messages: Vec::new(),
+		});
+		self.directs.replace(directs);
+	}
+
+	pub fn dm_thread_key_for_session(&self, session: &SessionState) -> Option<String> {
+		if session.active_kind != "dm" {
+			return None;
+		}
+		let directs = self.directs.snapshot();
+		let other_name = directs
+			.iter()
+			.find(|dm| dm.id == session.active_id)
+			.map(|dm| dm.name.clone())?;
+		Some(Self::dm_thread_key(&session.user_name, &other_name))
 	}
 }
 
@@ -128,9 +230,9 @@ impl Default for ChatState {
 async fn main() {
 	simple_logger::init_with_level(Level::Info).unwrap();
 
-	let ctx = Arc::new(Ctx::new(context::SharedContext::default()));
-	let mut wgui = Wgui::new("0.0.0.0:5545".parse().unwrap());
-	wgui.set_ctx(ctx.clone());
+	let db = PuppyDb::new();
+	let mut wgui = Wgui::new("0.0.0.0:5545".parse().unwrap()).with_db(db);
+	wgui.set_ctx_state(context::SharedContext::default());
 	wgui.add_component::<components::puppychat::Puppychat>("/");
 	wgui.run().await;
 }

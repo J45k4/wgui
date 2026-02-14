@@ -4,9 +4,52 @@ use syn::{
 	parse_macro_input, Data, DeriveInput, Fields, FnArg, ImplItem, ItemImpl, ReturnType, Type,
 };
 
+#[proc_macro_derive(WguiModel)]
+pub fn derive_wgui_model(input: TokenStream) -> TokenStream {
+	derive_wui_value_convert(input, "WguiModel")
+}
+
 #[proc_macro_derive(WuiModel)]
 pub fn derive_wui_model(input: TokenStream) -> TokenStream {
 	derive_wui_value_convert(input, "WuiModel")
+}
+
+#[proc_macro_derive(Wdb)]
+pub fn derive_wdb(input: TokenStream) -> TokenStream {
+	let input = parse_macro_input!(input as DeriveInput);
+	let name = input.ident;
+	let fields = match input.data {
+		Data::Struct(data) => data.fields,
+		_ => {
+			return syn::Error::new_spanned(name, "Wdb can only be derived for structs")
+				.to_compile_error()
+				.into();
+		}
+	};
+
+	let named = match fields {
+		Fields::Named(named) => named.named,
+		_ => {
+			return syn::Error::new_spanned(name, "Wdb requires named fields")
+				.to_compile_error()
+				.into();
+		}
+	};
+
+	let model_schemas = named.iter().map(|field| {
+		let ty = &field.ty;
+		quote! { <#ty as wgui::wui::runtime::WdbModel>::schema() }
+	});
+
+	let expanded = quote! {
+		impl wgui::wui::runtime::WdbSchema for #name {
+			fn schema() -> ::std::vec::Vec<wgui::wui::runtime::WdbModelSchema> {
+				vec![#(#model_schemas),*]
+			}
+		}
+	};
+
+	expanded.into()
 }
 
 fn derive_wui_value_convert(input: TokenStream, label: &str) -> TokenStream {
@@ -40,6 +83,17 @@ fn derive_wui_value_convert(input: TokenStream, label: &str) -> TokenStream {
 			(#key.to_string(), wgui::wui::runtime::WuiValueConvert::to_wui_value(&self.#ident))
 		}
 	});
+	let schema_fields = named.iter().map(|field| {
+		let ident = field.ident.as_ref().unwrap();
+		let key = ident.to_string();
+		let ty = &field.ty;
+		quote! {
+			wgui::wui::runtime::WdbFieldSchema {
+				name: #key,
+				rust_type: stringify!(#ty),
+			}
+		}
+	});
 
 	let expanded = quote! {
 		impl wgui::wui::runtime::WuiValueConvert for #name {
@@ -47,6 +101,15 @@ fn derive_wui_value_convert(input: TokenStream, label: &str) -> TokenStream {
 				wgui::wui::runtime::WuiValue::object(vec![
 					#(#entries),*
 				])
+			}
+		}
+
+		impl wgui::wui::runtime::WdbModel for #name {
+			fn schema() -> wgui::wui::runtime::WdbModelSchema {
+				wgui::wui::runtime::WdbModelSchema {
+					model: stringify!(#name),
+					fields: vec![#(#schema_fields),*],
+				}
 			}
 		}
 	};
@@ -73,6 +136,7 @@ enum HandlerArg {
 struct HandlerMethod {
 	ident: syn::Ident,
 	arg: HandlerArg,
+	is_async: bool,
 }
 
 fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
@@ -114,6 +178,9 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 		match (&recv.reference, &recv.mutability) {
 			(Some(_), None) => {
 				if input_count == 0 {
+					if method.sig.asyncness.is_some() {
+						continue;
+					}
 					if let ReturnType::Type(_, ty) = &method.sig.output {
 						if matches!(**ty, Type::Tuple(_)) {
 							continue;
@@ -146,6 +213,7 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 					handlers.push(HandlerMethod {
 						ident: method.sig.ident.clone(),
 						arg,
+						is_async: method.sig.asyncness.is_some(),
 					});
 				}
 			}
@@ -189,44 +257,53 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 	let action_fn = format_ident!("__wgui_action_name_for_{}", controller_ident);
 	let module_name_fn = format_ident!("__wgui_module_name_for_{}", controller_ident);
 
-	let no_arg_handlers = handlers
+	let no_arg_arms = handlers
 		.iter()
 		.filter(|handler| matches!(handler.arg, HandlerArg::None))
-		.map(|handler| handler.ident.clone())
-		.collect::<Vec<_>>();
-	let u32_handlers = handlers
+		.map(|handler| {
+			let ident = &handler.ident;
+			let name = ident.to_string();
+			if handler.is_async {
+				quote! { #name => { self.#ident().await; true } }
+			} else {
+				quote! { #name => { self.#ident(); true } }
+			}
+		});
+	let u32_arms = handlers
 		.iter()
 		.filter(|handler| matches!(handler.arg, HandlerArg::U32))
-		.map(|handler| handler.ident.clone())
-		.collect::<Vec<_>>();
-	let i32_handlers = handlers
+		.map(|handler| {
+			let ident = &handler.ident;
+			let name = ident.to_string();
+			if handler.is_async {
+				quote! { #name => { self.#ident(arg).await; true } }
+			} else {
+				quote! { #name => { self.#ident(arg); true } }
+			}
+		});
+	let i32_arms = handlers
 		.iter()
 		.filter(|handler| matches!(handler.arg, HandlerArg::I32))
-		.map(|handler| handler.ident.clone())
-		.collect::<Vec<_>>();
-	let string_handlers = handlers
+		.map(|handler| {
+			let ident = &handler.ident;
+			let name = ident.to_string();
+			if handler.is_async {
+				quote! { #name => { self.#ident(value).await; true } }
+			} else {
+				quote! { #name => { self.#ident(value); true } }
+			}
+		});
+	let string_arms = handlers
 		.iter()
 		.filter(|handler| matches!(handler.arg, HandlerArg::String))
-		.map(|handler| handler.ident.clone())
-		.collect::<Vec<_>>();
-
-	let no_arg_arms = no_arg_handlers.iter().map(|ident| {
-		let name = ident.to_string();
-		quote! { #name => { self.#ident(); true } }
-	});
-	let u32_arms = u32_handlers.iter().map(|ident| {
-		let name = ident.to_string();
-		quote! { #name => { self.#ident(arg); true } }
-	});
-	let i32_arms = i32_handlers.iter().map(|ident| {
-		let name = ident.to_string();
-		quote! { #name => { self.#ident(value); true } }
-	});
-	let string_arms = string_handlers
-		.iter()
-		.map(|ident| {
+		.map(|handler| {
+			let ident = &handler.ident;
 			let name = ident.to_string();
-			quote! { #name => { self.#ident(value); true } }
+			if handler.is_async {
+				quote! { #name => { self.#ident(value).await; true } }
+			} else {
+				quote! { #name => { self.#ident(value); true } }
+			}
 		})
 		.collect::<Vec<_>>();
 	let string_arms_ref = &string_arms;
@@ -290,6 +367,7 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 			out
 		}
 
+	#[::wgui::wui::runtime::async_trait]
 	impl ::wgui::wui::runtime::WuiController for #controller_ident {
 		fn render(&self) -> ::wgui::Item {
 			let model = self.#model_method_ident();
@@ -305,7 +383,7 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 			#template_fn().title_for_path(path)
 		}
 
-		fn handle(&mut self, event: &::wgui::ClientEvent) -> bool {
+		async fn handle(&mut self, event: &::wgui::ClientEvent) -> bool {
 			let Some(action) = #template_fn().decode(event) else {
 				return false;
 			};

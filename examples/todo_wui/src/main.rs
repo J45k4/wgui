@@ -2,19 +2,19 @@ use log::Level;
 use std::sync::Arc;
 use wgui::wui::runtime::Ctx;
 use wgui::Wgui;
-use wgui::WuiModel;
+use wgui::WguiModel;
 
 mod components;
 mod context;
 
-#[derive(Debug, Clone, WuiModel)]
+#[derive(Debug, Clone, WguiModel)]
 pub struct TodoItem {
 	id: u32,
 	name: String,
 	completed: bool,
 }
 
-#[derive(Debug, Default, Clone, WuiModel)]
+#[derive(Debug, Default, Clone, WguiModel)]
 pub struct TodoState {
 	new_todo_name: String,
 	items: Vec<TodoItem>,
