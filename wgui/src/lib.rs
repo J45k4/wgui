@@ -16,6 +16,7 @@ pub mod dist;
 pub mod edit_distance;
 pub mod gui;
 pub mod pubsub;
+pub mod schema_diff;
 #[cfg(feature = "hyper")]
 mod server;
 #[cfg(feature = "sqlite")]
@@ -24,6 +25,7 @@ pub mod ssr;
 pub mod table;
 pub mod types;
 mod ui_client;
+pub mod wdb;
 pub mod ws;
 pub mod wui;
 
@@ -38,7 +40,8 @@ pub use dist::*;
 pub use gui::*;
 #[cfg(feature = "sqlite")]
 pub use sqlite::{
-	default_db_path_for_schema, schema_diff_sql, write_schema_migration, SQLLiteDB, SQLiteDB,
+	default_db_path_for_schema, schema_diff_sql, schema_diff_sql_from_schema_file,
+	write_schema_migration, write_schema_migration_from_schema_file, SQLLiteDB, SQLiteDB,
 	SchemaMigrations, SqliteDb, SqliteTable,
 };
 pub use table::{HasId, Table};

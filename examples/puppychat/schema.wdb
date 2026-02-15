@@ -1,0 +1,35 @@
+model Message {
+  id: Int @id
+  author: String
+  body: String
+  image_url: String
+  time: String
+  channel_id: Int?
+  channel: Channel? @relation(channel_id)
+  dm_thread_key: String?
+  dm_thread: DirectMessage? @relation(dm_thread_key)
+  author_user: User? @relation(author)
+}
+
+model Channel {
+  id: Int @id
+  name: String
+  display_name: String
+  messages: Json
+  message_rows: Message[] @relation(channel_id)
+}
+
+model DirectMessage {
+  id: Int @id
+  name: String
+  display_name: String
+  online: Bool
+  messages: Json
+  message_rows: Message[] @relation(dm_thread_key)
+}
+
+model User {
+  name: String
+  password: String
+  messages: Message[] @relation(author)
+}

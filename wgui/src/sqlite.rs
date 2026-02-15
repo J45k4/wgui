@@ -1,4 +1,9 @@
+use crate::schema_diff::{
+	diff_schemas, ColumnSchema as DiffColumnSchema, DiffOp, Schema as DiffSchema,
+	TableSchema as DiffTableSchema,
+};
 use crate::table::HasId;
+use crate::wdb::{AttributeAst, TypeAst};
 use crate::wui::runtime::{WdbModel, WdbModelSchema, WdbSchema};
 use anyhow::{anyhow, Context, Result};
 use rusqlite::types::{Value as SqlValue, ValueRef};
@@ -7,7 +12,6 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -89,6 +93,111 @@ where
 	Ok(Some(path))
 }
 
+pub fn schema_diff_sql_from_schema_file<P, Q>(schema_path: P, db_path: Q) -> Result<Option<String>>
+where
+	P: AsRef<Path>,
+	Q: AsRef<Path>,
+{
+	let target_schema = load_dynamic_schema(schema_path)?;
+	let conn =
+		Connection::open(db_path).context("failed to open sqlite database for schema diff")?;
+	let statements = schema_diff_statements_for_schema(&conn, &target_schema)?;
+	if statements.is_empty() {
+		return Ok(None);
+	}
+	Ok(Some(render_migration_sql("auto_schema_diff", &statements)))
+}
+
+pub fn write_schema_migration_from_schema_file<P, Q, R>(
+	schema_path: P,
+	db_path: Q,
+	name: &str,
+	dir: R,
+) -> Result<Option<PathBuf>>
+where
+	P: AsRef<Path>,
+	Q: AsRef<Path>,
+	R: AsRef<Path>,
+{
+	let target_schema = load_dynamic_schema(schema_path)?;
+	let conn =
+		Connection::open(db_path).context("failed to open sqlite database for migration diff")?;
+	let statements = schema_diff_statements_for_schema(&conn, &target_schema)?;
+	if statements.is_empty() {
+		return Ok(None);
+	}
+
+	let normalized = normalize_migration_name(name)?;
+	let timestamp = unix_ts()?;
+	let filename = format!("{timestamp}_{normalized}.sql");
+	let path = dir.as_ref().join(filename);
+	let parent = path
+		.parent()
+		.ok_or_else(|| anyhow!("invalid migration path {}", path.display()))?;
+	std::fs::create_dir_all(parent)
+		.with_context(|| format!("failed creating migration dir {}", parent.display()))?;
+	let sql = render_migration_sql(name, &statements);
+	std::fs::write(&path, sql).with_context(|| format!("failed writing {}", path.display()))?;
+	Ok(Some(path))
+}
+
+fn load_dynamic_schema<P: AsRef<Path>>(schema_path: P) -> Result<DiffSchema> {
+	let schema_path = schema_path.as_ref();
+	let parsed = crate::wdb::parse_schema_file(schema_path)?;
+	if parsed.models.is_empty() {
+		return Err(anyhow!(
+			"schema file {} has no models",
+			schema_path.display()
+		));
+	}
+	let mut tables = Vec::with_capacity(parsed.models.len());
+	for model in parsed.models {
+		let model_name = sql_identifier(&model.name)?;
+		let mut columns = Vec::with_capacity(model.fields.len());
+		for field in model.fields {
+			if field.name == "id" {
+				continue;
+			}
+			if has_relation_attr(&field.attributes) {
+				continue;
+			}
+			let field_name = sql_identifier(&field.name)?;
+			columns.push(DiffColumnSchema {
+				name: field_name,
+				rust_type: map_wdb_type_to_rust(&field.ty),
+			});
+		}
+		tables.push(DiffTableSchema {
+			name: model_name,
+			columns,
+		});
+	}
+	Ok(DiffSchema { tables })
+}
+
+fn has_relation_attr(attrs: &[AttributeAst]) -> bool {
+	attrs.iter().any(|attr| attr.name == "relation")
+}
+
+fn map_wdb_type_to_rust(ty: &TypeAst) -> String {
+	let mapped = match ty.name.as_str() {
+		"Bool" => "bool",
+		"String" => "String",
+		"Int" | "BigInt" => "i64",
+		"Float" | "Decimal" => "f64",
+		"UUID" | "DateTime" | "Json" | "Bytes" => "String",
+		other => other,
+	};
+
+	if ty.is_list {
+		format!("Vec<{mapped}>")
+	} else if ty.is_optional {
+		format!("Option<{mapped}>")
+	} else {
+		mapped.to_string()
+	}
+}
+
 impl<S: WdbSchema> SQLiteDB<S> {
 	pub fn new() -> Result<Self> {
 		let path = default_db_path::<S>();
@@ -125,7 +234,6 @@ impl<S: WdbSchema> SQLiteDB<S> {
 impl SqliteDb {
 	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
 		let conn = Connection::open(path).context("failed to open sqlite database")?;
-		init_migrations_table(&conn)?;
 		Ok(Self {
 			conn: Arc::new(Mutex::new(conn)),
 		})
@@ -133,7 +241,6 @@ impl SqliteDb {
 
 	pub fn in_memory() -> Result<Self> {
 		let conn = Connection::open_in_memory().context("failed to open in-memory sqlite db")?;
-		init_migrations_table(&conn)?;
 		Ok(Self {
 			conn: Arc::new(Mutex::new(conn)),
 		})
@@ -207,16 +314,6 @@ impl SqliteDb {
 			backfill_from_legacy_json(&conn, &table, schema, &columns)?;
 		}
 
-		let schema_hash = schema_hash(schema)?;
-		conn.execute(
-			"INSERT INTO _wgui_migrations (table_name, schema_hash, updated_at)
-			 VALUES (?1, ?2, unixepoch())
-			 ON CONFLICT(table_name) DO UPDATE SET
-			   schema_hash = excluded.schema_hash,
-			   updated_at = excluded.updated_at",
-			params![table, schema_hash],
-		)
-		.with_context(|| format!("failed updating migration metadata for {}", table))?;
 		Ok(())
 	}
 }
@@ -421,87 +518,100 @@ where
 	}
 }
 
-fn init_migrations_table(conn: &Connection) -> Result<()> {
-	conn.execute(
-		"CREATE TABLE IF NOT EXISTS _wgui_migrations (
-			table_name TEXT PRIMARY KEY,
-			schema_hash TEXT NOT NULL,
-			updated_at INTEGER NOT NULL
-		)",
-		[],
-	)
-	.context("failed to create _wgui_migrations table")?;
-	Ok(())
-}
-
 fn schema_diff_statements<S: WdbSchema>(conn: &Connection) -> Result<Vec<String>> {
-	let mut statements = Vec::new();
-	if !table_exists(conn, "_wgui_migrations")? {
-		statements.push(
-			"CREATE TABLE IF NOT EXISTS \"_wgui_migrations\" (\n\
-\ttable_name TEXT PRIMARY KEY,\n\
-\tschema_hash TEXT NOT NULL,\n\
-\tupdated_at INTEGER NOT NULL\n\
-)"
-			.to_string(),
-		);
-	}
-
-	for model in S::schema() {
-		statements.extend(schema_model_diff_statements(conn, &model)?);
-	}
-
-	Ok(statements)
+	let target = target_schema_from_wdb::<S>()?;
+	schema_diff_statements_for_schema(conn, &target)
 }
 
-fn schema_model_diff_statements(conn: &Connection, schema: &WdbModelSchema) -> Result<Vec<String>> {
-	let table = sql_identifier(schema.model)?;
-	let columns = model_columns(schema)?;
+fn schema_diff_statements_for_schema(
+	conn: &Connection,
+	target: &DiffSchema,
+) -> Result<Vec<String>> {
 	let mut statements = Vec::new();
 
-	if !table_exists(conn, &table)? {
-		let create_suffix = columns
-			.iter()
-			.map(|(name, rust_type)| format!(", \"{}\" {}", name, sql_affinity(rust_type)))
-			.collect::<String>();
-		statements.push(format!(
-			"CREATE TABLE IF NOT EXISTS \"{}\" (id INTEGER PRIMARY KEY AUTOINCREMENT{})",
-			table, create_suffix
-		));
-	} else {
-		let existing = table_columns(conn, &table)?;
-		for (name, rust_type) in &columns {
-			if existing.contains_key(name) {
-				continue;
-			}
-			statements.push(format!(
-				"ALTER TABLE \"{}\" ADD COLUMN \"{}\" {}",
-				table,
-				name,
-				sql_affinity(rust_type)
-			));
-		}
-
-		if existing.contains_key("json") {
-			for (name, _) in &columns {
+	let current = current_schema_for_target(conn, target)?;
+	let ops = diff_schemas(&current, target);
+	for op in ops {
+		match op {
+			DiffOp::CreateTable { table } => {
+				let create_suffix = table
+					.columns
+					.iter()
+					.map(|col| format!(", \"{}\" {}", col.name, sql_affinity(&col.rust_type)))
+					.collect::<String>();
 				statements.push(format!(
-					"UPDATE \"{}\" SET \"{}\" = COALESCE(\"{}\", json_extract(\"json\", '$.{}')) WHERE json IS NOT NULL",
-					table, name, name, name
+					"CREATE TABLE IF NOT EXISTS \"{}\" (id INTEGER PRIMARY KEY AUTOINCREMENT{})",
+					table.name, create_suffix
+				));
+			}
+			DiffOp::AddColumn { table, column } => {
+				statements.push(format!(
+					"ALTER TABLE \"{}\" ADD COLUMN \"{}\" {}",
+					table,
+					column.name,
+					sql_affinity(&column.rust_type)
 				));
 			}
 		}
 	}
 
-	let schema_hash = schema_hash(schema)?;
-	statements.push(format!(
-		"INSERT INTO \"_wgui_migrations\" (table_name, schema_hash, updated_at)\n\
-VALUES ('{}', '{}', unixepoch())\n\
-ON CONFLICT(table_name) DO UPDATE SET\n\
-\tschema_hash = excluded.schema_hash,\n\
-\tupdated_at = excluded.updated_at",
-		table, schema_hash
-	));
+	for table in &target.tables {
+		let existing = table_columns(conn, &table.name)?;
+		if existing.contains_key("json") {
+			for col in &table.columns {
+				statements.push(format!(
+					"UPDATE \"{}\" SET \"{}\" = COALESCE(\"{}\", json_extract(\"json\", '$.{}')) WHERE json IS NOT NULL",
+					table.name, col.name, col.name, col.name
+				));
+			}
+		}
+	}
+
 	Ok(statements)
+}
+
+fn target_schema_from_wdb<S: WdbSchema>() -> Result<DiffSchema> {
+	let mut tables = Vec::new();
+	for model in S::schema() {
+		let table = sql_identifier(model.model)?;
+		let columns = model
+			.fields
+			.into_iter()
+			.filter(|f| f.name != "id")
+			.map(|f| {
+				Ok(DiffColumnSchema {
+					name: sql_identifier(f.name)?,
+					rust_type: f.rust_type.to_string(),
+				})
+			})
+			.collect::<Result<Vec<_>>>()?;
+		tables.push(DiffTableSchema {
+			name: table,
+			columns,
+		});
+	}
+	Ok(DiffSchema { tables })
+}
+
+fn current_schema_for_target(conn: &Connection, target: &DiffSchema) -> Result<DiffSchema> {
+	let mut tables = Vec::new();
+	for table in &target.tables {
+		if !table_exists(conn, &table.name)? {
+			continue;
+		}
+		let existing = table_columns(conn, &table.name)?;
+		let mut columns = Vec::new();
+		for col in &table.columns {
+			if existing.contains_key(&col.name) {
+				columns.push(col.clone());
+			}
+		}
+		tables.push(DiffTableSchema {
+			name: table.name.clone(),
+			columns,
+		});
+	}
+	Ok(DiffSchema { tables })
 }
 
 fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
@@ -586,16 +696,6 @@ fn model_columns(schema: &WdbModelSchema) -> Result<Vec<(String, String)>> {
 
 fn has_model_id(schema: &WdbModelSchema) -> bool {
 	schema.fields.iter().any(|f| f.name == "id")
-}
-
-fn schema_hash(schema: &WdbModelSchema) -> Result<String> {
-	let mut hasher = std::collections::hash_map::DefaultHasher::new();
-	sql_identifier(schema.model)?.hash(&mut hasher);
-	for field in &schema.fields {
-		field.name.hash(&mut hasher);
-		field.rust_type.hash(&mut hasher);
-	}
-	Ok(format!("{:x}", hasher.finish()))
 }
 
 fn sql_identifier(name: &str) -> Result<String> {
@@ -936,7 +1036,7 @@ mod tests {
 	}
 
 	#[test]
-	fn migrations_table_is_created() {
+	fn migrations_table_is_not_created_by_sqlite_runtime() {
 		let db = SqliteDb::in_memory().expect("sqlite db");
 		let conn = db.conn.lock().unwrap();
 		let found: Option<String> = conn
@@ -947,7 +1047,7 @@ mod tests {
 			)
 			.optional()
 			.expect("query sqlite_master");
-		assert_eq!(found.as_deref(), Some("_wgui_migrations"));
+		assert_eq!(found, None);
 	}
 
 	struct SqliteTodoSchema;
@@ -964,7 +1064,6 @@ mod tests {
 			.expect("schema diff")
 			.expect("migration sql");
 		assert!(sql.contains("CREATE TABLE IF NOT EXISTS \"SqliteTodo\""));
-		assert!(sql.contains("INSERT INTO \"_wgui_migrations\""));
 		let _ = fs::remove_file(db_path);
 	}
 
