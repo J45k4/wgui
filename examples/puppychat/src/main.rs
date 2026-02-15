@@ -4,7 +4,7 @@ use wgui::{Db, DbTable, HasId, Wdb, Wgui, WguiModel};
 mod components;
 mod context;
 
-#[derive(Debug, Clone, WguiModel, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, WguiModel)]
 pub struct Message {
 	id: u32,
 	author: String,
@@ -31,7 +31,7 @@ impl Message {
 	}
 }
 
-#[derive(Debug, Clone, WguiModel, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, WguiModel)]
 pub struct Channel {
 	id: u32,
 	name: String,
@@ -62,7 +62,7 @@ impl Channel {
 	}
 }
 
-#[derive(Debug, Clone, WguiModel, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, WguiModel)]
 pub struct DirectMessage {
 	id: u32,
 	name: String,
@@ -81,7 +81,7 @@ impl HasId for DirectMessage {
 	}
 }
 
-#[derive(Debug, Clone, WguiModel, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, WguiModel)]
 pub struct User {
 	name: String,
 	password: String,

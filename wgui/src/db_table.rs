@@ -3,6 +3,8 @@ use crate::table::Table;
 use crate::wui::runtime::{WdbModel, WdbSchema};
 #[cfg(feature = "sqlite")]
 use crate::{SQLLiteDB, SqliteTable};
+#[cfg(feature = "sqlite")]
+use std::path::{Path, PathBuf};
 
 pub struct DbTable<T> {
 	#[cfg(feature = "sqlite")]
@@ -16,6 +18,18 @@ pub struct Db<S: WdbSchema> {
 	sqlite: SQLLiteDB<S>,
 	_schema: std::marker::PhantomData<S>,
 }
+
+#[cfg(feature = "sqlite")]
+pub trait DbSerdeBounds: serde::Serialize + serde::de::DeserializeOwned {}
+
+#[cfg(feature = "sqlite")]
+impl<T> DbSerdeBounds for T where T: serde::Serialize + serde::de::DeserializeOwned {}
+
+#[cfg(not(feature = "sqlite"))]
+pub trait DbSerdeBounds {}
+
+#[cfg(not(feature = "sqlite"))]
+impl<T> DbSerdeBounds for T {}
 
 impl<T> std::fmt::Debug for DbTable<T> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -55,7 +69,7 @@ impl<T> DbTable<T> {
 
 	pub fn snapshot(&self) -> Vec<T>
 	where
-		T: WdbModel + Clone + serde::Serialize + serde::de::DeserializeOwned,
+		T: WdbModel + Clone + DbSerdeBounds,
 	{
 		#[cfg(feature = "sqlite")]
 		{
@@ -69,7 +83,7 @@ impl<T> DbTable<T> {
 
 	pub fn replace(&self, rows: Vec<T>)
 	where
-		T: WdbModel + Clone + serde::Serialize + serde::de::DeserializeOwned,
+		T: WdbModel + Clone + DbSerdeBounds,
 	{
 		#[cfg(feature = "sqlite")]
 		{
@@ -85,7 +99,7 @@ impl<T> DbTable<T> {
 
 	pub async fn insert(&self, row: T)
 	where
-		T: WdbModel + Clone + serde::Serialize + serde::de::DeserializeOwned,
+		T: WdbModel + Clone + DbSerdeBounds,
 	{
 		#[cfg(feature = "sqlite")]
 		{
@@ -100,7 +114,7 @@ impl<T> DbTable<T> {
 
 impl<T> DbTable<T>
 where
-	T: WdbModel + crate::HasId + Clone + serde::Serialize + serde::de::DeserializeOwned,
+	T: WdbModel + crate::HasId + Clone + DbSerdeBounds,
 {
 	pub fn next_id(&self) -> u32 {
 		#[cfg(feature = "sqlite")]
@@ -164,7 +178,7 @@ impl<S: WdbSchema> Db<S> {
 
 	pub fn table<T>(&self) -> DbTable<T>
 	where
-		T: WdbModel + Clone + serde::Serialize + serde::de::DeserializeOwned,
+		T: WdbModel + Clone + DbSerdeBounds,
 	{
 		#[cfg(feature = "sqlite")]
 		{
@@ -180,13 +194,18 @@ impl<S: WdbSchema> Db<S> {
 
 	pub fn table_with_ids<T>(&self, rows: Vec<T>) -> DbTable<T>
 	where
-		T: WdbModel + crate::HasId + Clone + serde::Serialize + serde::de::DeserializeOwned,
+		T: WdbModel + crate::HasId + Clone + DbSerdeBounds,
 	{
 		#[cfg(feature = "sqlite")]
 		{
 			let table =
 				DbTable::from_sqlite(self.sqlite.table::<T>().expect("create/open sqlite table"));
-			if table.snapshot().is_empty() {
+			if table
+				.inner
+				.row_count_sync()
+				.expect("count sqlite table rows failed")
+				== 0
+			{
 				table.replace(rows);
 			}
 			return table;
@@ -195,5 +214,19 @@ impl<S: WdbSchema> Db<S> {
 		{
 			DbTable::with_ids(rows)
 		}
+	}
+
+	#[cfg(feature = "sqlite")]
+	pub fn migration_sql_for_path<P: AsRef<Path>>(db_path: P) -> anyhow::Result<Option<String>> {
+		crate::schema_diff_sql::<S, _>(db_path)
+	}
+
+	#[cfg(feature = "sqlite")]
+	pub fn create_migration_for_path<P: AsRef<Path>, Q: AsRef<Path>>(
+		db_path: P,
+		name: &str,
+		dir: Q,
+	) -> anyhow::Result<Option<PathBuf>> {
+		crate::write_schema_migration::<S, _, _>(db_path, name, dir)
 	}
 }

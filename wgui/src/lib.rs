@@ -37,7 +37,10 @@ pub use db_table::{Db, DbTable};
 pub use dist::*;
 pub use gui::*;
 #[cfg(feature = "sqlite")]
-pub use sqlite::{SQLLiteDB, SQLiteDB, SqliteDb, SqliteTable};
+pub use sqlite::{
+	default_db_path_for_schema, schema_diff_sql, write_schema_migration, SQLLiteDB, SQLiteDB,
+	SchemaMigrations, SqliteDb, SqliteTable,
+};
 pub use table::{HasId, Table};
 pub use types::*;
 #[cfg(feature = "hyper")]
