@@ -64,12 +64,30 @@ pub struct User {
 	pub password: String,
 }
 
+#[derive(Debug, Clone, WguiModel, serde::Serialize, serde::Deserialize)]
+pub struct Session {
+	pub id: u32,
+	pub session_key: String,
+	pub user_name: String,
+}
+
+impl HasId for Session {
+	fn id(&self) -> u32 {
+		self.id
+	}
+
+	fn set_id(&mut self, id: u32) {
+		self.id = id;
+	}
+}
+
 #[derive(Debug, Wdb)]
 pub struct PuppyDB {
 	pub messages: DbTable<Message>,
 	pub channels: DbTable<Channel>,
 	pub direct_messages: DbTable<DirectMessage>,
 	pub users: DbTable<User>,
+	pub sessions: DbTable<Session>,
 }
 
 impl PuppyDB {
@@ -80,6 +98,7 @@ impl PuppyDB {
 			channels: db.table(),
 			direct_messages: db.table(),
 			users: db.table(),
+			sessions: db.table(),
 		}
 	}
 }

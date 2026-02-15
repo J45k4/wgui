@@ -33,3 +33,9 @@ model User {
   password: String
   messages: Message[] @relation(author)
 }
+
+model Session {
+  id: Int @id
+  session_key: String
+  user_name: String
+}

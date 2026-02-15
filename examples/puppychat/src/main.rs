@@ -5,7 +5,7 @@ mod components;
 mod context;
 mod db;
 
-pub use db::{Channel, DirectMessage, Message, PuppyDB as PuppyDb, User};
+pub use db::{Channel, DirectMessage, Message, PuppyDB as PuppyDb, Session, User};
 
 #[derive(Debug, Clone)]
 pub struct SessionState {

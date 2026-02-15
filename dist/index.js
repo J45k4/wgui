@@ -1670,6 +1670,7 @@ class MessageSender {
 var connectWebsocket = (args) => {
   let ws;
   const sessionStorageKey = "wgui.sid";
+  let inMemorySid;
   const sender = new MessageSender((msgs) => {
     if (!ws) {
       return;
@@ -1677,12 +1678,26 @@ var connectWebsocket = (args) => {
     ws.send(JSON.stringify(msgs));
   });
   const getSessionId = () => {
-    const existing = window.sessionStorage.getItem(sessionStorageKey);
-    if (existing) {
-      return existing;
+    try {
+      const existing = window.localStorage.getItem(sessionStorageKey);
+      if (existing) {
+        return existing;
+      }
+      const legacy = window.sessionStorage.getItem(sessionStorageKey);
+      if (legacy) {
+        window.localStorage.setItem(sessionStorageKey, legacy);
+        return legacy;
+      }
+    } catch (_) {}
+    if (inMemorySid) {
+      return inMemorySid;
     }
     const sid = (window.crypto?.randomUUID?.() ?? `sid-${Date.now()}-${Math.floor(Math.random() * 1e9)}`).replace(/[^a-zA-Z0-9_-]/g, "");
-    window.sessionStorage.setItem(sessionStorageKey, sid);
+    try {
+      window.localStorage.setItem(sessionStorageKey, sid);
+    } catch (_) {
+      inMemorySid = sid;
+    }
     return sid;
   };
   const createConnection = () => {

@@ -10,6 +10,7 @@ export const connectWebsocket = (args: {
 }) => {
     let ws: WebSocket | undefined
     const sessionStorageKey = "wgui.sid"
+    let inMemorySid: string | undefined
 
     const sender = new MessageSender((msgs: MessageToSrv[]) => {
         if (!ws) {
@@ -20,12 +21,27 @@ export const connectWebsocket = (args: {
     })
 
     const getSessionId = () => {
-        const existing = window.sessionStorage.getItem(sessionStorageKey)
-        if (existing) {
-            return existing
+        try {
+            const existing = window.localStorage.getItem(sessionStorageKey)
+            if (existing) {
+                return existing
+            }
+            // Backward-compat: migrate previous sid storage.
+            const legacy = window.sessionStorage.getItem(sessionStorageKey)
+            if (legacy) {
+                window.localStorage.setItem(sessionStorageKey, legacy)
+                return legacy
+            }
+        } catch (_) {}
+        if (inMemorySid) {
+            return inMemorySid
         }
         const sid = (window.crypto?.randomUUID?.() ?? `sid-${Date.now()}-${Math.floor(Math.random() * 1_000_000_000)}`).replace(/[^a-zA-Z0-9_-]/g, "")
-        window.sessionStorage.setItem(sessionStorageKey, sid)
+        try {
+            window.localStorage.setItem(sessionStorageKey, sid)
+        } catch (_) {
+            inMemorySid = sid
+        }
         return sid
     }
 

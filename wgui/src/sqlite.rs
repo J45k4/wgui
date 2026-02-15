@@ -11,7 +11,7 @@ use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -148,6 +148,14 @@ where
 {
 	let db = SqliteDb::open(db_path)?;
 	let conn = db.conn.lock().unwrap();
+	conn.execute(
+		"CREATE TABLE IF NOT EXISTS _wgui_migrations (\n\
+\tfilename TEXT PRIMARY KEY,\n\
+\tapplied_at INTEGER NOT NULL\n\
+)",
+		[],
+	)
+	.context("failed creating _wgui_migrations")?;
 	let dir = migrations_dir.as_ref();
 	if !dir.exists() {
 		return Ok(Vec::new());
@@ -351,7 +359,6 @@ impl<S: WdbSchema> SQLiteDB<S> {
 
 	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
 		let inner = SqliteDb::open(path)?;
-		inner.register_schema::<S>()?;
 		Ok(Self {
 			inner,
 			_schema: PhantomData,
@@ -360,7 +367,6 @@ impl<S: WdbSchema> SQLiteDB<S> {
 
 	pub fn in_memory() -> Result<Self> {
 		let inner = SqliteDb::in_memory()?;
-		inner.register_schema::<S>()?;
 		Ok(Self {
 			inner,
 			_schema: PhantomData,
@@ -379,20 +385,16 @@ impl<S: WdbSchema> SQLiteDB<S> {
 impl SqliteDb {
 	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
 		let conn = Connection::open(path).context("failed to open sqlite database")?;
-		let db = Self {
+		Ok(Self {
 			conn: Arc::new(Mutex::new(conn)),
-		};
-		db.ensure_migrations_table()?;
-		Ok(db)
+		})
 	}
 
 	pub fn in_memory() -> Result<Self> {
 		let conn = Connection::open_in_memory().context("failed to open in-memory sqlite db")?;
-		let db = Self {
+		Ok(Self {
 			conn: Arc::new(Mutex::new(conn)),
-		};
-		db.ensure_migrations_table()?;
-		Ok(db)
+		})
 	}
 
 	pub fn register_model<M: WdbModel>(&self) -> Result<()> {
@@ -416,64 +418,31 @@ impl SqliteDb {
 		})
 	}
 
-	fn ensure_migrations_table(&self) -> Result<()> {
-		let conn = self.conn.lock().unwrap();
-		conn.execute(
-			"CREATE TABLE IF NOT EXISTS _wgui_migrations (\n\
-\tfilename TEXT PRIMARY KEY,\n\
-\tapplied_at INTEGER NOT NULL\n\
-)",
-			[],
-		)
-		.context("failed to create _wgui_migrations table")?;
-		Ok(())
-	}
-
 	fn ensure_model_table(&self, schema: &WdbModelSchema) -> Result<()> {
 		let table = sql_identifier(schema.model)?;
 		let columns = model_columns(schema)?;
-		let create_suffix = columns
-			.iter()
-			.map(|(name, rust_type)| format!(", \"{}\" {}", name, sql_affinity(rust_type)))
-			.collect::<String>();
-		let create_sql = format!(
-			"CREATE TABLE IF NOT EXISTS \"{}\" (id INTEGER PRIMARY KEY AUTOINCREMENT{})",
-			table, create_suffix
-		);
-
 		let conn = self.conn.lock().unwrap();
-		conn.execute(&create_sql, [])
-			.with_context(|| format!("failed to create sqlite table {}", table))?;
-
-		let pragma = format!("PRAGMA table_info(\"{}\")", table);
-		let mut stmt = conn
-			.prepare(&pragma)
-			.with_context(|| format!("failed to inspect table {}", table))?;
-		let existing_iter = stmt
-			.query_map([], |row| row.get::<_, String>(1))
-			.with_context(|| format!("failed reading table info for {}", table))?;
-		let mut existing = HashSet::new();
-		for name in existing_iter {
-			existing
-				.insert(name.with_context(|| format!("failed parsing table info for {}", table))?);
+		if !table_exists(&conn, &table)? {
+			return Err(anyhow!(
+				"missing table `{}`; run `wgui migrate dev` to apply migrations",
+				table
+			));
 		}
-
-		for (name, rust_type) in &columns {
-			if existing.contains(name) {
-				continue;
+		let existing = table_columns(&conn, &table)?;
+		if !existing.contains_key("id") {
+			return Err(anyhow!(
+				"missing required column `id` on table `{}`; run migrations",
+				table
+			));
+		}
+		for (name, _) in &columns {
+			if !existing.contains_key(name) {
+				return Err(anyhow!(
+					"missing required column `{}.{}`; run `wgui migrate dev` to apply migrations",
+					table,
+					name
+				));
 			}
-			let alter = format!(
-				"ALTER TABLE \"{}\" ADD COLUMN \"{}\" {}",
-				table,
-				name,
-				sql_affinity(rust_type)
-			);
-			conn.execute(&alter, [])
-				.with_context(|| format!("failed migration add-column {}.{}", table, name))?;
-		}
-
-		if existing.contains("json") {
-			backfill_from_legacy_json(&conn, &table, schema, &columns)?;
 		}
 
 		Ok(())
@@ -1244,6 +1213,14 @@ mod tests {
 	#[tokio::test]
 	async fn sqlite_table_can_save_and_find() {
 		let db = SqliteDb::in_memory().expect("sqlite in-memory db");
+		{
+			let conn = db.conn.lock().unwrap();
+			conn.execute(
+				"CREATE TABLE \"SqliteTodo\" (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, done INTEGER)",
+				[],
+			)
+			.expect("create todo table");
+		}
 		let table = db.table::<SqliteTodo>().expect("todo table");
 
 		let saved = table
@@ -1262,7 +1239,37 @@ mod tests {
 	}
 
 	#[test]
-	fn migrations_table_is_created_by_sqlite_runtime() {
+	fn sqlite_runtime_errors_when_table_missing() {
+		let db = SqliteDb::in_memory().expect("sqlite db");
+		let err = db
+			.table::<SqliteTodo>()
+			.expect_err("missing table should error");
+		assert!(err
+			.to_string()
+			.contains("missing table `SqliteTodo`; run `wgui migrate dev`"));
+	}
+
+	#[test]
+	fn sqlite_runtime_errors_when_column_missing() {
+		let db = SqliteDb::in_memory().expect("sqlite db");
+		{
+			let conn = db.conn.lock().unwrap();
+			conn.execute(
+				"CREATE TABLE \"SqliteTodo\" (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT)",
+				[],
+			)
+			.expect("create legacy todo table");
+		}
+		let err = db
+			.table::<SqliteTodo>()
+			.expect_err("missing column should error");
+		assert!(err
+			.to_string()
+			.contains("missing required column `SqliteTodo.done`; run `wgui migrate dev`"));
+	}
+
+	#[test]
+	fn migrations_table_is_not_created_by_sqlite_runtime() {
 		let db = SqliteDb::in_memory().expect("sqlite db");
 		let conn = db.conn.lock().unwrap();
 		let found: Option<String> = conn
@@ -1273,7 +1280,7 @@ mod tests {
 			)
 			.optional()
 			.expect("query sqlite_master");
-		assert_eq!(found.as_deref(), Some("_wgui_migrations"));
+		assert_eq!(found, None);
 	}
 
 	struct SqliteTodoSchema;
@@ -1311,12 +1318,91 @@ mod tests {
 		let _ = fs::remove_file(db_path);
 	}
 
+	#[test]
+	fn apply_sqlite_migrations_creates_tables_and_records_rows() {
+		let db_path = temp_db_path("apply_sqlite_migrations_creates_tables");
+		let migrations_dir = temp_migrations_dir("apply_sqlite_migrations_creates_tables");
+		fs::write(
+			migrations_dir.join("0001_create_notes.sql"),
+			"CREATE TABLE \"notes\" (id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL);",
+		)
+		.expect("write migration");
+
+		let applied =
+			apply_sqlite_migrations(&db_path, &migrations_dir).expect("apply sqlite migrations");
+		assert_eq!(applied, vec!["0001_create_notes.sql".to_string()]);
+
+		let conn = Connection::open(&db_path).expect("open sqlite");
+		let notes_exists: Option<String> = conn
+			.query_row(
+				"SELECT name FROM sqlite_master WHERE type='table' AND name='notes'",
+				[],
+				|row| row.get(0),
+			)
+			.optional()
+			.expect("query notes table");
+		assert_eq!(notes_exists.as_deref(), Some("notes"));
+
+		let tracked: Option<String> = conn
+			.query_row(
+				"SELECT filename FROM _wgui_migrations WHERE filename='0001_create_notes.sql'",
+				[],
+				|row| row.get(0),
+			)
+			.optional()
+			.expect("query migration tracking");
+		assert_eq!(tracked.as_deref(), Some("0001_create_notes.sql"));
+
+		let _ = fs::remove_file(db_path);
+		let _ = fs::remove_dir_all(migrations_dir);
+	}
+
+	#[test]
+	fn apply_sqlite_migrations_is_idempotent() {
+		let db_path = temp_db_path("apply_sqlite_migrations_idempotent");
+		let migrations_dir = temp_migrations_dir("apply_sqlite_migrations_idempotent");
+		fs::write(
+			migrations_dir.join("0001_create_once.sql"),
+			"CREATE TABLE \"once\" (id INTEGER PRIMARY KEY AUTOINCREMENT);",
+		)
+		.expect("write migration");
+
+		let first = apply_sqlite_migrations(&db_path, &migrations_dir).expect("first apply");
+		assert_eq!(first, vec!["0001_create_once.sql".to_string()]);
+
+		let second = apply_sqlite_migrations(&db_path, &migrations_dir).expect("second apply");
+		assert!(second.is_empty(), "expected no migrations on second run");
+
+		let conn = Connection::open(&db_path).expect("open sqlite");
+		let count: i64 = conn
+			.query_row(
+				"SELECT COUNT(*) FROM _wgui_migrations WHERE filename='0001_create_once.sql'",
+				[],
+				|row| row.get(0),
+			)
+			.expect("count migration rows");
+		assert_eq!(count, 1);
+
+		let _ = fs::remove_file(db_path);
+		let _ = fs::remove_dir_all(migrations_dir);
+	}
+
 	fn temp_db_path(label: &str) -> PathBuf {
 		let ts = SystemTime::now()
 			.duration_since(UNIX_EPOCH)
 			.expect("clock")
 			.as_nanos();
 		std::env::temp_dir().join(format!("wgui_{label}_{ts}.db"))
+	}
+
+	fn temp_migrations_dir(label: &str) -> PathBuf {
+		let ts = SystemTime::now()
+			.duration_since(UNIX_EPOCH)
+			.expect("clock")
+			.as_nanos();
+		let dir = std::env::temp_dir().join(format!("wgui_{label}_{ts}_migrations"));
+		fs::create_dir_all(&dir).expect("create temp migrations dir");
+		dir
 	}
 
 	#[test]

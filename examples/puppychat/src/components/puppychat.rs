@@ -1,7 +1,7 @@
 use crate::context::SharedContext;
 use crate::{
 	Channel, ChannelView, ChatViewState, DirectMessage, DirectMessageView, Message, PuppyDb,
-	SessionState, User,
+	Session, SessionState, User,
 };
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -37,9 +37,23 @@ impl Puppychat {
 			.into_iter()
 			.next()
 			.map(|channel| (channel.id, channel.display_name));
-		sessions
-			.entry(key)
-			.or_insert_with(|| SessionState::new(default_channel))
+		let db = self.ctx.db();
+		let key_for_load = key.clone();
+		sessions.entry(key).or_insert_with(|| {
+			let mut state = SessionState::new(default_channel);
+			if let Some(row) = db
+				.sessions
+				.snapshot()
+				.into_iter()
+				.find(|session| session.session_key == key_for_load)
+			{
+				state.user_name = row.user_name.clone();
+				if !state.user_name.is_empty() {
+					Self::ensure_direct_entry(&db, &state.user_name);
+				}
+			}
+			state
+		})
 	}
 
 	fn message_scope(&self, session: &SessionState) -> (Option<u32>, Option<String>) {
@@ -95,6 +109,25 @@ impl Puppychat {
 			.snapshot()
 			.into_iter()
 			.find(|user| user.name == name)
+	}
+
+	async fn persist_auth_session(
+		db: &std::sync::Arc<PuppyDb>,
+		session_key: &str,
+		user_name: &str,
+	) {
+		let existing = db
+			.sessions
+			.snapshot()
+			.into_iter()
+			.find(|session| session.session_key == session_key);
+		let mut row = existing.unwrap_or(Session {
+			id: 0,
+			session_key: session_key.to_string(),
+			user_name: user_name.to_string(),
+		});
+		row.user_name = user_name.to_string();
+		db.sessions.save(row).await;
 	}
 }
 
@@ -195,6 +228,7 @@ impl Puppychat {
 	}
 
 	pub(crate) async fn login(&mut self) {
+		let session_key = self.session_key();
 		let (name, password) = {
 			let mut sessions = self.ctx.state.sessions.lock().unwrap();
 			let session = self.ensure_session_state(&mut sessions);
@@ -226,14 +260,18 @@ impl Puppychat {
 			}
 		}
 
-		let mut sessions = self.ctx.state.sessions.lock().unwrap();
-		let session = self.ensure_session_state(&mut sessions);
-		session.user_name = name;
-		let user_name = session.user_name.clone();
-		session.login_name.clear();
-		session.login_password.clear();
-		session.auth_error.clear();
+		let user_name = {
+			let mut sessions = self.ctx.state.sessions.lock().unwrap();
+			let session = self.ensure_session_state(&mut sessions);
+			session.user_name = name;
+			let user_name = session.user_name.clone();
+			session.login_name.clear();
+			session.login_password.clear();
+			session.auth_error.clear();
+			user_name
+		};
 		Self::ensure_direct_entry(self.ctx.db(), &user_name);
+		Self::persist_auth_session(&self.ctx.db, &session_key, &user_name).await;
 		self.ctx.pubsub().publish("rerender", ());
 	}
 
