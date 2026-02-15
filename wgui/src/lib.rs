@@ -40,9 +40,10 @@ pub use dist::*;
 pub use gui::*;
 #[cfg(feature = "sqlite")]
 pub use sqlite::{
-	default_db_path_for_schema, schema_diff_sql, schema_diff_sql_from_schema_file,
-	write_schema_migration, write_schema_migration_from_schema_file, SQLLiteDB, SQLiteDB,
-	SchemaMigrations, SqliteDb, SqliteTable,
+	apply_sqlite_migrations, configure_sqlite_env_for_project, default_db_path_for_schema,
+	schema_diff_sql, schema_diff_sql_from_schema_file, write_schema_migration,
+	write_schema_migration_from_schema_file, SQLLiteDB, SQLiteDB, SchemaMigrations, SqliteDb,
+	SqliteTable,
 };
 pub use table::{HasId, Table};
 pub use types::*;

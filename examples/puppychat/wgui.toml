@@ -1,0 +1,5 @@
+schema = "schema.wdb"
+out = "src/db.rs"
+db_name = "PuppyDB"
+migrations_dir = "migrations"
+env_file = ".env"

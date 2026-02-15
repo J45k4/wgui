@@ -1,13 +1,13 @@
 #[cfg(feature = "sqlite")]
 use std::collections::HashMap;
-#[cfg(feature = "sqlite")]
-use std::path::Path;
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 #[cfg(feature = "sqlite")]
 use rusqlite::{params, Connection, OptionalExtension};
+use serde::Deserialize;
 use wgui::{schema_diff::diff_schemas, wdb};
+
 #[cfg(feature = "sqlite")]
 use wgui::{schema_diff_sql_from_schema_file, write_schema_migration_from_schema_file};
 
@@ -29,6 +29,7 @@ enum TopCommand {
 		#[command(subcommand)]
 		command: MigrateCommand,
 	},
+	Generate(GenerateArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -53,21 +54,21 @@ struct NewArgs {
 
 #[derive(Args, Debug)]
 struct DiffArgs {
-	#[arg(long, default_value = "schema.wdb")]
-	schema: PathBuf,
-	#[arg(long, default_value = "wgui.db")]
-	db: PathBuf,
+	#[arg(long)]
+	schema: Option<PathBuf>,
+	#[arg(long)]
+	db: Option<PathBuf>,
 }
 
 #[derive(Args, Debug)]
 struct CreateArgs {
 	name: String,
-	#[arg(long, default_value = "schema.wdb")]
-	schema: PathBuf,
-	#[arg(long, default_value = "wgui.db")]
-	db: PathBuf,
-	#[arg(long, default_value = "migrations")]
-	dir: PathBuf,
+	#[arg(long)]
+	schema: Option<PathBuf>,
+	#[arg(long)]
+	db: Option<PathBuf>,
+	#[arg(long)]
+	dir: Option<PathBuf>,
 }
 
 #[derive(Args, Debug)]
@@ -82,8 +83,37 @@ struct CompareArgs {
 struct MigrateDevArgs {
 	#[arg(long)]
 	name: String,
+	#[arg(long)]
+	schema: Option<PathBuf>,
+	#[arg(long)]
+	migrations_dir: Option<PathBuf>,
+	#[arg(long)]
+	env_file: Option<PathBuf>,
 	#[arg(default_value = ".")]
 	project_dir: PathBuf,
+}
+
+#[derive(Args, Debug)]
+struct GenerateArgs {
+	#[arg(default_value = ".")]
+	project_dir: PathBuf,
+	#[arg(long)]
+	schema: Option<PathBuf>,
+	#[arg(long)]
+	out: Option<PathBuf>,
+	#[arg(long)]
+	db_name: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct WguiConfig {
+	schema: Option<PathBuf>,
+	db: Option<PathBuf>,
+	out: Option<PathBuf>,
+	db_name: Option<String>,
+	migrations_dir: Option<PathBuf>,
+	#[cfg(feature = "sqlite")]
+	env_file: Option<PathBuf>,
 }
 
 fn main() {
@@ -98,6 +128,7 @@ fn run() -> Result<(), String> {
 	match cli.command {
 		TopCommand::Migrations { command } => run_migrations(command),
 		TopCommand::Migrate { command } => run_migrate(command),
+		TopCommand::Generate(args) => run_generate(args),
 	}
 }
 
@@ -116,6 +147,74 @@ fn run_migrate(command: MigrateCommand) -> Result<(), String> {
 	}
 }
 
+fn run_generate(args: GenerateArgs) -> Result<(), String> {
+	let project_dir = resolve_project_dir(&args.project_dir)?;
+	let config = load_wgui_config(&project_dir)?;
+
+	let schema_path = resolve_path_with_default(
+		args.schema,
+		config.schema,
+		PathBuf::from("schema.wdb"),
+		&project_dir,
+	);
+	let out_path = resolve_path_with_default(
+		args.out,
+		config.out,
+		PathBuf::from("src/db.rs"),
+		&project_dir,
+	);
+	let db_name = args
+		.db_name
+		.or(config.db_name)
+		.unwrap_or_else(|| "AppDb".to_string());
+
+	let parsed =
+		wdb::parse_schema_file(&schema_path).map_err(|e| format!("failed reading schema: {e}"))?;
+	let generated = generate_db_rs(&parsed, &db_name)?;
+
+	if let Some(parent) = out_path.parent() {
+		std::fs::create_dir_all(parent)
+			.map_err(|e| format!("failed creating directory {}: {e}", parent.display()))?;
+	}
+	std::fs::write(&out_path, generated)
+		.map_err(|e| format!("failed writing {}: {e}", out_path.display()))?;
+	println!("generated {}", out_path.display());
+	Ok(())
+}
+
+fn resolve_project_dir(project_dir: &std::path::Path) -> Result<PathBuf, String> {
+	std::fs::canonicalize(project_dir).map_err(|e| {
+		format!(
+			"failed to resolve project dir {}: {e}",
+			project_dir.display()
+		)
+	})
+}
+
+fn load_wgui_config(project_dir: &std::path::Path) -> Result<WguiConfig, String> {
+	let path = project_dir.join("wgui.toml");
+	if !path.exists() {
+		return Ok(WguiConfig::default());
+	}
+	let raw = std::fs::read_to_string(&path)
+		.map_err(|e| format!("failed reading {}: {e}", path.display()))?;
+	toml::from_str(&raw).map_err(|e| format!("failed parsing {}: {e}", path.display()))
+}
+
+fn resolve_path_with_default(
+	cli: Option<PathBuf>,
+	config: Option<PathBuf>,
+	default: PathBuf,
+	base: &std::path::Path,
+) -> PathBuf {
+	let raw = cli.or(config).unwrap_or(default);
+	if raw.is_absolute() {
+		raw
+	} else {
+		base.join(raw)
+	}
+}
+
 fn create_blank_migration(args: NewArgs) -> Result<(), String> {
 	let ts = unix_ts()?;
 	let filename = format!("{}_{}.sql", ts, normalize_name(&args.name)?);
@@ -128,14 +227,25 @@ fn create_blank_migration(args: NewArgs) -> Result<(), String> {
 }
 
 fn diff_migration(args: DiffArgs) -> Result<(), String> {
+	let project_dir = resolve_project_dir(std::path::Path::new("."))?;
+	let config = load_wgui_config(&project_dir)?;
+	let schema_path = resolve_path_with_default(
+		args.schema,
+		config.schema,
+		PathBuf::from("schema.wdb"),
+		&project_dir,
+	);
+	let db_path =
+		resolve_path_with_default(args.db, config.db, PathBuf::from("wgui.db"), &project_dir);
+
 	#[cfg(not(feature = "sqlite"))]
 	{
-		let _ = args;
+		let _ = (&schema_path, &db_path);
 		Err("`wgui migrations diff` requires the `sqlite` feature".to_string())
 	}
 	#[cfg(feature = "sqlite")]
 	{
-		let sql = schema_diff_sql_from_schema_file(&args.schema, &args.db)
+		let sql = schema_diff_sql_from_schema_file(&schema_path, &db_path)
 			.map_err(|e| format!("failed generating schema diff: {e}"))?;
 		if let Some(sql) = sql {
 			println!("{sql}");
@@ -147,16 +257,37 @@ fn diff_migration(args: DiffArgs) -> Result<(), String> {
 }
 
 fn create_schema_migration(args: CreateArgs) -> Result<(), String> {
+	let project_dir = resolve_project_dir(std::path::Path::new("."))?;
+	let config = load_wgui_config(&project_dir)?;
+	let schema_path = resolve_path_with_default(
+		args.schema,
+		config.schema,
+		PathBuf::from("schema.wdb"),
+		&project_dir,
+	);
+	let db_path =
+		resolve_path_with_default(args.db, config.db, PathBuf::from("wgui.db"), &project_dir);
+	let migrations_dir = resolve_path_with_default(
+		args.dir,
+		config.migrations_dir,
+		PathBuf::from("migrations"),
+		&project_dir,
+	);
+
 	#[cfg(not(feature = "sqlite"))]
 	{
-		let _ = args;
+		let _ = (&schema_path, &db_path, &migrations_dir);
 		Err("`wgui migrations create` requires the `sqlite` feature".to_string())
 	}
 	#[cfg(feature = "sqlite")]
 	{
-		let path =
-			write_schema_migration_from_schema_file(&args.schema, &args.db, &args.name, &args.dir)
-				.map_err(|e| format!("failed creating migration: {e}"))?;
+		let path = write_schema_migration_from_schema_file(
+			&schema_path,
+			&db_path,
+			&args.name,
+			&migrations_dir,
+		)
+		.map_err(|e| format!("failed creating migration: {e}"))?;
 		if let Some(path) = path {
 			println!("{}", path.display());
 		} else {
@@ -205,15 +336,26 @@ fn migrate_dev(args: MigrateDevArgs) -> Result<(), String> {
 			return Err("migration name cannot be empty".to_string());
 		}
 
-		let project_dir = std::fs::canonicalize(&args.project_dir).map_err(|e| {
-			format!(
-				"failed to resolve project dir {}: {e}",
-				args.project_dir.display()
-			)
-		})?;
-		let env_path = project_dir.join(".env");
-		let schema_path = project_dir.join("schema.wdb");
-		let migrations_dir = project_dir.join("migrations");
+		let project_dir = resolve_project_dir(&args.project_dir)?;
+		let config = load_wgui_config(&project_dir)?;
+		let env_path = resolve_path_with_default(
+			args.env_file,
+			config.env_file,
+			PathBuf::from(".env"),
+			&project_dir,
+		);
+		let schema_path = resolve_path_with_default(
+			args.schema,
+			config.schema,
+			PathBuf::from("schema.wdb"),
+			&project_dir,
+		);
+		let migrations_dir = resolve_path_with_default(
+			args.migrations_dir,
+			config.migrations_dir,
+			PathBuf::from("migrations"),
+			&project_dir,
+		);
 
 		if !schema_path.exists() {
 			return Err(format!("schema file not found: {}", schema_path.display()));
@@ -254,11 +396,9 @@ fn migrate_dev(args: MigrateDevArgs) -> Result<(), String> {
 			if is_migration_applied(&conn, &migration)? {
 				continue;
 			}
-			let sql = std::fs::read_to_string(migrations_dir.join(&migration)).map_err(|e| {
-				format!(
-					"failed reading migration {}: {e}",
-					migrations_dir.join(&migration).display()
-				)
+			let migration_path = migrations_dir.join(&migration);
+			let sql = std::fs::read_to_string(&migration_path).map_err(|e| {
+				format!("failed reading migration {}: {e}", migration_path.display())
 			})?;
 			conn.execute_batch(&sql)
 				.map_err(|e| format!("failed applying migration {}: {e}", migration))?;
@@ -333,8 +473,118 @@ fn normalize_name(raw: &str) -> Result<String, String> {
 	Ok(out)
 }
 
+fn generate_db_rs(schema: &wgui::wdb::SchemaAst, db_name: &str) -> Result<String, String> {
+	if db_name.trim().is_empty() {
+		return Err("db_name cannot be empty".to_string());
+	}
+	let mut out = String::new();
+	out.push_str("use wgui::{Db, DbTable, HasId, Wdb, WguiModel};\n\n");
+
+	let mut table_inits: Vec<(String, String)> = Vec::new();
+	let mut db_fields: Vec<(String, String)> = Vec::new();
+
+	for model in &schema.models {
+		let model_name = &model.name;
+		let struct_fields = model
+			.fields
+			.iter()
+			.filter(|f| !f.attributes.iter().any(|a| a.name == "relation"))
+			.collect::<Vec<_>>();
+
+		out.push_str("#[derive(Debug, Clone, WguiModel, serde::Serialize, serde::Deserialize)]\n");
+		out.push_str(&format!("pub struct {} {{\n", model_name));
+		for field in &struct_fields {
+			let ty = wdb_type_to_rust(&field.ty);
+			out.push_str(&format!("\tpub {}: {},\n", field.name, ty));
+		}
+		out.push_str("}\n\n");
+
+		let has_id_u32 = struct_fields
+			.iter()
+			.find(|f| f.name == "id")
+			.map(|f| f.ty.name == "Int" || f.ty.name == "u32")
+			.unwrap_or(false);
+		if has_id_u32 {
+			out.push_str(&format!("impl HasId for {} {{\n", model_name));
+			out.push_str("\tfn id(&self) -> u32 {\n\t\tself.id\n\t}\n\n");
+			out.push_str("\tfn set_id(&mut self, id: u32) {\n\t\tself.id = id;\n\t}\n");
+			out.push_str("}\n\n");
+		}
+
+		let table_field = pluralize(&to_snake_case(model_name));
+		db_fields.push((table_field.clone(), model_name.clone()));
+		let init = format!("{}: db.table()", table_field);
+		table_inits.push((table_field, init));
+	}
+
+	out.push_str("#[derive(Debug, Wdb)]\n");
+	out.push_str(&format!("pub struct {} {{\n", db_name));
+	for (field_name, model_name) in &db_fields {
+		out.push_str(&format!("\tpub {}: DbTable<{}>,\n", field_name, model_name));
+	}
+	out.push_str("}\n\n");
+
+	out.push_str(&format!("impl {} {{\n", db_name));
+	out.push_str("\tpub fn new() -> Self {\n");
+	out.push_str(&format!("\t\tlet db = Db::<{}>::new();\n", db_name));
+	out.push_str("\t\tSelf {\n");
+	for (_, init) in &table_inits {
+		out.push_str(&format!("\t\t\t{},\n", init));
+	}
+	out.push_str("\t\t}\n");
+	out.push_str("\t}\n");
+	out.push_str("}\n");
+
+	Ok(out)
+}
+
+fn wdb_type_to_rust(ty: &wgui::wdb::TypeAst) -> String {
+	let base = match ty.name.as_str() {
+		"Bool" => "bool".to_string(),
+		"String" => "String".to_string(),
+		"Int" => "u32".to_string(),
+		"BigInt" => "i64".to_string(),
+		"Float" | "Decimal" => "f64".to_string(),
+		"UUID" | "DateTime" | "Json" | "Bytes" => "String".to_string(),
+		other => other.to_string(),
+	};
+	let with_list = if ty.is_list {
+		format!("Vec<{}>", base)
+	} else {
+		base
+	};
+	if ty.is_optional {
+		format!("Option<{}>", with_list)
+	} else {
+		with_list
+	}
+}
+
+fn to_snake_case(input: &str) -> String {
+	let mut out = String::new();
+	for (idx, ch) in input.chars().enumerate() {
+		if ch.is_ascii_uppercase() {
+			if idx > 0 {
+				out.push('_');
+			}
+			out.push(ch.to_ascii_lowercase());
+		} else {
+			out.push(ch);
+		}
+	}
+	out
+}
+
+fn pluralize(singular: &str) -> String {
+	if singular.ends_with('s') {
+		format!("{}es", singular)
+	} else {
+		format!("{}s", singular)
+	}
+}
+
 #[cfg(feature = "sqlite")]
-fn read_env_file(path: &Path) -> Result<HashMap<String, String>, String> {
+fn read_env_file(path: &std::path::Path) -> Result<HashMap<String, String>, String> {
 	let raw = std::fs::read_to_string(path)
 		.map_err(|e| format!("failed reading env file {}: {e}", path.display()))?;
 	let mut out = HashMap::new();
@@ -359,7 +609,7 @@ fn read_env_file(path: &Path) -> Result<HashMap<String, String>, String> {
 }
 
 #[cfg(feature = "sqlite")]
-fn resolve_database_path(url: &str, project_dir: &Path) -> Result<PathBuf, String> {
+fn resolve_database_path(url: &str, project_dir: &std::path::Path) -> Result<PathBuf, String> {
 	if let Some(rest) = url.strip_prefix("sqlite://") {
 		if rest.starts_with('/') {
 			return Ok(PathBuf::from(rest));
@@ -387,13 +637,13 @@ fn resolve_database_path(url: &str, project_dir: &Path) -> Result<PathBuf, Strin
 #[cfg(feature = "sqlite")]
 fn ensure_applied_migrations_table(conn: &Connection) -> Result<(), String> {
 	conn.execute(
-		"CREATE TABLE IF NOT EXISTS _wgui_applied_migrations (\n\
+		"CREATE TABLE IF NOT EXISTS _wgui_migrations (\n\
 \tfilename TEXT PRIMARY KEY,\n\
 \tapplied_at INTEGER NOT NULL\n\
 )",
 		[],
 	)
-	.map_err(|e| format!("failed creating _wgui_applied_migrations: {e}"))?;
+	.map_err(|e| format!("failed creating _wgui_migrations: {e}"))?;
 	Ok(())
 }
 
@@ -401,7 +651,7 @@ fn ensure_applied_migrations_table(conn: &Connection) -> Result<(), String> {
 fn is_migration_applied(conn: &Connection, filename: &str) -> Result<bool, String> {
 	let found: Option<String> = conn
 		.query_row(
-			"SELECT filename FROM _wgui_applied_migrations WHERE filename = ?1",
+			"SELECT filename FROM _wgui_migrations WHERE filename = ?1",
 			params![filename],
 			|row| row.get(0),
 		)
@@ -413,7 +663,7 @@ fn is_migration_applied(conn: &Connection, filename: &str) -> Result<bool, Strin
 #[cfg(feature = "sqlite")]
 fn mark_migration_applied(conn: &Connection, filename: &str) -> Result<(), String> {
 	conn.execute(
-		"INSERT OR REPLACE INTO _wgui_applied_migrations (filename, applied_at) VALUES (?1, unixepoch())",
+		"INSERT OR REPLACE INTO _wgui_migrations (filename, applied_at) VALUES (?1, unixepoch())",
 		params![filename],
 	)
 	.map_err(|e| format!("failed marking migration {filename} as applied: {e}"))?;
@@ -421,7 +671,7 @@ fn mark_migration_applied(conn: &Connection, filename: &str) -> Result<(), Strin
 }
 
 #[cfg(feature = "sqlite")]
-fn list_sql_migrations(dir: &Path) -> Result<Vec<String>, String> {
+fn list_sql_migrations(dir: &std::path::Path) -> Result<Vec<String>, String> {
 	if !dir.exists() {
 		return Ok(Vec::new());
 	}

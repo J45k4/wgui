@@ -141,6 +141,146 @@ where
 	Ok(Some(path))
 }
 
+pub fn apply_sqlite_migrations<P, Q>(db_path: P, migrations_dir: Q) -> Result<Vec<String>>
+where
+	P: AsRef<Path>,
+	Q: AsRef<Path>,
+{
+	let db = SqliteDb::open(db_path)?;
+	let conn = db.conn.lock().unwrap();
+	let dir = migrations_dir.as_ref();
+	if !dir.exists() {
+		return Ok(Vec::new());
+	}
+
+	let mut files = Vec::new();
+	for entry in
+		std::fs::read_dir(dir).with_context(|| format!("failed reading {}", dir.display()))?
+	{
+		let entry = entry.context("failed reading migration dir entry")?;
+		let path = entry.path();
+		if path.extension().and_then(|s| s.to_str()) != Some("sql") {
+			continue;
+		}
+		let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+			continue;
+		};
+		files.push(name.to_string());
+	}
+	files.sort();
+
+	let mut applied = Vec::new();
+	for file in files {
+		let already: Option<String> = conn
+			.query_row(
+				"SELECT filename FROM _wgui_migrations WHERE filename = ?1",
+				params![file],
+				|row| row.get(0),
+			)
+			.optional()
+			.with_context(|| format!("failed checking migration state for {}", file))?;
+		if already.is_some() {
+			continue;
+		}
+
+		let migration_path = dir.join(&file);
+		let sql = std::fs::read_to_string(&migration_path)
+			.with_context(|| format!("failed reading {}", migration_path.display()))?;
+		conn.execute_batch(&sql)
+			.with_context(|| format!("failed applying {}", migration_path.display()))?;
+		conn.execute(
+			"INSERT OR REPLACE INTO _wgui_migrations (filename, applied_at) VALUES (?1, unixepoch())",
+			params![file],
+		)
+		.with_context(|| format!("failed recording migration {}", migration_path.display()))?;
+		applied.push(file);
+	}
+
+	Ok(applied)
+}
+
+pub fn configure_sqlite_env_for_project<P: AsRef<Path>>(project_dir: P) {
+	if std::env::var("WGUI_DATABASE_URL")
+		.ok()
+		.filter(|v| !v.trim().is_empty())
+		.is_some()
+		|| std::env::var("DATABASE_URL")
+			.ok()
+			.filter(|v| !v.trim().is_empty())
+			.is_some()
+	{
+		return;
+	}
+
+	let project_dir = project_dir.as_ref();
+	let env_path = project_dir.join(".env");
+	let Ok(raw) = std::fs::read_to_string(&env_path) else {
+		if project_dir.join("wgui.toml").exists() {
+			let default_path = project_dir.join("wgui.db");
+			let value = format!("sqlite://{}", default_path.display());
+			// Safe here: expected to run during startup before worker threads.
+			unsafe { std::env::set_var("DATABASE_URL", value) };
+		}
+		return;
+	};
+
+	for line in raw.lines() {
+		let line = line.trim();
+		if line.is_empty() || line.starts_with('#') {
+			continue;
+		}
+		let Some((k, v)) = line.split_once('=') else {
+			continue;
+		};
+		let key = k.trim();
+		if key != "DATABASE_URL" && key != "WGUI_DATABASE_URL" {
+			continue;
+		}
+		let mut value = v.trim().to_string();
+		if (value.starts_with('"') && value.ends_with('"'))
+			|| (value.starts_with('\'') && value.ends_with('\''))
+		{
+			value = value[1..value.len() - 1].to_string();
+		}
+		if value.is_empty() {
+			continue;
+		}
+		let value = normalize_project_local_db_url(&value, project_dir);
+		// Safe here: expected to run during startup before worker threads.
+		unsafe { std::env::set_var(key, value) };
+		break;
+	}
+}
+
+fn normalize_project_local_db_url(value: &str, project_dir: &Path) -> String {
+	if let Some(rest) = value.strip_prefix("sqlite://") {
+		let path = PathBuf::from(rest);
+		if path.is_absolute() {
+			return value.to_string();
+		}
+		return format!("sqlite://{}", project_dir.join(path).display());
+	}
+	if let Some(rest) = value.strip_prefix("sqlite:") {
+		if rest == ":memory:" {
+			return value.to_string();
+		}
+		let path = PathBuf::from(rest);
+		if path.is_absolute() {
+			return value.to_string();
+		}
+		return format!("sqlite://{}", project_dir.join(path).display());
+	}
+	if value.contains("://") {
+		return value.to_string();
+	}
+	let path = PathBuf::from(value);
+	if path.is_absolute() {
+		format!("sqlite://{}", path.display())
+	} else {
+		format!("sqlite://{}", project_dir.join(path).display())
+	}
+}
+
 fn load_dynamic_schema<P: AsRef<Path>>(schema_path: P) -> Result<DiffSchema> {
 	let schema_path = schema_path.as_ref();
 	let parsed = crate::wdb::parse_schema_file(schema_path)?;
@@ -200,7 +340,12 @@ fn map_wdb_type_to_rust(ty: &TypeAst) -> String {
 
 impl<S: WdbSchema> SQLiteDB<S> {
 	pub fn new() -> Result<Self> {
-		let path = default_db_path::<S>();
+		let path = runtime_db_path::<S>()?;
+		let migrations_dir = path
+			.parent()
+			.map(|p| p.join("migrations"))
+			.unwrap_or_else(|| PathBuf::from("migrations"));
+		apply_sqlite_migrations(&path, migrations_dir)?;
 		Self::open(path)
 	}
 
@@ -234,16 +379,20 @@ impl<S: WdbSchema> SQLiteDB<S> {
 impl SqliteDb {
 	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
 		let conn = Connection::open(path).context("failed to open sqlite database")?;
-		Ok(Self {
+		let db = Self {
 			conn: Arc::new(Mutex::new(conn)),
-		})
+		};
+		db.ensure_migrations_table()?;
+		Ok(db)
 	}
 
 	pub fn in_memory() -> Result<Self> {
 		let conn = Connection::open_in_memory().context("failed to open in-memory sqlite db")?;
-		Ok(Self {
+		let db = Self {
 			conn: Arc::new(Mutex::new(conn)),
-		})
+		};
+		db.ensure_migrations_table()?;
+		Ok(db)
 	}
 
 	pub fn register_model<M: WdbModel>(&self) -> Result<()> {
@@ -265,6 +414,19 @@ impl SqliteDb {
 			table_name: sql_identifier(schema.model)?,
 			_marker: PhantomData,
 		})
+	}
+
+	fn ensure_migrations_table(&self) -> Result<()> {
+		let conn = self.conn.lock().unwrap();
+		conn.execute(
+			"CREATE TABLE IF NOT EXISTS _wgui_migrations (\n\
+\tfilename TEXT PRIMARY KEY,\n\
+\tapplied_at INTEGER NOT NULL\n\
+)",
+			[],
+		)
+		.context("failed to create _wgui_migrations table")?;
+		Ok(())
 	}
 
 	fn ensure_model_table(&self, schema: &WdbModelSchema) -> Result<()> {
@@ -966,6 +1128,70 @@ fn default_db_path<S>() -> PathBuf {
 	PathBuf::from(format!("{out}.db"))
 }
 
+fn runtime_db_path<S>() -> Result<PathBuf> {
+	if let Some(url) = std::env::var("WGUI_DATABASE_URL")
+		.ok()
+		.filter(|value| !value.trim().is_empty())
+		.or_else(|| {
+			std::env::var("DATABASE_URL")
+				.ok()
+				.filter(|value| !value.trim().is_empty())
+		})
+		.or_else(|| {
+			read_dotenv_value("WGUI_DATABASE_URL").or_else(|| read_dotenv_value("DATABASE_URL"))
+		}) {
+		return database_url_to_sqlite_path(&url);
+	}
+	Ok(default_db_path::<S>())
+}
+
+fn read_dotenv_value(key: &str) -> Option<String> {
+	let raw = std::fs::read_to_string(".env").ok()?;
+	for line in raw.lines() {
+		let line = line.trim();
+		if line.is_empty() || line.starts_with('#') {
+			continue;
+		}
+		let Some((k, v)) = line.split_once('=') else {
+			continue;
+		};
+		if k.trim() != key {
+			continue;
+		}
+		let mut value = v.trim().to_string();
+		if (value.starts_with('"') && value.ends_with('"'))
+			|| (value.starts_with('\'') && value.ends_with('\''))
+		{
+			value = value[1..value.len() - 1].to_string();
+		}
+		if !value.is_empty() {
+			return Some(value);
+		}
+	}
+	None
+}
+
+fn database_url_to_sqlite_path(url: &str) -> Result<PathBuf> {
+	if let Some(rest) = url.strip_prefix("sqlite://") {
+		return Ok(PathBuf::from(rest));
+	}
+	if let Some(rest) = url.strip_prefix("sqlite:") {
+		if rest == ":memory:" {
+			return Err(anyhow!(
+				"sqlite :memory: is not supported for wgui runtime database"
+			));
+		}
+		return Ok(PathBuf::from(rest));
+	}
+	if url.contains("://") {
+		let scheme = url.split("://").next().unwrap_or("unknown");
+		return Err(anyhow!(
+			"database scheme `{scheme}` is not supported by sqlite runtime"
+		));
+	}
+	Ok(PathBuf::from(url))
+}
+
 pub fn default_db_path_for_schema<S: WdbSchema>() -> PathBuf {
 	default_db_path::<S>()
 }
@@ -1036,7 +1262,7 @@ mod tests {
 	}
 
 	#[test]
-	fn migrations_table_is_not_created_by_sqlite_runtime() {
+	fn migrations_table_is_created_by_sqlite_runtime() {
 		let db = SqliteDb::in_memory().expect("sqlite db");
 		let conn = db.conn.lock().unwrap();
 		let found: Option<String> = conn
@@ -1047,7 +1273,7 @@ mod tests {
 			)
 			.optional()
 			.expect("query sqlite_master");
-		assert_eq!(found, None);
+		assert_eq!(found.as_deref(), Some("_wgui_migrations"));
 	}
 
 	struct SqliteTodoSchema;
@@ -1091,5 +1317,19 @@ mod tests {
 			.expect("clock")
 			.as_nanos();
 		std::env::temp_dir().join(format!("wgui_{label}_{ts}.db"))
+	}
+
+	#[test]
+	fn sqlite_database_url_resolves_to_path() {
+		let path = database_url_to_sqlite_path("sqlite://puppychat.db").expect("resolve");
+		assert_eq!(path, PathBuf::from("puppychat.db"));
+	}
+
+	#[test]
+	fn non_sqlite_database_url_is_rejected() {
+		let err = database_url_to_sqlite_path("postgres://localhost/mydb").expect_err("invalid");
+		assert!(err
+			.to_string()
+			.contains("database scheme `postgres` is not supported"));
 	}
 }

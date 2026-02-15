@@ -1,5 +1,8 @@
 use crate::context::SharedContext;
-use crate::{Channel, ChatViewState, Message, PuppyDb, SessionState, User};
+use crate::{
+	Channel, ChannelView, ChatViewState, DirectMessage, DirectMessageView, Message, PuppyDb,
+	SessionState, User,
+};
 use async_trait::async_trait;
 use std::sync::Arc;
 use wgui::wgui_controller;
@@ -39,6 +42,19 @@ impl Puppychat {
 			.or_insert_with(|| SessionState::new(default_channel))
 	}
 
+	fn message_scope(&self, session: &SessionState) -> (Option<u32>, Option<String>) {
+		if session.active_kind == "channel" {
+			return (Some(session.active_id), None);
+		}
+		if session.active_kind == "dm" {
+			return (
+				None,
+				Self::dm_thread_key_for_session(self.ctx.db(), session),
+			);
+		}
+		(None, None)
+	}
+
 	fn dm_thread_key(left: &str, right: &str) -> String {
 		if left <= right {
 			format!("{}|{}", left, right)
@@ -47,14 +63,38 @@ impl Puppychat {
 		}
 	}
 
-	fn message_scope(&self, session: &SessionState) -> (Option<u32>, Option<String>) {
-		if session.active_kind == "channel" {
-			return (Some(session.active_id), None);
+	fn ensure_direct_entry(db: &PuppyDb, user_name: &str) {
+		let mut directs = db.direct_messages.snapshot();
+		if directs.iter().any(|dm| dm.name == user_name) {
+			return;
 		}
-		if session.active_kind == "dm" {
-			return (None, self.ctx.db().dm_thread_key_for_session(session));
+		directs.push(DirectMessage {
+			id: db.direct_messages.next_id(),
+			name: user_name.to_string(),
+			display_name: format!("@ {}", user_name),
+			online: true,
+			messages: "[]".to_string(),
+		});
+		db.direct_messages.replace(directs);
+	}
+
+	fn dm_thread_key_for_session(db: &PuppyDb, session: &SessionState) -> Option<String> {
+		if session.active_kind != "dm" {
+			return None;
 		}
-		(None, None)
+		let directs = db.direct_messages.snapshot();
+		let other_name = directs
+			.iter()
+			.find(|dm| dm.id == session.active_id)
+			.map(|dm| dm.name.clone())?;
+		Some(Self::dm_thread_key(&session.user_name, &other_name))
+	}
+
+	async fn find_user(db: &std::sync::Arc<PuppyDb>, name: &str) -> Option<User> {
+		db.users
+			.snapshot()
+			.into_iter()
+			.find(|user| user.name == name)
 	}
 }
 
@@ -62,16 +102,21 @@ impl Puppychat {
 impl Puppychat {
 	pub fn state(&self) -> ChatViewState {
 		let messages = self.ctx.db().messages.snapshot();
-		let mut channels = self.ctx.db().channels.snapshot();
-		let directs_base = self.ctx.db().directs.snapshot();
-
-		for channel in &mut channels {
-			channel.messages = messages
-				.iter()
-				.filter(|msg| msg.channel_id == Some(channel.id))
-				.cloned()
-				.collect();
-		}
+		let channels_base = self.ctx.db().channels.snapshot();
+		let directs_base = self.ctx.db().direct_messages.snapshot();
+		let channels = channels_base
+			.into_iter()
+			.map(|channel| ChannelView {
+				id: channel.id,
+				name: channel.name,
+				display_name: channel.display_name,
+				messages: messages
+					.iter()
+					.filter(|msg| msg.channel_id == Some(channel.id))
+					.cloned()
+					.collect(),
+			})
+			.collect::<Vec<_>>();
 
 		let mut sessions = self.ctx.state.sessions.lock().unwrap();
 		let session = self.ensure_session_state(&mut sessions);
@@ -97,19 +142,26 @@ impl Puppychat {
 					.iter()
 					.filter(|dm| dm.name != user_name)
 					.cloned()
-					.collect::<Vec<_>>();
-				for dm in &mut directs {
-					dm.messages = if user_name.is_empty() {
-						Vec::new()
-					} else {
+					.map(|dm| {
 						let key = Self::dm_thread_key(&user_name, &dm.name);
-						messages
-							.iter()
-							.filter(|msg| msg.dm_thread_key.as_deref() == Some(&key))
-							.cloned()
-							.collect()
-					};
-				}
+						let messages_for_dm = if user_name.is_empty() {
+							Vec::new()
+						} else {
+							messages
+								.iter()
+								.filter(|msg| msg.dm_thread_key.as_deref() == Some(&key))
+								.cloned()
+								.collect()
+						};
+						DirectMessageView {
+							id: dm.id,
+							name: dm.name,
+							display_name: dm.display_name,
+							online: dm.online,
+							messages: messages_for_dm,
+						}
+					})
+					.collect::<Vec<_>>();
 				directs.sort_by(|left, right| {
 					let left_last = left.messages.last().map(|msg| msg.id).unwrap_or(0);
 					let right_last = right.messages.last().map(|msg| msg.id).unwrap_or(0);
@@ -158,7 +210,7 @@ impl Puppychat {
 			return;
 		}
 
-		match User::find(&name, &self.ctx.db).await {
+		match Self::find_user(&self.ctx.db, &name).await {
 			Some(saved) if saved.password == password => {}
 			Some(_) => {
 				let mut sessions = self.ctx.state.sessions.lock().unwrap();
@@ -181,7 +233,7 @@ impl Puppychat {
 		session.login_name.clear();
 		session.login_password.clear();
 		session.auth_error.clear();
-		self.ctx.db().ensure_direct_entry(&user_name);
+		Self::ensure_direct_entry(self.ctx.db(), &user_name);
 		self.ctx.pubsub().publish("rerender", ());
 	}
 
@@ -202,26 +254,28 @@ impl Puppychat {
 			return;
 		}
 
-		if User::find(&name, &self.ctx.db).await.is_some() {
+		if Self::find_user(&self.ctx.db, &name).await.is_some() {
 			let mut sessions = self.ctx.state.sessions.lock().unwrap();
 			let session = self.ensure_session_state(&mut sessions);
 			session.auth_error = "username already exists".to_string();
 			return;
 		}
 
-		User {
-			name: name.clone(),
-			password,
-		}
-		.save(&self.ctx.db)
-		.await;
+		self.ctx
+			.db()
+			.users
+			.insert(User {
+				name: name.clone(),
+				password,
+			})
+			.await;
 
 		let mut sessions = self.ctx.state.sessions.lock().unwrap();
 		let session = self.ensure_session_state(&mut sessions);
 		session.login_name = name.clone();
 		session.login_password.clear();
 		session.auth_error = "account created, please login".to_string();
-		self.ctx.db().ensure_direct_entry(&name);
+		Self::ensure_direct_entry(self.ctx.db(), &name);
 		self.ctx.push_state("/");
 	}
 
@@ -250,7 +304,7 @@ impl Puppychat {
 				dm_thread_key,
 			}
 		};
-		message.save(&self.ctx.db).await;
+		self.ctx.db().messages.save(message).await;
 
 		let mut sessions = self.ctx.state.sessions.lock().unwrap();
 		let session = self.ensure_session_state(&mut sessions);
@@ -337,14 +391,22 @@ impl Puppychat {
 			return;
 		}
 
-		let saved_channel = Channel {
-			id: 0,
-			name: trimmed,
-			display_name: String::new(),
-			messages: Vec::new(),
-		}
-		.save(&self.ctx.db)
-		.await;
+		let display_name = if trimmed.starts_with('#') {
+			trimmed.clone()
+		} else {
+			format!("# {}", trimmed)
+		};
+		let saved_channel = self
+			.ctx
+			.db()
+			.channels
+			.save(Channel {
+				id: 0,
+				name: trimmed,
+				display_name,
+				messages: "[]".to_string(),
+			})
+			.await;
 
 		let mut sessions = self.ctx.state.sessions.lock().unwrap();
 		let session = self.ensure_session_state(&mut sessions);
@@ -377,7 +439,7 @@ impl Puppychat {
 		let selected = self
 			.ctx
 			.db()
-			.directs
+			.direct_messages
 			.find(arg)
 			.await
 			.map(|dm| (dm.id, dm.display_name));
@@ -409,7 +471,7 @@ impl Puppychat {
 				dm_thread_key,
 			}
 		};
-		message.save(&self.ctx.db).await;
+		self.ctx.db().messages.save(message).await;
 
 		let mut sessions = self.ctx.state.sessions.lock().unwrap();
 		let session = self.ensure_session_state(&mut sessions);
@@ -436,7 +498,7 @@ impl Puppychat {
 				dm_thread_key,
 			}
 		};
-		message.save(&self.ctx.db).await;
+		self.ctx.db().messages.save(message).await;
 
 		let mut sessions = self.ctx.state.sessions.lock().unwrap();
 		let session = self.ensure_session_state(&mut sessions);

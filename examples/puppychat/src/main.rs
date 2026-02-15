@@ -1,105 +1,11 @@
 use log::Level;
-use wgui::{Db, DbTable, HasId, Wdb, Wgui, WguiModel};
+use wgui::{Wgui, WguiModel};
 
 mod components;
 mod context;
+mod db;
 
-#[derive(Debug, Clone, WguiModel)]
-pub struct Message {
-	id: u32,
-	author: String,
-	body: String,
-	image_url: String,
-	time: String,
-	channel_id: Option<u32>,
-	dm_thread_key: Option<String>,
-}
-
-impl HasId for Message {
-	fn id(&self) -> u32 {
-		self.id
-	}
-
-	fn set_id(&mut self, id: u32) {
-		self.id = id;
-	}
-}
-
-impl Message {
-	pub async fn save(self, db: &std::sync::Arc<PuppyDb>) -> Self {
-		db.messages.save(self).await
-	}
-}
-
-#[derive(Debug, Clone, WguiModel)]
-pub struct Channel {
-	id: u32,
-	name: String,
-	display_name: String,
-	messages: Vec<Message>,
-}
-
-impl HasId for Channel {
-	fn id(&self) -> u32 {
-		self.id
-	}
-
-	fn set_id(&mut self, id: u32) {
-		self.id = id;
-	}
-}
-
-impl Channel {
-	pub async fn save(mut self, db: &std::sync::Arc<PuppyDb>) -> Self {
-		if self.display_name.is_empty() {
-			self.display_name = if self.name.starts_with('#') {
-				self.name.clone()
-			} else {
-				format!("# {}", self.name)
-			};
-		}
-		db.channels.save(self).await
-	}
-}
-
-#[derive(Debug, Clone, WguiModel)]
-pub struct DirectMessage {
-	id: u32,
-	name: String,
-	display_name: String,
-	online: bool,
-	messages: Vec<Message>,
-}
-
-impl HasId for DirectMessage {
-	fn id(&self) -> u32 {
-		self.id
-	}
-
-	fn set_id(&mut self, id: u32) {
-		self.id = id;
-	}
-}
-
-#[derive(Debug, Clone, WguiModel)]
-pub struct User {
-	name: String,
-	password: String,
-}
-
-impl User {
-	pub async fn save(self, db: &std::sync::Arc<PuppyDb>) -> Self {
-		db.users.insert(self.clone()).await;
-		self
-	}
-
-	pub async fn find(name: &str, db: &std::sync::Arc<PuppyDb>) -> Option<Self> {
-		db.users
-			.snapshot()
-			.into_iter()
-			.find(|user| user.name == name)
-	}
-}
+pub use db::{Channel, DirectMessage, Message, PuppyDB as PuppyDb, User};
 
 #[derive(Debug, Clone)]
 pub struct SessionState {
@@ -147,6 +53,23 @@ impl SessionState {
 }
 
 #[derive(Debug, Clone, WguiModel)]
+pub struct ChannelView {
+	id: u32,
+	name: String,
+	display_name: String,
+	messages: Vec<Message>,
+}
+
+#[derive(Debug, Clone, WguiModel)]
+pub struct DirectMessageView {
+	id: u32,
+	name: String,
+	display_name: String,
+	online: bool,
+	messages: Vec<Message>,
+}
+
+#[derive(Debug, Clone, WguiModel)]
 pub struct ChatViewState {
 	user_name: String,
 	login_name: String,
@@ -162,75 +85,36 @@ pub struct ChatViewState {
 	active_kind: String,
 	active_id: u32,
 	active_name: String,
-	channels: Vec<Channel>,
-	directs: Vec<DirectMessage>,
+	channels: Vec<ChannelView>,
+	directs: Vec<DirectMessageView>,
 }
 
-#[derive(Debug, Wdb)]
-pub struct PuppyDb {
-	pub channels: DbTable<Channel>,
-	pub directs: DbTable<DirectMessage>,
-	pub messages: DbTable<Message>,
-	pub users: DbTable<User>,
+pub(crate) fn puppy_db_with_defaults() -> PuppyDb {
+	let db = PuppyDb::new();
+	if db.channels.snapshot().is_empty() {
+		db.channels.replace(vec![Channel {
+			id: 1,
+			name: "general".to_string(),
+			display_name: "# general".to_string(),
+			messages: "[]".to_string(),
+		}]);
+	}
+	db
 }
 
-impl PuppyDb {
-	fn dm_thread_key(left: &str, right: &str) -> String {
-		if left <= right {
-			format!("{}|{}", left, right)
-		} else {
-			format!("{}|{}", right, left)
-		}
-	}
-
-	pub fn new() -> Self {
-		let db = Db::<PuppyDb>::new();
-		Self {
-			channels: db.table_with_ids(vec![Channel {
-				id: 1,
-				name: "general".to_string(),
-				display_name: "# general".to_string(),
-				messages: Vec::new(),
-			}]),
-			directs: db.table_with_ids(Vec::new()),
-			messages: db.table_with_ids(Vec::new()),
-			users: db.table(),
-		}
-	}
-
-	pub fn ensure_direct_entry(&self, user_name: &str) {
-		let mut directs = self.directs.snapshot();
-		if directs.iter().any(|dm| dm.name == user_name) {
-			return;
-		}
-		directs.push(DirectMessage {
-			id: self.directs.next_id(),
-			name: user_name.to_string(),
-			display_name: format!("@ {}", user_name),
-			online: true,
-			messages: Vec::new(),
-		});
-		self.directs.replace(directs);
-	}
-
-	pub fn dm_thread_key_for_session(&self, session: &SessionState) -> Option<String> {
-		if session.active_kind != "dm" {
-			return None;
-		}
-		let directs = self.directs.snapshot();
-		let other_name = directs
-			.iter()
-			.find(|dm| dm.id == session.active_id)
-			.map(|dm| dm.name.clone())?;
-		Some(Self::dm_thread_key(&session.user_name, &other_name))
-	}
+fn ensure_db_url_from_local_env() {
+	#[cfg(feature = "sqlite")]
+	let project_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+	#[cfg(feature = "sqlite")]
+	wgui::configure_sqlite_env_for_project(&project_dir);
 }
 
 #[tokio::main]
 async fn main() {
 	simple_logger::init_with_level(Level::Info).unwrap();
+	ensure_db_url_from_local_env();
 
-	let db = PuppyDb::new();
+	let db = puppy_db_with_defaults();
 	let mut wgui = Wgui::new("0.0.0.0:5545".parse().unwrap()).with_db(db);
 	wgui.set_ctx_state(context::SharedContext::default());
 	wgui.add_component::<components::puppychat::Puppychat>("/");
