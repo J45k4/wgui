@@ -1696,6 +1696,7 @@ class WebRtcCoordinator {
         state = {
           joined: false,
           peers: [],
+          participants: [],
           wantsLocalAudio: false,
           wantsLocalVideo: false,
           peerConnections: new Map,
@@ -1710,11 +1711,13 @@ class WebRtcCoordinator {
       this.applyLocalPreview(state, elements);
       this.applyRemoteMedia(state, elements);
       if (!state.joined) {
+        const displayName = this.detectDisplayName(root);
         this.sender.sendImmediate({
           type: "webRtcJoin",
           room,
           audio: state.wantsLocalAudio,
-          video: state.wantsLocalVideo
+          video: state.wantsLocalVideo,
+          displayName
         });
         state.joined = true;
       }
@@ -1729,17 +1732,42 @@ class WebRtcCoordinator {
       if (!roomState) {
         return;
       }
-      roomState.selfClientId = message.selfClientId;
-      roomState.peers = message.peers;
+      const raw = message;
+      const selfClientId = typeof raw.selfClientId === "number" ? raw.selfClientId : typeof raw.self_client_id === "number" ? raw.self_client_id : roomState.selfClientId;
+      const peers = Array.isArray(raw.peers) ? raw.peers.filter((peer) => typeof peer === "number") : [];
+      const participants = Array.isArray(raw.participants) ? raw.participants.map((participant) => {
+        const clientId = typeof participant?.clientId === "number" ? participant.clientId : typeof participant?.client_id === "number" ? participant.client_id : undefined;
+        if (clientId == null) {
+          return;
+        }
+        const displayNameRaw = participant?.displayName ?? participant?.display_name;
+        const displayName = typeof displayNameRaw === "string" && displayNameRaw.trim().length > 0 ? displayNameRaw.trim() : `user ${clientId}`;
+        return { clientId, displayName };
+      }).filter((participant) => !!participant) : [];
+      roomState.selfClientId = selfClientId;
+      roomState.peers = peers;
+      roomState.participants = participants.length > 0 ? participants : peers.map((peer) => ({
+        clientId: peer,
+        displayName: `user ${peer}`
+      }));
       this.reconcilePeers(message.room, roomState);
       return;
     }
     if (message.type === "webRtcSignal") {
-      const roomState = this.rooms.get(message.room);
+      const raw = message;
+      const roomState = this.rooms.get(raw.room);
       if (!roomState) {
         return;
       }
-      this.handleSignal(message.room, roomState, message.fromClientId, message.payload);
+      const fromClientId = typeof raw.fromClientId === "number" ? raw.fromClientId : typeof raw.from_client_id === "number" ? raw.from_client_id : undefined;
+      if (typeof fromClientId !== "number") {
+        return;
+      }
+      const payload = typeof raw.payload === "string" ? raw.payload : "";
+      if (!payload) {
+        return;
+      }
+      this.handleSignal(raw.room, roomState, fromClientId, payload);
     }
   }
   leaveRoom(room, roomState) {
@@ -1854,12 +1882,7 @@ class WebRtcCoordinator {
       if (!event.candidate) {
         return;
       }
-      this.sender.sendImmediate({
-        type: "webRtcSignal",
-        room,
-        targetClientId: peerId,
-        payload: JSON.stringify({ kind: "ice", candidate: event.candidate })
-      });
+      this.sendSignal(room, JSON.stringify({ kind: "ice", candidate: event.candidate }), peerId);
     };
     pc.ontrack = (event) => {
       const stream = event.streams[0] ?? this.ensurePeerRemoteStream(roomState, peerId);
@@ -1894,12 +1917,7 @@ class WebRtcCoordinator {
     }
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    this.sender.sendImmediate({
-      type: "webRtcSignal",
-      room,
-      targetClientId: peerId,
-      payload: JSON.stringify({ kind: "offer", sdp: offer })
-    });
+    this.sendSignal(room, JSON.stringify({ kind: "offer", sdp: offer }), peerId);
   }
   async handleSignal(room, roomState, fromClientId, payload) {
     let signal;
@@ -1925,12 +1943,7 @@ class WebRtcCoordinator {
       await this.flushPendingIce(roomState, fromClientId, pc);
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      this.sender.sendImmediate({
-        type: "webRtcSignal",
-        room,
-        targetClientId: fromClientId,
-        payload: JSON.stringify({ kind: "answer", sdp: answer })
-      });
+      this.sendSignal(room, JSON.stringify({ kind: "answer", sdp: answer }), fromClientId);
       return;
     }
     if (signal.kind === "answer") {
@@ -1962,15 +1975,142 @@ class WebRtcCoordinator {
     }
   }
   applyRemoteMedia(roomState, elements) {
-    const stream = roomState.remoteStreams.values().next().value;
-    for (const video of elements.remoteVideo) {
+    const remotePeers = this.sortedRemotePeerIds(roomState);
+    const videoSlots = this.ensureRemoteVideoSlots(elements, remotePeers.length);
+    for (let i = 0;i < videoSlots.length; i += 1) {
+      const peerId = remotePeers[i];
+      const stream = peerId == null ? undefined : roomState.remoteStreams.get(peerId);
+      const video = videoSlots[i];
       video.srcObject = stream ?? null;
+      const label = peerId == null ? "Remote" : this.participantLabel(roomState, peerId);
+      this.setVideoLabel(video, label);
       this.ensurePlayback(video);
     }
-    for (const audio of elements.remoteAudio) {
+    const audioSlots = this.ensureRemoteAudioSlots(elements, remotePeers.length);
+    for (let i = 0;i < audioSlots.length; i += 1) {
+      const peerId = remotePeers[i];
+      const stream = peerId == null ? undefined : roomState.remoteStreams.get(peerId);
+      const audio = audioSlots[i];
       audio.srcObject = stream ?? null;
       this.ensurePlayback(audio);
     }
+  }
+  sortedRemotePeerIds(roomState) {
+    const idsFromParticipants = roomState.participants.map((participant) => participant.clientId).filter((id) => id !== roomState.selfClientId);
+    const ids = idsFromParticipants.length > 0 ? idsFromParticipants : roomState.peers.filter((id) => id !== roomState.selfClientId);
+    return Array.from(new Set(ids)).sort((left, right) => left - right);
+  }
+  participantLabel(roomState, peerId) {
+    return roomState.participants.find((participant) => participant.clientId === peerId)?.displayName || `user ${peerId}`;
+  }
+  detectDisplayName(root) {
+    const rightAligned = Array.from(root.querySelectorAll("div,span,p")).find((element) => {
+      const text = element.textContent?.trim() || "";
+      return text.length > 0 && element.style.textAlign === "right";
+    });
+    if (rightAligned?.textContent) {
+      return rightAligned.textContent.trim();
+    }
+    return "user";
+  }
+  sendSignal(room, payload, targetClientId) {
+    const message = {
+      type: "webRtcSignal",
+      room,
+      payload
+    };
+    if (targetClientId != null) {
+      message.targetClientId = targetClientId;
+    }
+    this.sender.sendImmediate(message);
+  }
+  setVideoLabel(video, label) {
+    const tile = video.parentElement;
+    if (!tile) {
+      return;
+    }
+    const labelNode = tile.firstElementChild;
+    if (labelNode instanceof HTMLElement) {
+      labelNode.textContent = label;
+    }
+  }
+  ensureRemoteVideoSlots(elements, count) {
+    const template = elements.remoteVideo[0];
+    if (!template) {
+      return [];
+    }
+    const tile = template.parentElement;
+    const container = tile?.parentElement;
+    if (!tile || !container) {
+      return [template];
+    }
+    tile.dataset.wguiRtcTile = "1";
+    tile.dataset.wguiRtcManaged = "template";
+    const baseTile = tile;
+    let tiles = Array.from(container.children).filter((child) => child instanceof HTMLElement && child.dataset.wguiRtcTile === "1");
+    const needed = Math.max(count, 1);
+    while (tiles.length < needed) {
+      const clone = baseTile.cloneNode(true);
+      clone.dataset.wguiRtcTile = "1";
+      clone.dataset.wguiRtcManaged = "clone";
+      const cloneVideo = clone.querySelector('video[data-wgui-rtc="video"]');
+      if (cloneVideo) {
+        cloneVideo.srcObject = null;
+        cloneVideo.dataset.wguiRtcLocal = "0";
+        cloneVideo.muted = true;
+        cloneVideo.controls = false;
+      }
+      container.appendChild(clone);
+      tiles.push(clone);
+    }
+    while (tiles.length > needed) {
+      const tail = tiles.pop();
+      if (!tail) {
+        break;
+      }
+      if (tail.dataset.wguiRtcManaged === "template") {
+        tiles.unshift(tail);
+        break;
+      }
+      tail.remove();
+    }
+    tiles = Array.from(container.children).filter((child) => child instanceof HTMLElement && child.dataset.wguiRtcTile === "1");
+    return tiles.slice(0, needed).map((slot) => slot.querySelector('video[data-wgui-rtc="video"]')).filter((video) => !!video);
+  }
+  ensureRemoteAudioSlots(elements, count) {
+    const template = elements.remoteAudio[0];
+    if (!template) {
+      return [];
+    }
+    const parent = template.parentElement;
+    if (!parent) {
+      return [template];
+    }
+    template.dataset.wguiRtcManaged = "template";
+    const needed = Math.max(count, 1);
+    let slots = Array.from(parent.querySelectorAll('audio[data-wgui-rtc="audio"][data-wgui-rtc-local="0"]'));
+    while (slots.length < needed) {
+      const clone = template.cloneNode(true);
+      clone.dataset.wguiRtcManaged = "clone";
+      clone.controls = false;
+      clone.style.display = "none";
+      clone.srcObject = null;
+      parent.appendChild(clone);
+      slots.push(clone);
+    }
+    while (slots.length > needed) {
+      const tail = slots.pop();
+      if (!tail) {
+        break;
+      }
+      if (tail.dataset.wguiRtcManaged === "template") {
+        slots.unshift(tail);
+        break;
+      }
+      tail.remove();
+    }
+    slots = Array.from(parent.querySelectorAll('audio[data-wgui-rtc="audio"][data-wgui-rtc-local="0"]'));
+    return slots.slice(0, needed);
   }
   ensurePlayback(element) {
     if (!element.autoplay || !element.srcObject) {

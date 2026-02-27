@@ -126,8 +126,16 @@ async fn handle_req(
 	}
 
 	match req.uri().path() {
-		"/index.js" => Ok(Response::new(Full::new(Bytes::from(INDEX_JS_BYTES)))),
-		"/index.css" => Ok(Response::new(Full::new(Bytes::from(CSS_JS_BYTES)))),
+		"/index.js" => Ok(Response::builder()
+			.header("content-type", "text/javascript")
+			.header("cache-control", "no-store")
+			.body(Full::new(Bytes::from(INDEX_JS_BYTES)))
+			.unwrap()),
+		"/index.css" => Ok(Response::builder()
+			.header("content-type", "text/css")
+			.header("cache-control", "no-store")
+			.body(Full::new(Bytes::from(CSS_JS_BYTES)))
+			.unwrap()),
 		path if path.starts_with("/assets/") => {
 			let Some(asset_path) = sanitize_asset_path(path) else {
 				return Ok(Response::builder()
@@ -168,12 +176,24 @@ async fn handle_req(
 			if let Some(renderer) = ctx.ssr {
 				if let Some(item) = (renderer)(req.uri().path()) {
 					let html = ssr::render_document(&item);
-					Ok(Response::new(Full::new(Bytes::from(html))))
+					Ok(Response::builder()
+						.header("content-type", "text/html")
+						.header("cache-control", "no-store")
+						.body(Full::new(Bytes::from(html)))
+						.unwrap())
 				} else {
-					Ok(Response::new(Full::new(Bytes::from(INDEX_HTML_BYTES))))
+					Ok(Response::builder()
+						.header("content-type", "text/html")
+						.header("cache-control", "no-store")
+						.body(Full::new(Bytes::from(INDEX_HTML_BYTES)))
+						.unwrap())
 				}
 			} else {
-				Ok(Response::new(Full::new(Bytes::from(INDEX_HTML_BYTES))))
+				Ok(Response::builder()
+					.header("content-type", "text/html")
+					.header("cache-control", "no-store")
+					.body(Full::new(Bytes::from(INDEX_HTML_BYTES)))
+					.unwrap())
 			}
 		}
 	}

@@ -472,6 +472,7 @@ where
 		let mut paths: HashMap<usize, String> = HashMap::new();
 		let mut rtc_rooms: HashMap<String, BTreeSet<usize>> = HashMap::new();
 		let mut rtc_client_rooms: HashMap<usize, BTreeSet<String>> = HashMap::new();
+		let mut rtc_room_names: HashMap<String, HashMap<usize, String>> = HashMap::new();
 
 		while let Some(message) = self.next().await {
 			let client_id = message.client_id;
@@ -509,11 +510,29 @@ where
 							} else {
 								false
 							};
+							if let Some(names) = rtc_room_names.get_mut(&room) {
+								names.remove(&client_id);
+								if names.is_empty() {
+									rtc_room_names.remove(&room);
+								}
+							}
 
 							if remove_room {
 								rtc_rooms.remove(&room);
+								rtc_room_names.remove(&room);
 								continue;
 							}
+							let room_participants = room_peers
+								.iter()
+								.map(|peer_id| WebRtcParticipant {
+									client_id: *peer_id,
+									display_name: rtc_room_names
+										.get(&room)
+										.and_then(|names| names.get(peer_id))
+										.cloned()
+										.unwrap_or_else(|| format!("user {}", peer_id)),
+								})
+								.collect::<Vec<_>>();
 
 							for peer_id in &room_peers {
 								handle
@@ -523,6 +542,7 @@ where
 											room: room.clone(),
 											self_client_id: *peer_id,
 											peers: room_peers.clone(),
+											participants: room_participants.clone(),
 										}],
 									)
 									.await;
@@ -540,6 +560,12 @@ where
 					if join.room.is_empty() {
 						continue;
 					}
+					let display_name = join
+						.display_name
+						.clone()
+						.map(|name| name.trim().to_string())
+						.filter(|name| !name.is_empty())
+						.unwrap_or_else(|| format!("user {}", client_id));
 
 					let peers = {
 						let participants = rtc_rooms
@@ -548,10 +574,25 @@ where
 						participants.insert(client_id);
 						participants.iter().copied().collect::<Vec<_>>()
 					};
+					rtc_room_names
+						.entry(join.room.clone())
+						.or_insert_with(HashMap::new)
+						.insert(client_id, display_name);
 					rtc_client_rooms
 						.entry(client_id)
 						.or_insert_with(BTreeSet::new)
 						.insert(join.room.clone());
+					let room_participants = peers
+						.iter()
+						.map(|peer_id| WebRtcParticipant {
+							client_id: *peer_id,
+							display_name: rtc_room_names
+								.get(&join.room)
+								.and_then(|names| names.get(peer_id))
+								.cloned()
+								.unwrap_or_else(|| format!("user {}", peer_id)),
+						})
+						.collect::<Vec<_>>();
 
 					for peer_id in &peers {
 						handle
@@ -561,6 +602,7 @@ where
 									room: join.room.clone(),
 									self_client_id: *peer_id,
 									peers: peers.clone(),
+									participants: room_participants.clone(),
 								}],
 							)
 							.await;
@@ -575,6 +617,12 @@ where
 					} else {
 						false
 					};
+					if let Some(names) = rtc_room_names.get_mut(&leave.room) {
+						names.remove(&client_id);
+						if names.is_empty() {
+							rtc_room_names.remove(&leave.room);
+						}
+					}
 
 					if let Some(rooms) = rtc_client_rooms.get_mut(&client_id) {
 						rooms.remove(&leave.room);
@@ -585,8 +633,20 @@ where
 
 					if remove_room {
 						rtc_rooms.remove(&leave.room);
+						rtc_room_names.remove(&leave.room);
 						continue;
 					}
+					let room_participants = peers
+						.iter()
+						.map(|peer_id| WebRtcParticipant {
+							client_id: *peer_id,
+							display_name: rtc_room_names
+								.get(&leave.room)
+								.and_then(|names| names.get(peer_id))
+								.cloned()
+								.unwrap_or_else(|| format!("user {}", peer_id)),
+						})
+						.collect::<Vec<_>>();
 
 					for peer_id in &peers {
 						handle
@@ -596,6 +656,7 @@ where
 									room: leave.room.clone(),
 									self_client_id: *peer_id,
 									peers: peers.clone(),
+									participants: room_participants.clone(),
 								}],
 							)
 							.await;

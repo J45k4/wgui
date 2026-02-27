@@ -376,6 +376,10 @@ export type WebRtcRoomState = {
 	room: string
 	selfClientId: number
 	peers: number[]
+	participants: {
+		clientId: number
+		displayName: string
+	}[]
 }
 
 export type WebRtcSignal = {
@@ -447,6 +451,7 @@ export type WebRtcJoin = {
 	room: string
 	audio: boolean
 	video: boolean
+	displayName?: string
 }
 
 export type WebRtcLeave = {

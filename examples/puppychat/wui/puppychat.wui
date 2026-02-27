@@ -59,7 +59,7 @@
             <VStack spacing=8 padding=8 border="1px solid #d8d8d8">
               <Text value={state.call_with_video ? "Video call in progress" : "Audio call in progress"} />
               <If test={state.call_with_video}>
-                <HStack spacing=8>
+                <HStack spacing=8 wrap=true>
                   <VStack spacing=4 grow=1>
                     <Text value="You" />
                     <Video

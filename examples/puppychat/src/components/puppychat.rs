@@ -18,17 +18,26 @@ impl Puppychat {
 		Self { ctx }
 	}
 
-	fn session_key(&self) -> String {
+	fn auth_session_key(&self) -> String {
 		self.ctx
 			.session_id()
 			.unwrap_or_else(|| format!("client-{}", self.ctx.client_id().unwrap_or(0)))
+	}
+
+	fn ui_session_key(&self) -> String {
+		format!(
+			"{}::client:{}",
+			self.auth_session_key(),
+			self.ctx.client_id().unwrap_or(0)
+		)
 	}
 
 	fn ensure_session_state<'a>(
 		&self,
 		sessions: &'a mut std::collections::HashMap<String, SessionState>,
 	) -> &'a mut SessionState {
-		let key = self.session_key();
+		let key = self.ui_session_key();
+		let auth_key = self.auth_session_key();
 		let default_channel = self
 			.ctx
 			.db()
@@ -38,14 +47,14 @@ impl Puppychat {
 			.next()
 			.map(|channel| (channel.id, channel.display_name));
 		let db = self.ctx.db();
-		let key_for_load = key.clone();
+		let auth_key_for_load = auth_key.clone();
 		sessions.entry(key).or_insert_with(|| {
 			let mut state = SessionState::new(default_channel);
 			if let Some(row) = db
 				.sessions
 				.snapshot()
 				.into_iter()
-				.find(|session| session.session_key == key_for_load)
+				.find(|session| session.session_key == auth_key_for_load)
 			{
 				state.user_name = row.user_name.clone();
 				if !state.user_name.is_empty() {
@@ -241,7 +250,7 @@ impl Puppychat {
 	}
 
 	pub(crate) async fn login(&mut self) {
-		let session_key = self.session_key();
+		let auth_session_key = self.auth_session_key();
 		let (name, password) = {
 			let mut sessions = self.ctx.state.sessions.lock().unwrap();
 			let session = self.ensure_session_state(&mut sessions);
@@ -284,7 +293,7 @@ impl Puppychat {
 			user_name
 		};
 		Self::ensure_direct_entry(self.ctx.db(), &user_name);
-		Self::persist_auth_session(&self.ctx.db, &session_key, &user_name).await;
+		Self::persist_auth_session(&self.ctx.db, &auth_session_key, &user_name).await;
 		self.ctx.pubsub().publish("rerender", ());
 	}
 

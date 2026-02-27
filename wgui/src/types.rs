@@ -49,20 +49,33 @@ pub struct OnSelect {
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WebRtcJoin {
 	pub room: String,
 	pub audio: bool,
 	pub video: bool,
+	#[serde(alias = "display_name")]
+	pub display_name: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebRtcParticipant {
+	pub client_id: usize,
+	pub display_name: String,
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WebRtcLeave {
 	pub room: String,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WebRtcSignal {
 	pub room: String,
+	#[serde(alias = "target_client_id")]
 	pub target_client_id: Option<usize>,
 	pub payload: String,
 }
@@ -233,11 +246,14 @@ pub enum ClientAction {
 	},
 	WebRtcRoomState {
 		room: String,
+		#[serde(rename = "selfClientId")]
 		self_client_id: usize,
 		peers: Vec<usize>,
+		participants: Vec<WebRtcParticipant>,
 	},
 	WebRtcSignal {
 		room: String,
+		#[serde(rename = "fromClientId")]
 		from_client_id: usize,
 		payload: String,
 	},
@@ -262,3 +278,81 @@ pub enum Command {
 }
 
 pub type Clients = Arc<RwLock<HashMap<usize, mpsc::UnboundedSender<Command>>>>;
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn webrtc_join_deserializes_display_name_camel_or_snake() {
+		let join_camel: WebRtcJoin = serde_json::from_str(
+			r#"{"room":"channel:1","audio":true,"video":true,"displayName":"alice"}"#,
+		)
+		.unwrap();
+		assert_eq!(join_camel.display_name.as_deref(), Some("alice"));
+
+		let join_snake: WebRtcJoin = serde_json::from_str(
+			r#"{"room":"channel:1","audio":true,"video":true,"display_name":"bob"}"#,
+		)
+		.unwrap();
+		assert_eq!(join_snake.display_name.as_deref(), Some("bob"));
+	}
+
+	#[test]
+	fn webrtc_signal_deserializes_target_client_id_camel_or_snake() {
+		let signal_camel: WebRtcSignal = serde_json::from_str(
+			r#"{"room":"channel:1","targetClientId":7,"payload":"x"}"#,
+		)
+		.unwrap();
+		assert_eq!(signal_camel.target_client_id, Some(7));
+
+		let signal_snake: WebRtcSignal = serde_json::from_str(
+			r#"{"room":"channel:1","target_client_id":9,"payload":"x"}"#,
+		)
+		.unwrap();
+		assert_eq!(signal_snake.target_client_id, Some(9));
+	}
+
+	#[test]
+	fn webrtc_room_state_serializes_self_client_id_camel_case() {
+		let action = ClientAction::WebRtcRoomState {
+			room: "channel:1".to_string(),
+			self_client_id: 5,
+			peers: vec![3, 5],
+			participants: vec![
+				WebRtcParticipant {
+					client_id: 3,
+					display_name: "matti".to_string(),
+				},
+				WebRtcParticipant {
+					client_id: 5,
+					display_name: "jaska".to_string(),
+				},
+			],
+		};
+		let json = serde_json::to_value(&action).unwrap();
+		assert_eq!(json.get("selfClientId").and_then(|value| value.as_u64()), Some(5));
+		assert!(json.get("self_client_id").is_none());
+		assert_eq!(
+			json
+				.get("participants")
+				.and_then(|value| value.as_array())
+				.and_then(|value| value.first())
+				.and_then(|value| value.get("clientId"))
+				.and_then(|value| value.as_u64()),
+			Some(3)
+		);
+	}
+
+	#[test]
+	fn webrtc_signal_serializes_from_client_id_camel_case() {
+		let action = ClientAction::WebRtcSignal {
+			room: "channel:1".to_string(),
+			from_client_id: 3,
+			payload: "hello".to_string(),
+		};
+		let json = serde_json::to_value(&action).unwrap();
+		assert_eq!(json.get("fromClientId").and_then(|value| value.as_u64()), Some(3));
+		assert!(json.get("from_client_id").is_none());
+	}
+}
