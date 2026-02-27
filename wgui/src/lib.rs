@@ -1,7 +1,7 @@
 #[cfg(feature = "hyper")]
 use server::Server;
 use std::any::{Any, TypeId};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::future::Future;
 #[cfg(feature = "hyper")]
 use std::net::SocketAddr;
@@ -153,6 +153,21 @@ impl WguiHandle {
 			}
 		};
 		sender.send(Command::PushState(url.to_string())).unwrap();
+	}
+
+	pub async fn send_actions(&self, client_id: usize, actions: Vec<ClientAction>) {
+		if actions.is_empty() {
+			return;
+		}
+		let clients = self.clients.read().await;
+		let sender = match clients.get(&client_id) {
+			Some(sender) => sender,
+			None => {
+				println!("client not found");
+				return;
+			}
+		};
+		sender.send(Command::Actions(actions)).unwrap();
 	}
 
 	pub async fn session_for_client(&self, client_id: usize) -> Option<String> {
@@ -455,6 +470,8 @@ where
 	pub async fn run(&mut self) {
 		let handle = self.handle();
 		let mut paths: HashMap<usize, String> = HashMap::new();
+		let mut rtc_rooms: HashMap<String, BTreeSet<usize>> = HashMap::new();
+		let mut rtc_client_rooms: HashMap<usize, BTreeSet<String>> = HashMap::new();
 
 		while let Some(message) = self.next().await {
 			let client_id = message.client_id;
@@ -482,11 +499,142 @@ where
 					}
 				}
 				ClientEvent::Disconnected { id: _ } => {
+					if let Some(rooms) = rtc_client_rooms.remove(&client_id) {
+						for room in rooms {
+							let mut room_peers = Vec::new();
+							let remove_room = if let Some(participants) = rtc_rooms.get_mut(&room) {
+								participants.remove(&client_id);
+								room_peers = participants.iter().copied().collect::<Vec<_>>();
+								participants.is_empty()
+							} else {
+								false
+							};
+
+							if remove_room {
+								rtc_rooms.remove(&room);
+								continue;
+							}
+
+							for peer_id in &room_peers {
+								handle
+									.send_actions(
+										*peer_id,
+										vec![ClientAction::WebRtcRoomState {
+											room: room.clone(),
+											self_client_id: *peer_id,
+											peers: room_peers.clone(),
+										}],
+									)
+									.await;
+							}
+						}
+					}
+
 					for component in self.components.iter_mut() {
 						component.controllers.remove(&client_id);
 					}
 					paths.remove(&client_id);
 					handle.clear_session(client_id).await;
+				}
+				ClientEvent::WebRtcJoin(join) => {
+					if join.room.is_empty() {
+						continue;
+					}
+
+					let peers = {
+						let participants = rtc_rooms
+							.entry(join.room.clone())
+							.or_insert_with(BTreeSet::new);
+						participants.insert(client_id);
+						participants.iter().copied().collect::<Vec<_>>()
+					};
+					rtc_client_rooms
+						.entry(client_id)
+						.or_insert_with(BTreeSet::new)
+						.insert(join.room.clone());
+
+					for peer_id in &peers {
+						handle
+							.send_actions(
+								*peer_id,
+								vec![ClientAction::WebRtcRoomState {
+									room: join.room.clone(),
+									self_client_id: *peer_id,
+									peers: peers.clone(),
+								}],
+							)
+							.await;
+					}
+				}
+				ClientEvent::WebRtcLeave(leave) => {
+					let mut peers = Vec::new();
+					let remove_room = if let Some(participants) = rtc_rooms.get_mut(&leave.room) {
+						participants.remove(&client_id);
+						peers = participants.iter().copied().collect::<Vec<_>>();
+						participants.is_empty()
+					} else {
+						false
+					};
+
+					if let Some(rooms) = rtc_client_rooms.get_mut(&client_id) {
+						rooms.remove(&leave.room);
+						if rooms.is_empty() {
+							rtc_client_rooms.remove(&client_id);
+						}
+					}
+
+					if remove_room {
+						rtc_rooms.remove(&leave.room);
+						continue;
+					}
+
+					for peer_id in &peers {
+						handle
+							.send_actions(
+								*peer_id,
+								vec![ClientAction::WebRtcRoomState {
+									room: leave.room.clone(),
+									self_client_id: *peer_id,
+									peers: peers.clone(),
+								}],
+							)
+							.await;
+					}
+				}
+				ClientEvent::WebRtcSignal(signal) => {
+					let participants = rtc_rooms
+						.get(&signal.room)
+						.map(|ids| ids.iter().copied().collect::<Vec<_>>())
+						.unwrap_or_default();
+					if !participants.contains(&client_id) {
+						continue;
+					}
+
+					let recipients = if let Some(target_id) = signal.target_client_id {
+						if participants.contains(&target_id) {
+							vec![target_id]
+						} else {
+							Vec::new()
+						}
+					} else {
+						participants
+							.into_iter()
+							.filter(|id| *id != client_id)
+							.collect::<Vec<_>>()
+					};
+
+					for target_id in recipients {
+						handle
+							.send_actions(
+								target_id,
+								vec![ClientAction::WebRtcSignal {
+									room: signal.room.clone(),
+									from_client_id: client_id,
+									payload: signal.payload.clone(),
+								}],
+							)
+							.await;
+					}
 				}
 				ClientEvent::PathChanged(change) => {
 					paths.insert(client_id, change.path.clone());

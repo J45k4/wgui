@@ -154,6 +154,24 @@ export type Image = {
     objectFit?: string
 }
 
+export type Video = {
+	type: "video"
+	room: string
+	local: boolean
+	autoplay: boolean
+	muted: boolean
+	controls: boolean
+}
+
+export type Audio = {
+	type: "audio"
+	room: string
+	local: boolean
+	autoplay: boolean
+	muted: boolean
+	controls: boolean
+}
+
 export type ThreeKind =
 	| "scene"
 	| "group"
@@ -209,6 +227,8 @@ export type ItemPayload = Text |
  	Layout |
  	Button |
  	Image |
+	Video |
+	Audio |
 	ThreeView |
  	FolderPicker |
  	FloatingLayout |
@@ -351,6 +371,20 @@ export type SetTitle = {
     title: string
 }
 
+export type WebRtcRoomState = {
+	type: "webRtcRoomState"
+	room: string
+	selfClientId: number
+	peers: number[]
+}
+
+export type WebRtcSignal = {
+	type: "webRtcSignal"
+	room: string
+	fromClientId: number
+	payload: string
+}
+
 export type SrvMessage = Replace |
     ReplaceAt |
     AddBack | 
@@ -360,9 +394,11 @@ export type SrvMessage = Replace |
     PushState |
     ReplaceState |
     SetQuery |
-    SetProp |
+	SetProp |
 	ThreePatch |
-    SetTitle
+    SetTitle |
+	WebRtcRoomState |
+	WebRtcSignal
 
 export type OnClick = {
     type: "onClick"
@@ -406,12 +442,34 @@ export type OnSelect = {
 	value: string
 }
 
+export type WebRtcJoin = {
+	type: "webRtcJoin"
+	room: string
+	audio: boolean
+	video: boolean
+}
+
+export type WebRtcLeave = {
+	type: "webRtcLeave"
+	room: string
+}
+
+export type SendWebRtcSignal = {
+	type: "webRtcSignal"
+	room: string
+	targetClientId?: number
+	payload: string
+}
+
 export type MessageToSrv = OnClick | 
     OnTextChange | 
     OnKeyDown | 
-    PathChanged |
+	PathChanged |
 	OnSliderChange |
-	OnSelect
+	OnSelect |
+	WebRtcJoin |
+	WebRtcLeave |
+	SendWebRtcSignal
 
 export type MessagesToSrv = MessageToSrv[]
 

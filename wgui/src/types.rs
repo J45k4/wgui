@@ -49,6 +49,25 @@ pub struct OnSelect {
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WebRtcJoin {
+	pub room: String,
+	pub audio: bool,
+	pub video: bool,
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WebRtcLeave {
+	pub room: String,
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WebRtcSignal {
+	pub room: String,
+	pub target_client_id: Option<usize>,
+	pub payload: String,
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum ClientEvent {
 	Disconnected { id: usize },
@@ -59,6 +78,9 @@ pub enum ClientEvent {
 	OnTextChanged(OnTextChanged),
 	OnSliderChange(OnSliderChange),
 	OnSelect(OnSelect),
+	WebRtcJoin(WebRtcJoin),
+	WebRtcLeave(WebRtcLeave),
+	WebRtcSignal(WebRtcSignal),
 }
 
 #[derive(Debug, Clone)]
@@ -198,9 +220,27 @@ pub enum ClientAction {
 	PushState(PushState),
 	ReplaceState(ReplaceState),
 	SetQuery(SetQuery),
-	SetProp { path: ItemPath, sets: Vec<SetProp> },
-	ThreePatch { path: ItemPath, ops: Vec<ThreeOp> },
-	SetTitle { title: String },
+	SetProp {
+		path: ItemPath,
+		sets: Vec<SetProp>,
+	},
+	ThreePatch {
+		path: ItemPath,
+		ops: Vec<ThreeOp>,
+	},
+	SetTitle {
+		title: String,
+	},
+	WebRtcRoomState {
+		room: String,
+		self_client_id: usize,
+		peers: Vec<usize>,
+	},
+	WebRtcSignal {
+		room: String,
+		from_client_id: usize,
+		payload: String,
+	},
 }
 
 pub enum ServerEvent {
@@ -218,6 +258,7 @@ pub enum Command {
 	Render(Item),
 	SetTitle(String),
 	PushState(String),
+	Actions(Vec<ClientAction>),
 }
 
 pub type Clients = Arc<RwLock<HashMap<usize, mpsc::UnboundedSender<Command>>>>;

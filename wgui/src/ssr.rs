@@ -46,6 +46,20 @@ pub fn render_item(item: &Item) -> String {
 			alt,
 			object_fit,
 		} => render_image(item, src, alt, object_fit.as_deref()),
+		ItemPayload::Video {
+			room,
+			local,
+			autoplay,
+			muted,
+			controls,
+		} => render_media(item, "video", room, *local, *autoplay, *muted, *controls),
+		ItemPayload::Audio {
+			room,
+			local,
+			autoplay,
+			muted,
+			controls,
+		} => render_media(item, "audio", room, *local, *autoplay, *muted, *controls),
 		ItemPayload::FolderPicker => render_folder_picker(item),
 		ItemPayload::FloatingLayout {
 			x,
@@ -232,6 +246,40 @@ fn render_image(item: &Item, src: &str, alt: &str, object_fit: Option<&str>) -> 
 	attrs.push(("alt".to_string(), escape_attr(alt)));
 	attrs.push(("loading".to_string(), "lazy".to_string()));
 	render_void_element("img", &classes, style, &attrs)
+}
+
+fn render_media(
+	item: &Item,
+	tag: &str,
+	room: &str,
+	local: bool,
+	autoplay: bool,
+	muted: bool,
+	controls: bool,
+) -> String {
+	let mut style = StyleBuilder::new();
+	apply_item_styles(item, &mut style);
+	let classes = Vec::new();
+	let mut attrs = collect_item_attrs(item);
+	attrs.push(("data-wgui-rtc".to_string(), escape_attr(tag)));
+	attrs.push(("data-wgui-rtc-room".to_string(), escape_attr(room)));
+	attrs.push((
+		"data-wgui-rtc-local".to_string(),
+		if local { "1" } else { "0" }.to_string(),
+	));
+	if autoplay {
+		attrs.push(("autoplay".to_string(), "autoplay".to_string()));
+	}
+	if muted {
+		attrs.push(("muted".to_string(), "muted".to_string()));
+	}
+	if controls {
+		attrs.push(("controls".to_string(), "controls".to_string()));
+	}
+	if tag == "video" {
+		attrs.push(("playsinline".to_string(), "playsinline".to_string()));
+	}
+	render_element(tag, &classes, style, &attrs, "")
 }
 
 fn render_folder_picker(item: &Item) -> String {

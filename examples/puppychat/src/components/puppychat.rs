@@ -104,6 +104,16 @@ impl Puppychat {
 		Some(Self::dm_thread_key(&session.user_name, &other_name))
 	}
 
+	fn call_room_for_session(db: &PuppyDb, session: &SessionState) -> Option<String> {
+		if session.active_kind == "dm" {
+			return Self::dm_thread_key_for_session(db, session).map(|key| format!("dm:{key}"));
+		}
+		if session.active_kind == "channel" && session.active_id != 0 {
+			return Some(format!("channel:{}", session.active_id));
+		}
+		None
+	}
+
 	async fn find_user(db: &std::sync::Arc<PuppyDb>, name: &str) -> Option<User> {
 		db.users
 			.snapshot()
@@ -169,6 +179,9 @@ impl Puppychat {
 			active_kind: session.active_kind.clone(),
 			active_id: session.active_id,
 			active_name: session.active_name.clone(),
+			call_active: session.call_active,
+			call_with_video: session.call_with_video,
+			call_room: Self::call_room_for_session(self.ctx.db(), session).unwrap_or_default(),
 			channels,
 			directs: {
 				let mut directs = directs_base
@@ -470,6 +483,7 @@ impl Puppychat {
 			session.active_kind = "channel".to_string();
 			session.active_id = id;
 			session.active_name = name;
+			session.call_active = false;
 		}
 	}
 
@@ -487,7 +501,37 @@ impl Puppychat {
 			session.active_kind = "dm".to_string();
 			session.active_id = id;
 			session.active_name = name;
+			session.call_active = false;
 		}
+	}
+
+	pub(crate) fn start_video_call(&mut self) {
+		let mut sessions = self.ctx.state.sessions.lock().unwrap();
+		let session = self.ensure_session_state(&mut sessions);
+		if session.active_kind.is_empty() {
+			return;
+		}
+		session.call_active = true;
+		session.call_with_video = true;
+		self.ctx.pubsub().publish("rerender", ());
+	}
+
+	pub(crate) fn start_audio_call(&mut self) {
+		let mut sessions = self.ctx.state.sessions.lock().unwrap();
+		let session = self.ensure_session_state(&mut sessions);
+		if session.active_kind.is_empty() {
+			return;
+		}
+		session.call_active = true;
+		session.call_with_video = false;
+		self.ctx.pubsub().publish("rerender", ());
+	}
+
+	pub(crate) fn end_call(&mut self) {
+		let mut sessions = self.ctx.state.sessions.lock().unwrap();
+		let session = self.ensure_session_state(&mut sessions);
+		session.call_active = false;
+		self.ctx.pubsub().publish("rerender", ());
 	}
 
 	pub(crate) async fn send_message(&mut self) {

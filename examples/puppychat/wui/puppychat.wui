@@ -46,8 +46,60 @@
         <VStack grow=1 padding=12 spacing=10>
           <HStack spacing=8>
             <Text value={state.active_name} />
+            <If test={state.active_kind != "" && !state.call_active}>
+              <Button text="Audio Call" onClick="StartAudioCall" />
+              <Button text="Video Call" onClick="StartVideoCall" />
+            </If>
+            <If test={state.call_active}>
+              <Button text="End Call" onClick="EndCall" />
+            </If>
             <Text value={state.user_name} grow=1 textAlign="right" />
           </HStack>
+          <If test={state.call_active && state.call_room != ""}>
+            <VStack spacing=8 padding=8 border="1px solid #d8d8d8">
+              <Text value={state.call_with_video ? "Video call in progress" : "Audio call in progress"} />
+              <If test={state.call_with_video}>
+                <HStack spacing=8>
+                  <VStack spacing=4 grow=1>
+                    <Text value="You" />
+                    <Video
+                      room={state.call_room}
+                      local=true
+                      muted=true
+                      autoplay=true
+                      controls=false
+                      width=240
+                      height=160
+                    />
+                  </VStack>
+                  <VStack spacing=4 grow=1>
+                    <Text value="Remote" />
+                    <Video
+                      room={state.call_room}
+                      local=false
+                      muted=true
+                      autoplay=true
+                      controls=false
+                      width=240
+                      height=160
+                    />
+                  </VStack>
+                </HStack>
+                <HStack spacing=8>
+                  <Audio room={state.call_room} local=true muted=true autoplay=true controls=false />
+                  <Audio room={state.call_room} local=false muted=false autoplay=true controls=true />
+                  <Text value="If remote audio stays muted, press play on the audio control." />
+                </HStack>
+              </If>
+              <If test={!state.call_with_video}>
+                <HStack spacing=8>
+                  <Audio room={state.call_room} local=true muted=true autoplay=true controls=false />
+                  <Audio room={state.call_room} local=false muted=false autoplay=true controls=true />
+                  <Text value="Audio connected when another participant joins this room." />
+                </HStack>
+              </If>
+            </VStack>
+          </If>
           <VStack spacing=6 grow=1 overflow="scroll">
             <If test={state.active_kind == "channel"}>
               <For each={state.channels} itemAs="channel">

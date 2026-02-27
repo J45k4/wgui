@@ -39,4 +39,8 @@ export class MessageSender {
         this.sender(this.queue)
         this.queue = []
     }
+
+	public sendImmediate(msg: MessageToSrv) {
+		this.sender([msg])
+	}
 }

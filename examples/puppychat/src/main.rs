@@ -23,6 +23,8 @@ pub struct SessionState {
 	pub active_kind: String,
 	pub active_id: u32,
 	pub active_name: String,
+	pub call_active: bool,
+	pub call_with_video: bool,
 }
 
 impl SessionState {
@@ -48,6 +50,8 @@ impl SessionState {
 			active_kind,
 			active_id,
 			active_name,
+			call_active: false,
+			call_with_video: true,
 		}
 	}
 }
@@ -85,6 +89,9 @@ pub struct ChatViewState {
 	active_kind: String,
 	active_id: u32,
 	active_name: String,
+	call_active: bool,
+	call_with_video: bool,
+	call_room: String,
 	channels: Vec<ChannelView>,
 	directs: Vec<DirectMessageView>,
 }

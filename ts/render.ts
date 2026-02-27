@@ -291,6 +291,43 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		return image
 	}
 
+	if (payload.type === "video") {
+		let video: HTMLVideoElement
+		if (old instanceof HTMLVideoElement) {
+			video = old
+		} else {
+			video = document.createElement("video")
+			if (old) old.replaceWith(video)
+		}
+		video.dataset.wguiRtc = "video"
+		video.dataset.wguiRtcRoom = payload.room
+		video.dataset.wguiRtcLocal = payload.local ? "1" : "0"
+		video.autoplay = payload.autoplay
+		video.muted = payload.muted
+		video.controls = payload.controls
+		video.playsInline = true
+		video.style.backgroundColor = "#000000"
+		video.style.objectFit = "cover"
+		return video
+	}
+
+	if (payload.type === "audio") {
+		let audio: HTMLAudioElement
+		if (old instanceof HTMLAudioElement) {
+			audio = old
+		} else {
+			audio = document.createElement("audio")
+			if (old) old.replaceWith(audio)
+		}
+		audio.dataset.wguiRtc = "audio"
+		audio.dataset.wguiRtcRoom = payload.room
+		audio.dataset.wguiRtcLocal = payload.local ? "1" : "0"
+		audio.autoplay = payload.autoplay
+		audio.muted = payload.muted
+		audio.controls = payload.controls
+		return audio
+	}
+
 	if (payload.type === "slider") {
 		let slider: HTMLInputElement
 		if (old instanceof HTMLInputElement) {

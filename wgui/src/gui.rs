@@ -141,6 +141,20 @@ pub enum ItemPayload {
 		alt: String,
 		object_fit: Option<String>,
 	},
+	Video {
+		room: String,
+		local: bool,
+		autoplay: bool,
+		muted: bool,
+		controls: bool,
+	},
+	Audio {
+		room: String,
+		local: bool,
+		autoplay: bool,
+		muted: bool,
+		controls: bool,
+	},
 	FolderPicker,
 	FloatingLayout {
 		x: u32,
@@ -532,6 +546,32 @@ pub fn folder_picker() -> Item {
 	}
 }
 
+pub fn video(room: &str) -> Item {
+	Item {
+		payload: ItemPayload::Video {
+			room: room.to_string(),
+			local: false,
+			autoplay: true,
+			muted: false,
+			controls: false,
+		},
+		..Default::default()
+	}
+}
+
+pub fn audio(room: &str) -> Item {
+	Item {
+		payload: ItemPayload::Audio {
+			room: room.to_string(),
+			local: false,
+			autoplay: true,
+			muted: false,
+			controls: false,
+		},
+		..Default::default()
+	}
+}
+
 impl Item {
 	pub fn id(mut self, id: u32) -> Self {
 		self.id = id;
@@ -757,6 +797,89 @@ impl Item {
 				ref mut object_fit, ..
 			} => {
 				*object_fit = Some(fit.to_string());
+			}
+			_ => {}
+		}
+		self
+	}
+
+	pub fn room(mut self, room: &str) -> Self {
+		match self.payload {
+			ItemPayload::Video {
+				room: ref mut r, ..
+			}
+			| ItemPayload::Audio {
+				room: ref mut r, ..
+			} => {
+				*r = room.to_string();
+			}
+			_ => {}
+		}
+		self
+	}
+
+	pub fn local(mut self, local: bool) -> Self {
+		match self.payload {
+			ItemPayload::Video {
+				local: ref mut value,
+				..
+			}
+			| ItemPayload::Audio {
+				local: ref mut value,
+				..
+			} => {
+				*value = local;
+			}
+			_ => {}
+		}
+		self
+	}
+
+	pub fn autoplay(mut self, autoplay: bool) -> Self {
+		match self.payload {
+			ItemPayload::Video {
+				autoplay: ref mut value,
+				..
+			}
+			| ItemPayload::Audio {
+				autoplay: ref mut value,
+				..
+			} => {
+				*value = autoplay;
+			}
+			_ => {}
+		}
+		self
+	}
+
+	pub fn muted(mut self, muted: bool) -> Self {
+		match self.payload {
+			ItemPayload::Video {
+				muted: ref mut value,
+				..
+			}
+			| ItemPayload::Audio {
+				muted: ref mut value,
+				..
+			} => {
+				*value = muted;
+			}
+			_ => {}
+		}
+		self
+	}
+
+	pub fn controls(mut self, controls: bool) -> Self {
+		match self.payload {
+			ItemPayload::Video {
+				controls: ref mut value,
+				..
+			}
+			| ItemPayload::Audio {
+				controls: ref mut value,
+				..
+			} => {
+				*value = controls;
 			}
 			_ => {}
 		}

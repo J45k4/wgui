@@ -178,6 +178,96 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 				},
 			],
 		}),
+		"Video" => Some(TagSchema {
+			name: "Video",
+			props: &[
+				PropSchema {
+					name: "room",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "local",
+					kind: PropKind::Value(ValueType::Bool),
+				},
+				PropSchema {
+					name: "autoplay",
+					kind: PropKind::Value(ValueType::Bool),
+				},
+				PropSchema {
+					name: "muted",
+					kind: PropKind::Value(ValueType::Bool),
+				},
+				PropSchema {
+					name: "controls",
+					kind: PropKind::Value(ValueType::Bool),
+				},
+				PropSchema {
+					name: "maxWidth",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "maxHeight",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "minWidth",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "minHeight",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "width",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "height",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "onClick",
+					kind: PropKind::Event(EventKind::Click),
+				},
+				PropSchema {
+					name: "arg",
+					kind: PropKind::Value(ValueType::Number),
+				},
+			],
+		}),
+		"Audio" => Some(TagSchema {
+			name: "Audio",
+			props: &[
+				PropSchema {
+					name: "room",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "local",
+					kind: PropKind::Value(ValueType::Bool),
+				},
+				PropSchema {
+					name: "autoplay",
+					kind: PropKind::Value(ValueType::Bool),
+				},
+				PropSchema {
+					name: "muted",
+					kind: PropKind::Value(ValueType::Bool),
+				},
+				PropSchema {
+					name: "controls",
+					kind: PropKind::Value(ValueType::Bool),
+				},
+				PropSchema {
+					name: "onClick",
+					kind: PropKind::Event(EventKind::Click),
+				},
+				PropSchema {
+					name: "arg",
+					kind: PropKind::Value(ValueType::Number),
+				},
+			],
+		}),
 		"FolderPicker" => Some(TagSchema {
 			name: "FolderPicker",
 			props: &[PropSchema {

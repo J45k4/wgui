@@ -3,6 +3,7 @@ import { getPathItem } from "./path.ts";
 import { renderItem } from "./render.ts";
 import { applyThreePatch } from "./three_host.ts";
 import { Context, PropValue, SetPropSet, SrvMessage } from "./types.ts";
+import { WebRtcCoordinator } from "./webrtc.ts";
 import { connectWebsocket } from "./ws.ts";
 
 const getSetPropValue = (value?: PropValue) => {
@@ -104,11 +105,15 @@ window.onload = () => {
     root.style.minHeight = "100vh"
     root.style.width = "100%"
     const debouncer = new Deboncer()
+    let rtc: WebRtcCoordinator | undefined
 
     const {
         sender
     } = connectWebsocket({
         onMessage:  (sender, msgs: SrvMessage[]) => { 
+            if (!rtc) {
+                rtc = new WebRtcCoordinator(sender)
+            }
             const ctx: Context = {
                 sender,
                 debouncer
@@ -150,6 +155,11 @@ window.onload = () => {
                     document.title = message.title
                     continue
                 }
+
+				if (message.type === "webRtcRoomState" || message.type === "webRtcSignal") {
+					rtc.handleServerMessage(message)
+					continue
+				}
 
 				if (message.type === "threePatch") {
 					const target = getPathItem(message.path, root)
@@ -218,9 +228,14 @@ window.onload = () => {
                 }
 
             }
+			rtc.syncElements(root)
         },
-        onOpen: (sender) => {
-            const params = new URLSearchParams(location.search)
+		onOpen: (sender) => {
+			if (!rtc) {
+				rtc = new WebRtcCoordinator(sender)
+			}
+			rtc.onSocketOpen()
+			const params = new URLSearchParams(location.search)
             const query: { [key: string]: string } = {}
             params.forEach((value, key) => {
                 query[key] = value
@@ -232,6 +247,7 @@ window.onload = () => {
             })
 
             sender.sendNow()
+			rtc.syncElements(root)
         }
     })
 

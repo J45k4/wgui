@@ -20,6 +20,9 @@ fn event_kind_name(event: &ClientEvent) -> &'static str {
 		ClientEvent::OnTextChanged(_) => "OnTextChanged",
 		ClientEvent::OnSliderChange(_) => "OnSliderChange",
 		ClientEvent::OnSelect(_) => "OnSelect",
+		ClientEvent::WebRtcJoin(_) => "WebRtcJoin",
+		ClientEvent::WebRtcLeave(_) => "WebRtcLeave",
+		ClientEvent::WebRtcSignal(_) => "WebRtcSignal",
 	}
 }
 
@@ -132,6 +135,13 @@ where
 			Command::PushState(url) => {
 				let changes = vec![ClientAction::PushState(crate::types::PushState { url })];
 				let str = serde_json::to_string(&changes).unwrap();
+				self.ws.send(WsMessage::Text(str)).await?;
+			}
+			Command::Actions(actions) => {
+				if actions.is_empty() {
+					return Ok(());
+				}
+				let str = serde_json::to_string(&actions).unwrap();
 				self.ws.send(WsMessage::Text(str)).await?;
 			}
 		};

@@ -521,6 +521,14 @@ fn render_widget(widget: &IrWidget, ctx: &mut EvalContext) -> Item {
 			let (src, alt) = image_values(widget, ctx);
 			gui::img(&src, &alt)
 		}
+		"Video" => {
+			let room = media_room_value(widget, ctx);
+			gui::video(&room)
+		}
+		"Audio" => {
+			let room = media_room_value(widget, ctx);
+			gui::audio(&room)
+		}
 		"FolderPicker" => gui::folder_picker(),
 		"Modal" => render_modal(widget, ctx),
 		_ => gui::text("unsupported"),
@@ -596,6 +604,19 @@ fn image_values(widget: &IrWidget, ctx: &mut EvalContext) -> (String, String) {
 	(src, alt)
 }
 
+fn media_room_value(widget: &IrWidget, ctx: &mut EvalContext) -> String {
+	for prop in &widget.props {
+		match prop {
+			IrProp::Literal { name, value } if name == "room" => return value.clone(),
+			IrProp::Value { name, expr } if name == "room" => {
+				return value_as_string(&eval_expr(expr, ctx));
+			}
+			_ => {}
+		}
+	}
+	String::new()
+}
+
 fn should_apply_prop(tag: &str, prop: &IrProp) -> bool {
 	match prop {
 		IrProp::Event { .. } => true,
@@ -607,6 +628,7 @@ fn should_apply_prop(tag: &str, prop: &IrProp) -> bool {
 			"Text" => name != "value",
 			"Button" => name != "text",
 			"Image" => name != "src" && name != "alt",
+			"Video" | "Audio" => name != "room",
 			_ => true,
 		},
 	}
@@ -660,6 +682,7 @@ fn apply_string_prop(item: Item, name: &str, value: &str) -> Item {
 		"backgroundColor" => item.background_color(value),
 		"border" => item.border(value),
 		"objectFit" => item.object_fit(value),
+		"room" => item.room(value),
 		_ => item,
 	}
 }
@@ -699,6 +722,10 @@ fn apply_bool_prop(item: Item, name: &str, value: bool) -> Item {
 		"open" => item.open(value),
 		"hresize" => item.hresize(value),
 		"vresize" => item.vresize(value),
+		"local" => item.local(value),
+		"autoplay" => item.autoplay(value),
+		"muted" => item.muted(value),
+		"controls" => item.controls(value),
 		_ => item,
 	}
 }
@@ -715,6 +742,7 @@ fn is_string_prop(name: &str) -> bool {
 			| "backgroundColor"
 			| "border"
 			| "objectFit"
+			| "room"
 	)
 }
 

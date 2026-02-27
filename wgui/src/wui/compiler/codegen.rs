@@ -361,6 +361,8 @@ fn emit_widget(widget: &IrWidget, indent: usize) -> String {
 		"Checkbox" => "wgui::checkbox()".to_string(),
 		"Slider" => "wgui::slider()".to_string(),
 		"Image" => emit_image(widget),
+		"Video" => emit_media(widget, "video"),
+		"Audio" => emit_media(widget, "audio"),
 		"FolderPicker" => "wgui::folder_picker()".to_string(),
 		"Modal" => emit_container("modal", &widget.children, indent),
 		_ => "wgui::text(\"unsupported\")".to_string(),
@@ -438,6 +440,18 @@ fn emit_image(widget: &IrWidget) -> String {
 	format!("wgui::img({src}, {alt})")
 }
 
+fn emit_media(widget: &IrWidget, kind: &str) -> String {
+	let mut room = "\"\"".to_string();
+	for prop in &widget.props {
+		match prop {
+			IrProp::Literal { name, value } if name == "room" => room = format!("{:?}", value),
+			IrProp::Value { name, expr } if name == "room" => room = emit_string_expr(expr),
+			_ => {}
+		}
+	}
+	format!("wgui::{kind}({room})")
+}
+
 fn emit_prop(prop: &IrProp) -> String {
 	match prop {
 		IrProp::Literal { name, value } => format!("{}({:?})", prop_method(name), value),
@@ -508,6 +522,11 @@ fn prop_method(name: &str) -> String {
 		"overflow" => "overflow".to_string(),
 		"placeholder" => "placeholder".to_string(),
 		"objectFit" => "object_fit".to_string(),
+		"room" => "room".to_string(),
+		"local" => "local".to_string(),
+		"autoplay" => "autoplay".to_string(),
+		"muted" => "muted".to_string(),
+		"controls" => "controls".to_string(),
 		"min" => "min".to_string(),
 		"max" => "max".to_string(),
 		"step" => "step".to_string(),
@@ -586,6 +605,7 @@ fn is_string_prop(name: &str) -> bool {
 			| "backgroundColor"
 			| "border"
 			| "objectFit"
+			| "room"
 	)
 }
 
@@ -600,6 +620,7 @@ fn should_emit_prop(tag: &str, prop: &IrProp) -> bool {
 			"Text" => name != "value",
 			"Button" => name != "text",
 			"Image" => name != "src" && name != "alt",
+			"Video" | "Audio" => name != "room",
 			_ => name != "arg",
 		},
 	}

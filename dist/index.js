@@ -1222,6 +1222,43 @@ var renderPayload = (item, ctx, old) => {
     image.loading = "lazy";
     return image;
   }
+  if (payload.type === "video") {
+    let video;
+    if (old instanceof HTMLVideoElement) {
+      video = old;
+    } else {
+      video = document.createElement("video");
+      if (old)
+        old.replaceWith(video);
+    }
+    video.dataset.wguiRtc = "video";
+    video.dataset.wguiRtcRoom = payload.room;
+    video.dataset.wguiRtcLocal = payload.local ? "1" : "0";
+    video.autoplay = payload.autoplay;
+    video.muted = payload.muted;
+    video.controls = payload.controls;
+    video.playsInline = true;
+    video.style.backgroundColor = "#000000";
+    video.style.objectFit = "cover";
+    return video;
+  }
+  if (payload.type === "audio") {
+    let audio;
+    if (old instanceof HTMLAudioElement) {
+      audio = old;
+    } else {
+      audio = document.createElement("audio");
+      if (old)
+        old.replaceWith(audio);
+    }
+    audio.dataset.wguiRtc = "audio";
+    audio.dataset.wguiRtcRoom = payload.room;
+    audio.dataset.wguiRtcLocal = payload.local ? "1" : "0";
+    audio.autoplay = payload.autoplay;
+    audio.muted = payload.muted;
+    audio.controls = payload.controls;
+    return audio;
+  }
   if (payload.type === "slider") {
     let slider;
     if (old instanceof HTMLInputElement) {
@@ -1629,6 +1666,355 @@ var renderItem = (item, ctx, old) => {
   return element;
 };
 
+// ts/webrtc.ts
+var ICE_SERVERS = [{ urls: ["stun:stun.l.google.com:19302"] }];
+
+class WebRtcCoordinator {
+  sender;
+  rooms = new Map;
+  constructor(sender) {
+    this.sender = sender;
+  }
+  onSocketOpen() {
+    for (const roomState of this.rooms.values()) {
+      roomState.joined = false;
+    }
+  }
+  syncElements(root) {
+    const elementsByRoom = this.collectRoomElements(root);
+    const desiredRooms = new Set(Object.keys(elementsByRoom));
+    for (const [room, roomState] of this.rooms.entries()) {
+      if (!desiredRooms.has(room)) {
+        this.leaveRoom(room, roomState);
+        this.rooms.delete(room);
+      }
+    }
+    for (const room of desiredRooms) {
+      const elements = elementsByRoom[room];
+      let state = this.rooms.get(room);
+      if (!state) {
+        state = {
+          joined: false,
+          peers: [],
+          wantsLocalAudio: false,
+          wantsLocalVideo: false,
+          peerConnections: new Map,
+          remoteStreams: new Map,
+          pendingIceCandidates: new Map
+        };
+        this.rooms.set(room, state);
+      }
+      const wantsLocalVideo = elements.localVideo.length > 0;
+      state.wantsLocalVideo = wantsLocalVideo;
+      state.wantsLocalAudio = elements.localAudio.length > 0 || wantsLocalVideo;
+      this.applyLocalPreview(state, elements);
+      this.applyRemoteMedia(state, elements);
+      if (!state.joined) {
+        this.sender.sendImmediate({
+          type: "webRtcJoin",
+          room,
+          audio: state.wantsLocalAudio,
+          video: state.wantsLocalVideo
+        });
+        state.joined = true;
+      }
+      if (state.joined) {
+        this.ensureLocalMedia(room, state);
+      }
+    }
+  }
+  handleServerMessage(message) {
+    if (message.type === "webRtcRoomState") {
+      const roomState = this.rooms.get(message.room);
+      if (!roomState) {
+        return;
+      }
+      roomState.selfClientId = message.selfClientId;
+      roomState.peers = message.peers;
+      this.reconcilePeers(message.room, roomState);
+      return;
+    }
+    if (message.type === "webRtcSignal") {
+      const roomState = this.rooms.get(message.room);
+      if (!roomState) {
+        return;
+      }
+      this.handleSignal(message.room, roomState, message.fromClientId, message.payload);
+    }
+  }
+  leaveRoom(room, roomState) {
+    for (const pc of roomState.peerConnections.values()) {
+      pc.close();
+    }
+    roomState.peerConnections.clear();
+    roomState.remoteStreams.clear();
+    roomState.pendingIceCandidates.clear();
+    roomState.localStream?.getTracks().forEach((track) => track.stop());
+    roomState.localStream = undefined;
+    if (roomState.joined) {
+      this.sender.sendImmediate({
+        type: "webRtcLeave",
+        room
+      });
+    }
+  }
+  collectRoomElements(root) {
+    const out = {};
+    const rtcEls = root.querySelectorAll("[data-wgui-rtc-room]");
+    for (const el of rtcEls) {
+      if (!(el instanceof HTMLMediaElement)) {
+        continue;
+      }
+      const room = el.dataset.wguiRtcRoom || "";
+      if (!room) {
+        continue;
+      }
+      if (!out[room]) {
+        out[room] = {
+          localVideo: [],
+          localAudio: [],
+          remoteVideo: [],
+          remoteAudio: []
+        };
+      }
+      const isLocal = el.dataset.wguiRtcLocal === "1";
+      const kind = el.dataset.wguiRtc;
+      if (kind === "video") {
+        if (isLocal && el instanceof HTMLVideoElement) {
+          out[room].localVideo.push(el);
+        } else if (el instanceof HTMLVideoElement) {
+          out[room].remoteVideo.push(el);
+        }
+      }
+      if (kind === "audio") {
+        if (isLocal && el instanceof HTMLAudioElement) {
+          out[room].localAudio.push(el);
+        } else if (el instanceof HTMLAudioElement) {
+          out[room].remoteAudio.push(el);
+        }
+      }
+    }
+    return out;
+  }
+  async ensureLocalMedia(room, roomState) {
+    const wantsMedia = roomState.wantsLocalAudio || roomState.wantsLocalVideo;
+    if (!wantsMedia || roomState.localStream) {
+      return;
+    }
+    try {
+      roomState.localStream = await navigator.mediaDevices.getUserMedia({
+        audio: roomState.wantsLocalAudio,
+        video: roomState.wantsLocalVideo
+      });
+      const peersNeedingRenegotiation = [];
+      for (const [peerId, pc] of roomState.peerConnections.entries()) {
+        this.addLocalTracks(pc, roomState.localStream);
+        if (pc.signalingState === "stable" && pc.localDescription && pc.remoteDescription) {
+          peersNeedingRenegotiation.push(peerId);
+        }
+      }
+      for (const peerId of peersNeedingRenegotiation) {
+        await this.createOffer(room, roomState, peerId);
+      }
+      this.syncElements(document.body);
+    } catch (err) {
+      console.error("failed to getUserMedia for room", room, err);
+    }
+  }
+  reconcilePeers(room, roomState) {
+    const activePeers = new Set(roomState.peers.filter((id) => id !== roomState.selfClientId));
+    for (const [peerId, pc] of roomState.peerConnections.entries()) {
+      if (activePeers.has(peerId)) {
+        continue;
+      }
+      pc.close();
+      roomState.peerConnections.delete(peerId);
+      roomState.remoteStreams.delete(peerId);
+      roomState.pendingIceCandidates.delete(peerId);
+    }
+    for (const peerId of activePeers) {
+      const existing = roomState.peerConnections.get(peerId);
+      if (existing) {
+        continue;
+      }
+      const pc = this.createPeerConnection(room, roomState, peerId);
+      roomState.peerConnections.set(peerId, pc);
+      if ((roomState.selfClientId ?? 0) < peerId) {
+        this.createOffer(room, roomState, peerId);
+      }
+    }
+    this.syncElements(document.body);
+  }
+  createPeerConnection(room, roomState, peerId) {
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    if (roomState.localStream) {
+      this.addLocalTracks(pc, roomState.localStream);
+    }
+    pc.onicecandidate = (event) => {
+      if (!event.candidate) {
+        return;
+      }
+      this.sender.sendImmediate({
+        type: "webRtcSignal",
+        room,
+        targetClientId: peerId,
+        payload: JSON.stringify({ kind: "ice", candidate: event.candidate })
+      });
+    };
+    pc.ontrack = (event) => {
+      const stream = event.streams[0] ?? this.ensurePeerRemoteStream(roomState, peerId);
+      if (!event.streams[0]) {
+        stream.addTrack(event.track);
+      }
+      roomState.remoteStreams.set(peerId, stream);
+      this.syncElements(document.body);
+    };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+        roomState.remoteStreams.delete(peerId);
+        roomState.pendingIceCandidates.delete(peerId);
+        this.syncElements(document.body);
+      }
+    };
+    return pc;
+  }
+  addLocalTracks(pc, stream) {
+    for (const track of stream.getTracks()) {
+      pc.addTrack(track, stream);
+    }
+  }
+  async createOffer(room, roomState, peerId) {
+    const pc = roomState.peerConnections.get(peerId);
+    if (!pc) {
+      return;
+    }
+    await this.ensureLocalMedia(room, roomState);
+    if (!roomState.localStream) {
+      this.ensureReceiveTransceivers(pc, roomState);
+    }
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    this.sender.sendImmediate({
+      type: "webRtcSignal",
+      room,
+      targetClientId: peerId,
+      payload: JSON.stringify({ kind: "offer", sdp: offer })
+    });
+  }
+  async handleSignal(room, roomState, fromClientId, payload) {
+    let signal;
+    try {
+      signal = JSON.parse(payload);
+    } catch (_) {
+      return;
+    }
+    let pc = roomState.peerConnections.get(fromClientId);
+    if (!pc) {
+      pc = this.createPeerConnection(room, roomState, fromClientId);
+      roomState.peerConnections.set(fromClientId, pc);
+    }
+    if (signal.kind === "offer") {
+      await this.ensureLocalMedia(room, roomState);
+      if (!roomState.localStream) {
+        this.ensureReceiveTransceivers(pc, roomState);
+      }
+      if (pc.signalingState !== "stable") {
+        return;
+      }
+      await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+      await this.flushPendingIce(roomState, fromClientId, pc);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      this.sender.sendImmediate({
+        type: "webRtcSignal",
+        room,
+        targetClientId: fromClientId,
+        payload: JSON.stringify({ kind: "answer", sdp: answer })
+      });
+      return;
+    }
+    if (signal.kind === "answer") {
+      if (pc.signalingState !== "have-local-offer" || !pc.localDescription) {
+        return;
+      }
+      await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+      await this.flushPendingIce(roomState, fromClientId, pc);
+      return;
+    }
+    if (signal.kind === "ice" && signal.candidate) {
+      if (!pc.remoteDescription) {
+        const queued = roomState.pendingIceCandidates.get(fromClientId) ?? [];
+        queued.push(signal.candidate);
+        roomState.pendingIceCandidates.set(fromClientId, queued);
+        return;
+      }
+      await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+    }
+  }
+  applyLocalPreview(roomState, elements) {
+    for (const video of elements.localVideo) {
+      video.srcObject = roomState.localStream ?? null;
+      this.ensurePlayback(video);
+    }
+    for (const audio of elements.localAudio) {
+      audio.srcObject = roomState.localStream ?? null;
+      this.ensurePlayback(audio);
+    }
+  }
+  applyRemoteMedia(roomState, elements) {
+    const stream = roomState.remoteStreams.values().next().value;
+    for (const video of elements.remoteVideo) {
+      video.srcObject = stream ?? null;
+      this.ensurePlayback(video);
+    }
+    for (const audio of elements.remoteAudio) {
+      audio.srcObject = stream ?? null;
+      this.ensurePlayback(audio);
+    }
+  }
+  ensurePlayback(element) {
+    if (!element.autoplay || !element.srcObject) {
+      return;
+    }
+    const promise = element.play();
+    if (promise && typeof promise.catch === "function") {
+      promise.catch(() => {});
+    }
+  }
+  ensureReceiveTransceivers(pc, roomState) {
+    const hasKind = (kind) => pc.getTransceivers().some((transceiver) => transceiver.receiver.track?.kind === kind || transceiver.sender.track?.kind === kind);
+    if (roomState.wantsLocalAudio && !hasKind("audio")) {
+      pc.addTransceiver("audio", { direction: "recvonly" });
+    }
+    if (roomState.wantsLocalVideo && !hasKind("video")) {
+      pc.addTransceiver("video", { direction: "recvonly" });
+    }
+  }
+  ensurePeerRemoteStream(roomState, peerId) {
+    const existing = roomState.remoteStreams.get(peerId);
+    if (existing) {
+      return existing;
+    }
+    const stream = new MediaStream;
+    roomState.remoteStreams.set(peerId, stream);
+    return stream;
+  }
+  async flushPendingIce(roomState, peerId, pc) {
+    const queued = roomState.pendingIceCandidates.get(peerId);
+    if (!queued || queued.length === 0 || !pc.remoteDescription) {
+      return;
+    }
+    roomState.pendingIceCandidates.delete(peerId);
+    for (const candidate of queued) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.warn("failed queued ICE candidate", err);
+      }
+    }
+  }
+}
+
 // ts/message_sender.ts
 class MessageSender {
   sender;
@@ -1663,6 +2049,9 @@ class MessageSender {
     }
     this.sender(this.queue);
     this.queue = [];
+  }
+  sendImmediate(msg) {
+    this.sender([msg]);
   }
 }
 
@@ -1828,10 +2217,14 @@ window.onload = () => {
   root.style.minHeight = "100vh";
   root.style.width = "100%";
   const debouncer = new Deboncer;
+  let rtc;
   const {
     sender
   } = connectWebsocket({
     onMessage: (sender2, msgs) => {
+      if (!rtc) {
+        rtc = new WebRtcCoordinator(sender2);
+      }
       const ctx = {
         sender: sender2,
         debouncer
@@ -1864,6 +2257,10 @@ window.onload = () => {
         }
         if (message.type === "setTitle") {
           document.title = message.title;
+          continue;
+        }
+        if (message.type === "webRtcRoomState" || message.type === "webRtcSignal") {
+          rtc.handleServerMessage(message);
           continue;
         }
         if (message.type === "threePatch") {
@@ -1916,8 +2313,13 @@ window.onload = () => {
           element.children.item(message.inx)?.remove();
         }
       }
+      rtc.syncElements(root);
     },
     onOpen: (sender2) => {
+      if (!rtc) {
+        rtc = new WebRtcCoordinator(sender2);
+      }
+      rtc.onSocketOpen();
       const params = new URLSearchParams(location.search);
       const query = {};
       params.forEach((value, key) => {
@@ -1929,6 +2331,7 @@ window.onload = () => {
         query
       });
       sender2.sendNow();
+      rtc.syncElements(root);
     }
   });
   window.addEventListener("popstate", (evet) => {
