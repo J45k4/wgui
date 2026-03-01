@@ -139,6 +139,11 @@ struct HandlerMethod {
 	is_async: bool,
 }
 
+struct FallbackEventHandler {
+	ident: syn::Ident,
+	is_async: bool,
+}
+
 fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 	let controller_ident = match *impl_block.self_ty.clone() {
 		Type::Path(path) => path
@@ -157,6 +162,7 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 
 	let mut model_method: Option<(syn::Ident, Type)> = None;
 	let mut handlers = Vec::new();
+	let mut fallback_event_handler: Option<FallbackEventHandler> = None;
 
 	for item in &impl_block.items {
 		let ImplItem::Fn(method) = item else {
@@ -196,17 +202,31 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 				}
 			}
 			(Some(_), Some(_)) => {
+				let arg_type = method.sig.inputs.iter().find_map(|arg| match arg {
+					FnArg::Typed(pat) => Some(&*pat.ty),
+					_ => None,
+				});
+				if input_count == 1 {
+					if let Some(arg_type) = arg_type {
+						if is_client_event_ref(arg_type) {
+							if fallback_event_handler.is_some() {
+								return Err(syn::Error::new_spanned(
+									&method.sig.ident,
+									"wgui_controller allows only one &mut self method that accepts &ClientEvent",
+								));
+							}
+							fallback_event_handler = Some(FallbackEventHandler {
+								ident: method.sig.ident.clone(),
+								is_async: method.sig.asyncness.is_some(),
+							});
+							continue;
+						}
+					}
+				}
+
 				let arg = match input_count {
 					0 => Some(HandlerArg::None),
-					1 => method
-						.sig
-						.inputs
-						.iter()
-						.find_map(|arg| match arg {
-							FnArg::Typed(pat) => Some(&*pat.ty),
-							_ => None,
-						})
-						.and_then(handler_arg_from_type),
+					1 => arg_type.and_then(handler_arg_from_type),
 					_ => None,
 				};
 				if let Some(arg) = arg {
@@ -307,6 +327,22 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 		})
 		.collect::<Vec<_>>();
 	let string_arms_ref = &string_arms;
+	let fallback_decode = if let Some(handler) = &fallback_event_handler {
+		let ident = &handler.ident;
+		if handler.is_async {
+			quote! {
+				return self.#ident(event).await;
+			}
+		} else {
+			quote! {
+				return self.#ident(event);
+			}
+		}
+	} else {
+		quote! {
+			return false;
+		}
+	};
 
 	let output = quote! {
 		#impl_block
@@ -385,7 +421,7 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 
 		async fn handle(&mut self, event: &::wgui::ClientEvent) -> bool {
 			let Some(action) = #template_fn().decode(event) else {
-				return false;
+				#fallback_decode
 			};
 				match action {
 					::wgui::wui::runtime::RuntimeAction::Click { ref name, arg } => {
@@ -442,6 +478,20 @@ fn handler_arg_from_type(ty: &Type) -> Option<HandlerArg> {
 		"i32" => Some(HandlerArg::I32),
 		_ => None,
 	}
+}
+
+fn is_client_event_ref(ty: &Type) -> bool {
+	let Type::Reference(reference) = ty else {
+		return false;
+	};
+	let Type::Path(path) = reference.elem.as_ref() else {
+		return false;
+	};
+	path.path
+		.segments
+		.last()
+		.map(|segment| segment.ident == "ClientEvent")
+		.unwrap_or(false)
 }
 
 fn to_snake_case(value: &str) -> String {

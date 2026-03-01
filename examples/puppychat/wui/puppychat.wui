@@ -55,6 +55,18 @@
             </If>
             <Text value={state.user_name} grow=1 textAlign="right" />
           </HStack>
+          <HStack spacing=8>
+            <Button text="Enable Push" onClick="EnablePushNotifications" />
+            <Button text="Disable Push" onClick="DisablePushNotifications" />
+            <Text value={state.push_status} />
+          </HStack>
+          <VStack height=0 overflow="hidden">
+            <TextInput
+              value={state.web_push_sink}
+              placeholder="__web_push_subscription_sink__"
+              onTextChanged="RegisterWebPushSubscription"
+            />
+          </VStack>
           <If test={state.call_active && state.call_room != ""}>
             <VStack spacing=8 padding=8 border="1px solid #d8d8d8">
               <Text value={state.call_with_video ? "Video call in progress" : "Audio call in progress"} />

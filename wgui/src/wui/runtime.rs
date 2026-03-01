@@ -99,6 +99,37 @@ where
 		}
 	}
 
+	pub fn enable_web_push(
+		&self,
+		service_worker_path: impl Into<String>,
+		vapid_public_key: Option<String>,
+	) {
+		let service_worker_path = service_worker_path.into();
+		if service_worker_path.trim().is_empty() {
+			return;
+		}
+		if let Some(client_id) = *self.current_client.lock().unwrap() {
+			let _ = self.command_tx.send(RuntimeCommand::WebPushEnable {
+				client_id,
+				service_worker_path,
+				vapid_public_key,
+			});
+		}
+	}
+
+	pub fn disable_web_push(&self, service_worker_path: impl Into<String>) {
+		let service_worker_path = service_worker_path.into();
+		if service_worker_path.trim().is_empty() {
+			return;
+		}
+		if let Some(client_id) = *self.current_client.lock().unwrap() {
+			let _ = self.command_tx.send(RuntimeCommand::WebPushDisable {
+				client_id,
+				service_worker_path,
+			});
+		}
+	}
+
 	pub fn session_id(&self) -> Option<String> {
 		self.current_session.lock().unwrap().clone()
 	}
@@ -149,8 +180,23 @@ pub enum RuntimeAction {
 
 #[derive(Debug, Clone)]
 pub enum RuntimeCommand {
-	SetTitle { client_id: usize, title: String },
-	PushState { client_id: usize, url: String },
+	SetTitle {
+		client_id: usize,
+		title: String,
+	},
+	PushState {
+		client_id: usize,
+		url: String,
+	},
+	WebPushEnable {
+		client_id: usize,
+		service_worker_path: String,
+		vapid_public_key: Option<String>,
+	},
+	WebPushDisable {
+		client_id: usize,
+		service_worker_path: String,
+	},
 }
 
 #[derive(Debug, Clone)]

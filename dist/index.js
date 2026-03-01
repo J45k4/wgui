@@ -175,12 +175,18 @@ class ThreeHost {
   pendingRoot;
   pendingOps;
   stlLoadTokens;
+  cameraLookAtTargets;
+  orbitTargetX;
+  orbitTargetY;
+  orbitTargetZ;
+  orbitDistance;
+  orbitTheta;
+  orbitPhi;
+  isLeftRotating;
   isMiddlePanning;
-  isRightRotating;
-  panLastX;
-  panLastY;
-  rotateLastX;
-  rotateLastY;
+  isRightPanning;
+  pointerLastX;
+  pointerLastY;
   onMouseDown;
   onMouseMove;
   onMouseUp;
@@ -201,12 +207,18 @@ class ThreeHost {
     this.pendingRoot = null;
     this.pendingOps = [];
     this.stlLoadTokens = new Map;
+    this.cameraLookAtTargets = new WeakMap;
+    this.orbitTargetX = 0;
+    this.orbitTargetY = 0;
+    this.orbitTargetZ = 0;
+    this.orbitDistance = 1;
+    this.orbitTheta = 0;
+    this.orbitPhi = Math.PI / 2;
+    this.isLeftRotating = false;
     this.isMiddlePanning = false;
-    this.isRightRotating = false;
-    this.panLastX = 0;
-    this.panLastY = 0;
-    this.rotateLastX = 0;
-    this.rotateLastY = 0;
+    this.isRightPanning = false;
+    this.pointerLastX = 0;
+    this.pointerLastY = 0;
     this.onMouseDown = null;
     this.onMouseMove = null;
     this.onMouseUp = null;
@@ -242,7 +254,7 @@ class ThreeHost {
   }
   dispose() {
     this.stop();
-    this.teardownPanControls();
+    this.teardownOrbitPointerControls();
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
@@ -282,7 +294,7 @@ class ThreeHost {
     this.renderer.setPixelRatio(window.devicePixelRatio || 1);
     this.scene = new THREE.Scene;
     this.setupResizeObserver();
-    this.setupPanControls();
+    this.setupOrbitPointerControls();
     this.start();
     if (this.pendingRoot) {
       const root = this.pendingRoot;
@@ -310,6 +322,7 @@ class ThreeHost {
     this.parents.clear();
     this.stlLoadTokens.clear();
     this.activeCamera = null;
+    this.resetOrbitState();
   }
   buildFromTree(root) {
     const stack = [
@@ -497,11 +510,20 @@ class ThreeHost {
       case "position":
         if (decoded && obj.position) {
           obj.position.set(decoded.x, decoded.y, decoded.z);
+          if (obj === this.activeCamera) {
+            this.syncOrbitFromActiveCamera();
+            this.applyOrbitToActiveCamera();
+          }
         }
         return;
       case "rotation":
         if (decoded && obj.rotation) {
           obj.rotation.set(decoded.x, decoded.y, decoded.z);
+        }
+        return;
+      case "rotationOrder":
+        if (typeof decoded === "string" && obj.rotation && typeof obj.rotation.order === "string") {
+          obj.rotation.order = decoded;
         }
         return;
       case "scale":
@@ -512,6 +534,18 @@ class ThreeHost {
       case "lookAt":
         if (decoded && obj.lookAt) {
           obj.lookAt(decoded.x, decoded.y, decoded.z);
+          if (obj.isPerspectiveCamera || obj.isOrthographicCamera) {
+            this.cameraLookAtTargets.set(obj, {
+              x: decoded.x,
+              y: decoded.y,
+              z: decoded.z
+            });
+          }
+          if (obj === this.activeCamera) {
+            this.setOrbitTarget(decoded.x, decoded.y, decoded.z);
+            this.syncOrbitFromActiveCamera();
+            this.applyOrbitToActiveCamera();
+          }
         }
         return;
       case "up":
@@ -574,6 +608,14 @@ class ThreeHost {
         if (typeof decoded === "boolean") {
           if (decoded) {
             this.activeCamera = obj;
+            const target = this.cameraLookAtTargets.get(obj);
+            if (target) {
+              this.setOrbitTarget(target.x, target.y, target.z);
+            } else {
+              this.setOrbitTarget(0, 0, 0);
+            }
+            this.syncOrbitFromActiveCamera();
+            this.applyOrbitToActiveCamera();
           } else if (this.activeCamera === obj) {
             this.activeCamera = null;
           }
@@ -639,6 +681,14 @@ class ThreeHost {
     const obj = this.objects.get(id);
     if (!obj) {
       return;
+    }
+    if (key === "lookAt" && (obj.isPerspectiveCamera || obj.isOrthographicCamera)) {
+      this.cameraLookAtTargets.delete(obj);
+      if (this.activeCamera === obj) {
+        this.setOrbitTarget(0, 0, 0);
+        this.syncOrbitFromActiveCamera();
+        this.applyOrbitToActiveCamera();
+      }
     }
     if (key === "active" && this.activeCamera === obj) {
       this.activeCamera = null;
@@ -710,52 +760,69 @@ class ThreeHost {
     this.resizeObserver.observe(this.canvas);
     resize();
   }
-  setupPanControls() {
+  resetOrbitState() {
+    this.isLeftRotating = false;
+    this.isMiddlePanning = false;
+    this.isRightPanning = false;
+    this.pointerLastX = 0;
+    this.pointerLastY = 0;
+    this.orbitTargetX = 0;
+    this.orbitTargetY = 0;
+    this.orbitTargetZ = 0;
+    this.orbitDistance = 1;
+    this.orbitTheta = 0;
+    this.orbitPhi = Math.PI / 2;
+  }
+  setOrbitTarget(x, y, z) {
+    this.orbitTargetX = x;
+    this.orbitTargetY = y;
+    this.orbitTargetZ = z;
+  }
+  setupOrbitPointerControls() {
     if (this.onMouseDown || this.onMouseMove || this.onMouseUp || this.onWheel) {
       return;
     }
     this.onMouseDown = (event) => {
-      if (event.button !== 1 && event.button !== 2) {
+      if (event.button !== 0 && event.button !== 1 && event.button !== 2) {
         return;
       }
       event.preventDefault();
-      if (event.button === 1) {
+      this.pointerLastX = event.clientX;
+      this.pointerLastY = event.clientY;
+      if (event.button === 0) {
+        this.isLeftRotating = true;
+      } else if (event.button === 1) {
         this.isMiddlePanning = true;
-        this.panLastX = event.clientX;
-        this.panLastY = event.clientY;
-      }
-      if (event.button === 2) {
-        this.isRightRotating = true;
-        this.rotateLastX = event.clientX;
-        this.rotateLastY = event.clientY;
+      } else if (event.button === 2) {
+        this.isRightPanning = true;
       }
       document.body.style.userSelect = "none";
-      document.body.style.cursor = "grabbing";
+      document.body.style.cursor = this.isLeftRotating ? "grabbing" : "move";
     };
     this.onMouseMove = (event) => {
-      if (this.isMiddlePanning) {
-        event.preventDefault();
-        const dx = event.clientX - this.panLastX;
-        const dy = event.clientY - this.panLastY;
-        this.panLastX = event.clientX;
-        this.panLastY = event.clientY;
-        this.panFromCamera(dx, dy);
+      if (!this.isLeftRotating && !this.isMiddlePanning && !this.isRightPanning) {
+        return;
       }
-      if (this.isRightRotating) {
-        event.preventDefault();
-        const dx = event.clientX - this.rotateLastX;
-        const dy = event.clientY - this.rotateLastY;
-        this.rotateLastX = event.clientX;
-        this.rotateLastY = event.clientY;
-        this.rotateFromCamera(dx, dy);
+      event.preventDefault();
+      const dx = event.clientX - this.pointerLastX;
+      const dy = event.clientY - this.pointerLastY;
+      this.pointerLastX = event.clientX;
+      this.pointerLastY = event.clientY;
+      if (this.isLeftRotating) {
+        this.rotateOrbit(dx, dy);
+        return;
       }
+      this.panOrbit(dx, dy);
     };
     this.onMouseUp = (event) => {
+      if (event.button === 0) {
+        this.isLeftRotating = false;
+      }
       if (event.button === 1) {
         this.isMiddlePanning = false;
       }
       if (event.button === 2) {
-        this.isRightRotating = false;
+        this.isRightPanning = false;
       }
       this.stopControlsInteraction();
     };
@@ -769,7 +836,7 @@ class ThreeHost {
     };
     this.onWheel = (event) => {
       event.preventDefault();
-      this.zoomFromWheel(event.deltaY);
+      this.zoomOrbit(event.deltaY);
     };
     this.canvas.addEventListener("mousedown", this.onMouseDown);
     window.addEventListener("mousemove", this.onMouseMove);
@@ -778,9 +845,10 @@ class ThreeHost {
     this.canvas.addEventListener("contextmenu", this.onContextMenu);
     this.canvas.addEventListener("wheel", this.onWheel, { passive: false });
   }
-  teardownPanControls() {
+  teardownOrbitPointerControls() {
+    this.isLeftRotating = false;
     this.isMiddlePanning = false;
-    this.isRightRotating = false;
+    this.isRightPanning = false;
     this.stopControlsInteraction();
     if (this.onMouseDown) {
       this.canvas.removeEventListener("mousedown", this.onMouseDown);
@@ -808,59 +876,91 @@ class ThreeHost {
     }
   }
   stopControlsInteraction() {
-    if (this.isMiddlePanning || this.isRightRotating) {
+    if (this.isLeftRotating || this.isMiddlePanning || this.isRightPanning) {
       return;
     }
     document.body.style.userSelect = "";
     document.body.style.cursor = "";
   }
-  panFromCamera(dx, dy) {
+  syncOrbitFromActiveCamera() {
+    if (!this.activeCamera || !this.activeCamera.position) {
+      return;
+    }
+    const camera = this.activeCamera;
+    const offsetX = camera.position.x - this.orbitTargetX;
+    const offsetY = camera.position.y - this.orbitTargetY;
+    const offsetZ = camera.position.z - this.orbitTargetZ;
+    const distance = Math.sqrt(offsetX * offsetX + offsetY * offsetY + offsetZ * offsetZ);
+    if (!Number.isFinite(distance) || distance < 0.0001) {
+      this.orbitDistance = 1;
+      this.orbitTheta = 0;
+      this.orbitPhi = Math.PI / 2;
+      return;
+    }
+    this.orbitDistance = distance;
+    this.orbitTheta = Math.atan2(offsetX, offsetZ);
+    const normalizedY = Math.max(-1, Math.min(1, offsetY / distance));
+    const phi = Math.acos(normalizedY);
+    this.orbitPhi = Math.max(0.001, Math.min(Math.PI - 0.001, phi));
+  }
+  applyOrbitToActiveCamera() {
+    if (!this.activeCamera || !this.activeCamera.position || !this.activeCamera.lookAt) {
+      return;
+    }
+    const distance = Math.max(0.0001, this.orbitDistance);
+    const sinPhi = Math.sin(this.orbitPhi);
+    const cosPhi = Math.cos(this.orbitPhi);
+    const sinTheta = Math.sin(this.orbitTheta);
+    const cosTheta = Math.cos(this.orbitTheta);
+    this.activeCamera.position.set(this.orbitTargetX + distance * sinPhi * sinTheta, this.orbitTargetY + distance * cosPhi, this.orbitTargetZ + distance * sinPhi * cosTheta);
+    this.activeCamera.lookAt(this.orbitTargetX, this.orbitTargetY, this.orbitTargetZ);
+    if (this.activeCamera.updateMatrixWorld) {
+      this.activeCamera.updateMatrixWorld();
+    }
+  }
+  panOrbit(dx, dy) {
     if (!this.three || !this.activeCamera || !this.activeCamera.position) {
       return;
     }
     const THREE = this.three;
     const camera = this.activeCamera;
-    const cameraPos = camera.position;
-    const distance = Math.max(1, cameraPos.length ? cameraPos.length() : 1);
-    const factor = distance / Math.max(this.canvas.clientHeight || 1, 1);
+    let factor = this.orbitDistance / Math.max(this.canvas.clientHeight || 1, 1);
+    if (camera.isOrthographicCamera) {
+      const viewHeight = (camera.top - camera.bottom) / Math.max(camera.zoom || 1, 0.0001);
+      factor = viewHeight / Math.max(this.canvas.clientHeight || 1, 1);
+    }
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
     const delta = right.multiplyScalar(-dx * factor).add(up.multiplyScalar(dy * factor));
-    cameraPos.add(delta);
+    this.orbitTargetX += delta.x;
+    this.orbitTargetY += delta.y;
+    this.orbitTargetZ += delta.z;
+    this.applyOrbitToActiveCamera();
   }
-  zoomFromWheel(deltaY) {
-    if (!this.three || !this.activeCamera) {
+  zoomOrbit(deltaY) {
+    if (!this.activeCamera) {
       return;
     }
-    const THREE = this.three;
     const camera = this.activeCamera;
-    if (camera.isPerspectiveCamera && camera.position) {
-      const amount = Math.max(-1, Math.min(1, -deltaY)) * 0.1;
-      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-      camera.position.add(forward.multiplyScalar(amount));
+    if (camera.isPerspectiveCamera) {
+      const scale = Math.exp(deltaY * 0.0015);
+      this.orbitDistance = Math.max(0.02, Math.min(5000, this.orbitDistance * scale));
+      this.applyOrbitToActiveCamera();
       return;
     }
     if (camera.isOrthographicCamera) {
-      const factor = deltaY > 0 ? 0.9 : 1.1;
-      camera.zoom = Math.max(0.05, Math.min(100, camera.zoom / factor));
+      const scale = Math.exp(-deltaY * 0.0015);
+      camera.zoom = Math.max(0.05, Math.min(200, camera.zoom * scale));
       camera.updateProjectionMatrix();
     }
   }
-  rotateFromCamera(dx, dy) {
-    if (!this.three || !this.activeCamera) {
+  rotateOrbit(dx, dy) {
+    if (!this.activeCamera) {
       return;
     }
-    const THREE = this.three;
-    const camera = this.activeCamera;
-    if (!camera.quaternion) {
-      return;
-    }
-    const yaw = -dx * 0.005;
-    const pitch = -dy * 0.005;
-    const up = new THREE.Vector3(0, 1, 0);
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-    camera.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(up, yaw));
-    camera.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(right, pitch));
+    this.orbitTheta -= dx * 0.005;
+    this.orbitPhi = Math.max(0.001, Math.min(Math.PI - 0.001, this.orbitPhi - dy * 0.005));
+    this.applyOrbitToActiveCamera();
   }
 }
 var decodeValue = (value) => {
@@ -2155,6 +2255,75 @@ class WebRtcCoordinator {
   }
 }
 
+// ts/web_push.ts
+var decodeBase64Url = (value) => {
+  const padding = "=".repeat((4 - (value.length % 4 || 4)) % 4);
+  const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const bytes = atob(base64);
+  const out = new Uint8Array(bytes.length);
+  for (let i = 0;i < bytes.length; i += 1) {
+    out[i] = bytes.charCodeAt(i);
+  }
+  return out;
+};
+var webPushSupported = () => ("Notification" in window) && ("serviceWorker" in navigator) && ("PushManager" in window);
+var pushSubscriptionToServer = (sender, subscription) => {
+  const payload = subscription ? subscription.toJSON() : null;
+  sender.send({
+    type: "webPushSubscriptionChanged",
+    subscription: payload
+  });
+  sender.sendNow();
+};
+var normalizeVapidPublicKey = (value) => {
+  if (!value) {
+    return;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return;
+  }
+  return trimmed;
+};
+var enableWebPush = async (sender, message) => {
+  if (!webPushSupported()) {
+    pushSubscriptionToServer(sender, null);
+    return;
+  }
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") {
+    pushSubscriptionToServer(sender, null);
+    return;
+  }
+  const registration = await navigator.serviceWorker.register(message.serviceWorkerPath);
+  let subscription = await registration.pushManager.getSubscription();
+  if (!subscription) {
+    const opts = {
+      userVisibleOnly: true
+    };
+    const key = normalizeVapidPublicKey(message.vapidPublicKey);
+    if (key) {
+      opts.applicationServerKey = decodeBase64Url(key);
+    }
+    subscription = await registration.pushManager.subscribe(opts);
+  }
+  pushSubscriptionToServer(sender, subscription);
+};
+var disableWebPush = async (sender, message) => {
+  if (!webPushSupported()) {
+    pushSubscriptionToServer(sender, null);
+    return;
+  }
+  const registration = await navigator.serviceWorker.getRegistration(message.serviceWorkerPath);
+  if (!registration) {
+    pushSubscriptionToServer(sender, null);
+    return;
+  }
+  const subscription = await registration.pushManager.getSubscription();
+  await subscription?.unsubscribe();
+  pushSubscriptionToServer(sender, null);
+};
+
 // ts/message_sender.ts
 class MessageSender {
   sender;
@@ -2408,6 +2577,18 @@ window.onload = () => {
           if (target) {
             applyThreePatch(target, message.ops);
           }
+          continue;
+        }
+        if (message.type === "webPushEnable") {
+          enableWebPush(sender2, message).catch((err) => {
+            console.warn("web push enable failed", err);
+          });
+          continue;
+        }
+        if (message.type === "webPushDisable") {
+          disableWebPush(sender2, message).catch((err) => {
+            console.warn("web push disable failed", err);
+          });
           continue;
         }
         if (message.type === "setProp") {

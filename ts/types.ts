@@ -389,6 +389,17 @@ export type WebRtcSignal = {
 	payload: string
 }
 
+export type WebPushEnable = {
+	type: "webPushEnable"
+	serviceWorkerPath: string
+	vapidPublicKey?: string | null
+}
+
+export type WebPushDisable = {
+	type: "webPushDisable"
+	serviceWorkerPath: string
+}
+
 export type SrvMessage = Replace |
     ReplaceAt |
     AddBack | 
@@ -402,7 +413,9 @@ export type SrvMessage = Replace |
 	ThreePatch |
     SetTitle |
 	WebRtcRoomState |
-	WebRtcSignal
+	WebRtcSignal |
+	WebPushEnable |
+	WebPushDisable
 
 export type OnClick = {
     type: "onClick"
@@ -466,6 +479,11 @@ export type SendWebRtcSignal = {
 	payload: string
 }
 
+export type WebPushSubscriptionChanged = {
+	type: "webPushSubscriptionChanged"
+	subscription: { [key: string]: unknown } | null
+}
+
 export type MessageToSrv = OnClick | 
     OnTextChange | 
     OnKeyDown | 
@@ -474,7 +492,8 @@ export type MessageToSrv = OnClick |
 	OnSelect |
 	WebRtcJoin |
 	WebRtcLeave |
-	SendWebRtcSignal
+	SendWebRtcSignal |
+	WebPushSubscriptionChanged
 
 export type MessagesToSrv = MessageToSrv[]
 

@@ -155,6 +155,40 @@ impl WguiHandle {
 		sender.send(Command::PushState(url.to_string())).unwrap();
 	}
 
+	pub async fn enable_web_push(
+		&self,
+		client_id: usize,
+		service_worker_path: impl Into<String>,
+		vapid_public_key: Option<String>,
+	) {
+		let service_worker_path = service_worker_path.into();
+		if service_worker_path.trim().is_empty() {
+			return;
+		}
+		self.send_actions(
+			client_id,
+			vec![ClientAction::WebPushEnable {
+				service_worker_path,
+				vapid_public_key,
+			}],
+		)
+		.await;
+	}
+
+	pub async fn disable_web_push(&self, client_id: usize, service_worker_path: impl Into<String>) {
+		let service_worker_path = service_worker_path.into();
+		if service_worker_path.trim().is_empty() {
+			return;
+		}
+		self.send_actions(
+			client_id,
+			vec![ClientAction::WebPushDisable {
+				service_worker_path,
+			}],
+		)
+		.await;
+	}
+
 	pub async fn send_actions(&self, client_id: usize, actions: Vec<ClientAction>) {
 		if actions.is_empty() {
 			return;
@@ -382,6 +416,23 @@ where
 		self.handle.clear_session(client_id).await
 	}
 
+	pub async fn enable_web_push(
+		&self,
+		client_id: usize,
+		service_worker_path: impl Into<String>,
+		vapid_public_key: Option<String>,
+	) {
+		self.handle
+			.enable_web_push(client_id, service_worker_path, vapid_public_key)
+			.await;
+	}
+
+	pub async fn disable_web_push(&self, client_id: usize, service_worker_path: impl Into<String>) {
+		self.handle
+			.disable_web_push(client_id, service_worker_path)
+			.await;
+	}
+
 	pub fn set_ctx<T>(&mut self, ctx: Arc<crate::wui::runtime::Ctx<T, DB>>)
 	where
 		T: Send + Sync + 'static,
@@ -396,6 +447,23 @@ where
 					}
 					crate::wui::runtime::RuntimeCommand::PushState { client_id, url } => {
 						handle.push_state(client_id, &url).await;
+					}
+					crate::wui::runtime::RuntimeCommand::WebPushEnable {
+						client_id,
+						service_worker_path,
+						vapid_public_key,
+					} => {
+						handle
+							.enable_web_push(client_id, service_worker_path, vapid_public_key)
+							.await;
+					}
+					crate::wui::runtime::RuntimeCommand::WebPushDisable {
+						client_id,
+						service_worker_path,
+					} => {
+						handle
+							.disable_web_push(client_id, service_worker_path)
+							.await;
 					}
 				}
 			}

@@ -39,3 +39,15 @@ model Session {
   session_key: String
   user_name: String
 }
+
+model PushSubscription {
+  id: Int @id
+  user_name: String
+  channel: String
+  endpoint: String
+  p256dh_key: String
+  auth_key: String
+  active: Bool
+  updated_at: String
+  user: User? @relation(user_name)
+}

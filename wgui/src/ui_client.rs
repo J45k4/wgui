@@ -23,6 +23,7 @@ fn event_kind_name(event: &ClientEvent) -> &'static str {
 		ClientEvent::WebRtcJoin(_) => "WebRtcJoin",
 		ClientEvent::WebRtcLeave(_) => "WebRtcLeave",
 		ClientEvent::WebRtcSignal(_) => "WebRtcSignal",
+		ClientEvent::WebPushSubscriptionChanged(_) => "WebPushSubscriptionChanged",
 	}
 }
 

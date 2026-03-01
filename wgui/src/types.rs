@@ -81,6 +81,13 @@ pub struct WebRtcSignal {
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebPushSubscriptionChanged {
+	#[serde(default)]
+	pub subscription: Option<serde_json::Value>,
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum ClientEvent {
 	Disconnected { id: usize },
@@ -94,6 +101,7 @@ pub enum ClientEvent {
 	WebRtcJoin(WebRtcJoin),
 	WebRtcLeave(WebRtcLeave),
 	WebRtcSignal(WebRtcSignal),
+	WebPushSubscriptionChanged(WebPushSubscriptionChanged),
 }
 
 #[derive(Debug, Clone)]
@@ -257,6 +265,16 @@ pub enum ClientAction {
 		from_client_id: usize,
 		payload: String,
 	},
+	WebPushEnable {
+		#[serde(rename = "serviceWorkerPath")]
+		service_worker_path: String,
+		#[serde(rename = "vapidPublicKey")]
+		vapid_public_key: Option<String>,
+	},
+	WebPushDisable {
+		#[serde(rename = "serviceWorkerPath")]
+		service_worker_path: String,
+	},
 }
 
 pub enum ServerEvent {
@@ -300,16 +318,14 @@ mod tests {
 
 	#[test]
 	fn webrtc_signal_deserializes_target_client_id_camel_or_snake() {
-		let signal_camel: WebRtcSignal = serde_json::from_str(
-			r#"{"room":"channel:1","targetClientId":7,"payload":"x"}"#,
-		)
-		.unwrap();
+		let signal_camel: WebRtcSignal =
+			serde_json::from_str(r#"{"room":"channel:1","targetClientId":7,"payload":"x"}"#)
+				.unwrap();
 		assert_eq!(signal_camel.target_client_id, Some(7));
 
-		let signal_snake: WebRtcSignal = serde_json::from_str(
-			r#"{"room":"channel:1","target_client_id":9,"payload":"x"}"#,
-		)
-		.unwrap();
+		let signal_snake: WebRtcSignal =
+			serde_json::from_str(r#"{"room":"channel:1","target_client_id":9,"payload":"x"}"#)
+				.unwrap();
 		assert_eq!(signal_snake.target_client_id, Some(9));
 	}
 
@@ -331,11 +347,13 @@ mod tests {
 			],
 		};
 		let json = serde_json::to_value(&action).unwrap();
-		assert_eq!(json.get("selfClientId").and_then(|value| value.as_u64()), Some(5));
+		assert_eq!(
+			json.get("selfClientId").and_then(|value| value.as_u64()),
+			Some(5)
+		);
 		assert!(json.get("self_client_id").is_none());
 		assert_eq!(
-			json
-				.get("participants")
+			json.get("participants")
 				.and_then(|value| value.as_array())
 				.and_then(|value| value.first())
 				.and_then(|value| value.get("clientId"))
@@ -352,7 +370,61 @@ mod tests {
 			payload: "hello".to_string(),
 		};
 		let json = serde_json::to_value(&action).unwrap();
-		assert_eq!(json.get("fromClientId").and_then(|value| value.as_u64()), Some(3));
+		assert_eq!(
+			json.get("fromClientId").and_then(|value| value.as_u64()),
+			Some(3)
+		);
 		assert!(json.get("from_client_id").is_none());
+	}
+
+	#[test]
+	fn web_push_subscription_changed_deserializes_from_camel_case_type() {
+		let with_subscription: ClientEvent = serde_json::from_str(
+			r#"{"type":"webPushSubscriptionChanged","subscription":{"endpoint":"https://push.example/sub"}}"#,
+		)
+		.unwrap();
+		match with_subscription {
+			ClientEvent::WebPushSubscriptionChanged(payload) => {
+				assert_eq!(
+					payload
+						.subscription
+						.as_ref()
+						.and_then(|value| value.get("endpoint"))
+						.and_then(|value| value.as_str()),
+					Some("https://push.example/sub")
+				);
+			}
+			_ => panic!("expected WebPushSubscriptionChanged"),
+		}
+
+		let without_subscription: ClientEvent =
+			serde_json::from_str(r#"{"type":"webPushSubscriptionChanged","subscription":null}"#)
+				.unwrap();
+		match without_subscription {
+			ClientEvent::WebPushSubscriptionChanged(payload) => {
+				assert!(payload.subscription.is_none());
+			}
+			_ => panic!("expected WebPushSubscriptionChanged"),
+		}
+	}
+
+	#[test]
+	fn web_push_enable_serializes_camel_case_fields() {
+		let action = ClientAction::WebPushEnable {
+			service_worker_path: "/sw.js".to_string(),
+			vapid_public_key: Some("public-key".to_string()),
+		};
+		let json = serde_json::to_value(&action).unwrap();
+		assert_eq!(
+			json.get("serviceWorkerPath")
+				.and_then(|value| value.as_str()),
+			Some("/sw.js")
+		);
+		assert_eq!(
+			json.get("vapidPublicKey").and_then(|value| value.as_str()),
+			Some("public-key")
+		);
+		assert!(json.get("service_worker_path").is_none());
+		assert!(json.get("vapid_public_key").is_none());
 	}
 }

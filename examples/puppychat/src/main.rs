@@ -4,8 +4,11 @@ use wgui::{Wgui, WguiModel};
 mod components;
 mod context;
 mod db;
+mod notifications;
 
-pub use db::{Channel, DirectMessage, Message, PuppyDB as PuppyDb, Session, User};
+pub use db::{
+	Channel, DirectMessage, Message, PuppyDB as PuppyDb, PushSubscription, Session, User,
+};
 
 #[derive(Debug, Clone)]
 pub struct SessionState {
@@ -25,6 +28,8 @@ pub struct SessionState {
 	pub active_name: String,
 	pub call_active: bool,
 	pub call_with_video: bool,
+	pub push_status: String,
+	pub web_push_sink: String,
 }
 
 impl SessionState {
@@ -52,6 +57,8 @@ impl SessionState {
 			active_name,
 			call_active: false,
 			call_with_video: true,
+			push_status: String::new(),
+			web_push_sink: String::new(),
 		}
 	}
 }
@@ -92,6 +99,8 @@ pub struct ChatViewState {
 	call_active: bool,
 	call_with_video: bool,
 	call_room: String,
+	push_status: String,
+	web_push_sink: String,
 	channels: Vec<ChannelView>,
 	directs: Vec<DirectMessageView>,
 }

@@ -4,6 +4,7 @@ import { renderItem } from "./render.ts";
 import { applyThreePatch } from "./three_host.ts";
 import { Context, PropValue, SetPropSet, SrvMessage } from "./types.ts";
 import { WebRtcCoordinator } from "./webrtc.ts";
+import { disableWebPush, enableWebPush } from "./web_push.ts";
 import { connectWebsocket } from "./ws.ts";
 
 const getSetPropValue = (value?: PropValue) => {
@@ -169,6 +170,20 @@ window.onload = () => {
 					continue
 				}
 
+				if (message.type === "webPushEnable") {
+					enableWebPush(sender, message).catch((err) => {
+						console.warn("web push enable failed", err)
+					})
+					continue
+				}
+
+				if (message.type === "webPushDisable") {
+					disableWebPush(sender, message).catch((err) => {
+						console.warn("web push disable failed", err)
+					})
+					continue
+				}
+
                 if (message.type === "setProp") {
                     const target = getPathItem(message.path, root)
 
@@ -227,7 +242,7 @@ window.onload = () => {
                     element.children.item(message.inx)?.remove()
                 }
 
-            }
+			}
 			rtc.syncElements(root)
         },
 		onOpen: (sender) => {

@@ -1,12 +1,17 @@
 use crate::context::SharedContext;
 use crate::{
 	Channel, ChannelView, ChatViewState, DirectMessage, DirectMessageView, Message, PuppyDb,
-	Session, SessionState, User,
+	PushSubscription, Session, SessionState, User,
 };
 use async_trait::async_trait;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use wgui::wgui_controller;
 use wgui::wui::runtime::{Component, Ctx};
+
+use crate::notifications::{NotificationChannel, PushPayload, PushTarget, WebPushSubscription};
+
+const WEB_PUSH_SERVICE_WORKER_PATH: &str = "/assets/puppychat-sw.js";
 
 pub struct Puppychat {
 	ctx: Arc<Ctx<SharedContext, PuppyDb>>,
@@ -148,6 +153,123 @@ impl Puppychat {
 		row.user_name = user_name.to_string();
 		db.sessions.save(row).await;
 	}
+
+	fn notification_recipients(&self, message: &Message) -> Vec<String> {
+		let mut recipients = BTreeSet::new();
+		if let Some(channel_id) = message.channel_id {
+			let _ = channel_id;
+			for user in self.ctx.db().users.snapshot() {
+				if user.name != message.author {
+					recipients.insert(user.name);
+				}
+			}
+			return recipients.into_iter().collect();
+		}
+		if let Some(thread) = message.dm_thread_key.as_deref() {
+			for part in thread.split('|') {
+				if !part.is_empty() && part != message.author {
+					recipients.insert(part.to_string());
+				}
+			}
+		}
+		recipients.into_iter().collect()
+	}
+
+	async fn dispatch_push_for_message(&self, message: &Message) {
+		let recipients = self.notification_recipients(message);
+		if recipients.is_empty() {
+			return;
+		}
+		let subscriptions = self.ctx.db().push_subscriptions.snapshot();
+		let body = if message.body.is_empty() {
+			"sent an image".to_string()
+		} else {
+			message.body.clone()
+		};
+		let payload = PushPayload {
+			title: format!("New message from {}", message.author),
+			body,
+			thread: message
+				.dm_thread_key
+				.clone()
+				.unwrap_or_else(|| format!("channel:{}", message.channel_id.unwrap_or(0))),
+		};
+
+		for user_name in recipients {
+			for subscription in subscriptions
+				.iter()
+				.filter(|subscription| subscription.active && subscription.user_name == user_name)
+				.cloned()
+			{
+				let Some(channel) = NotificationChannel::from_str(&subscription.channel) else {
+					continue;
+				};
+				let target = PushTarget {
+					channel,
+					endpoint: subscription.endpoint.clone(),
+					p256dh_key: subscription.p256dh_key.clone(),
+					auth_key: subscription.auth_key.clone(),
+				};
+				if let Err(err) = self.ctx.state.push.send(&target, &payload).await {
+					log::warn!(
+						"failed to send push notification to user {} on {}: {}",
+						user_name,
+						subscription.channel,
+						err
+					);
+				}
+			}
+		}
+	}
+
+	async fn upsert_web_push_subscription(&self, user_name: &str, data: &WebPushSubscription) {
+		if user_name.is_empty() || data.endpoint.trim().is_empty() {
+			return;
+		}
+		let endpoint = data.endpoint.trim().to_string();
+		let existing = self
+			.ctx
+			.db()
+			.push_subscriptions
+			.snapshot()
+			.into_iter()
+			.find(|subscription| {
+				subscription.channel == NotificationChannel::Web.as_str()
+					&& subscription.endpoint == endpoint
+			});
+		let mut row = existing.unwrap_or(PushSubscription {
+			id: 0,
+			user_name: user_name.to_string(),
+			channel: NotificationChannel::Web.as_str().to_string(),
+			endpoint: endpoint.clone(),
+			p256dh_key: String::new(),
+			auth_key: String::new(),
+			active: true,
+			updated_at: "now".to_string(),
+		});
+		row.user_name = user_name.to_string();
+		row.channel = NotificationChannel::Web.as_str().to_string();
+		row.endpoint = endpoint;
+		row.p256dh_key = data.keys.p256dh.clone();
+		row.auth_key = data.keys.auth.clone();
+		row.active = true;
+		row.updated_at = "now".to_string();
+		self.ctx.db().push_subscriptions.save(row).await;
+	}
+
+	fn remove_web_push_subscriptions(&self, user_name: &str) -> usize {
+		let mut rows = self.ctx.db().push_subscriptions.snapshot();
+		let before = rows.len();
+		rows.retain(|subscription| {
+			!(subscription.user_name == user_name
+				&& subscription.channel == NotificationChannel::Web.as_str())
+		});
+		let removed = before.saturating_sub(rows.len());
+		if removed > 0 {
+			self.ctx.db().push_subscriptions.replace(rows);
+		}
+		removed
+	}
 }
 
 #[wgui_controller]
@@ -191,6 +313,8 @@ impl Puppychat {
 			call_active: session.call_active,
 			call_with_video: session.call_with_video,
 			call_room: Self::call_room_for_session(self.ctx.db(), session).unwrap_or_default(),
+			push_status: session.push_status.clone(),
+			web_push_sink: session.web_push_sink.clone(),
 			channels,
 			directs: {
 				let mut directs = directs_base
@@ -364,7 +488,8 @@ impl Puppychat {
 				dm_thread_key,
 			}
 		};
-		self.ctx.db().messages.save(message).await;
+		let saved_message = self.ctx.db().messages.save(message).await;
+		self.dispatch_push_for_message(&saved_message).await;
 
 		let mut sessions = self.ctx.state.sessions.lock().unwrap();
 		let session = self.ensure_session_state(&mut sessions);
@@ -543,6 +668,135 @@ impl Puppychat {
 		self.ctx.pubsub().publish("rerender", ());
 	}
 
+	pub(crate) fn enable_push_notifications(&mut self) {
+		let mut sessions = self.ctx.state.sessions.lock().unwrap();
+		let session = self.ensure_session_state(&mut sessions);
+		if session.user_name.is_empty() {
+			session.push_status = "login first to enable notifications".to_string();
+		} else {
+			session.push_status = "waiting for browser push permission...".to_string();
+			self.ctx.enable_web_push(WEB_PUSH_SERVICE_WORKER_PATH, None);
+		}
+		self.ctx.pubsub().publish("rerender", ());
+	}
+
+	pub(crate) async fn disable_push_notifications(&mut self) {
+		let has_user = {
+			let mut sessions = self.ctx.state.sessions.lock().unwrap();
+			let session = self.ensure_session_state(&mut sessions);
+			!session.user_name.is_empty()
+		};
+		if !has_user {
+			let mut sessions = self.ctx.state.sessions.lock().unwrap();
+			let session = self.ensure_session_state(&mut sessions);
+			session.push_status = "login first to disable notifications".to_string();
+			self.ctx.pubsub().publish("rerender", ());
+			return;
+		}
+
+		self.ctx.disable_web_push(WEB_PUSH_SERVICE_WORKER_PATH);
+
+		let mut sessions = self.ctx.state.sessions.lock().unwrap();
+		let session = self.ensure_session_state(&mut sessions);
+		session.push_status = "disabling push notifications...".to_string();
+		self.ctx.pubsub().publish("rerender", ());
+	}
+
+	pub(crate) async fn register_web_push_subscription(&mut self, value: String) {
+		let raw = value.trim().to_string();
+		let user_name = {
+			let mut sessions = self.ctx.state.sessions.lock().unwrap();
+			let session = self.ensure_session_state(&mut sessions);
+			session.web_push_sink = value;
+			session.user_name.clone()
+		};
+		if user_name.is_empty() {
+			let mut sessions = self.ctx.state.sessions.lock().unwrap();
+			let session = self.ensure_session_state(&mut sessions);
+			session.push_status = "login first to register push".to_string();
+			session.web_push_sink.clear();
+			self.ctx.pubsub().publish("rerender", ());
+			return;
+		}
+		if raw.is_empty() {
+			let mut sessions = self.ctx.state.sessions.lock().unwrap();
+			let session = self.ensure_session_state(&mut sessions);
+			session.web_push_sink.clear();
+			return;
+		}
+
+		match serde_json::from_str::<WebPushSubscription>(&raw) {
+			Ok(subscription) => {
+				self.upsert_web_push_subscription(&user_name, &subscription)
+					.await;
+				let mut sessions = self.ctx.state.sessions.lock().unwrap();
+				let session = self.ensure_session_state(&mut sessions);
+				session.push_status = "web push subscription saved".to_string();
+				session.web_push_sink.clear();
+				self.ctx.pubsub().publish("rerender", ());
+			}
+			Err(err) => {
+				let mut sessions = self.ctx.state.sessions.lock().unwrap();
+				let session = self.ensure_session_state(&mut sessions);
+				session.push_status = format!("invalid web push subscription payload: {}", err);
+				session.web_push_sink.clear();
+				self.ctx.pubsub().publish("rerender", ());
+			}
+		}
+	}
+
+	pub(crate) async fn handle_event(&mut self, event: &wgui::ClientEvent) -> bool {
+		let wgui::ClientEvent::WebPushSubscriptionChanged(change) = event else {
+			return false;
+		};
+
+		let user_name = {
+			let mut sessions = self.ctx.state.sessions.lock().unwrap();
+			let session = self.ensure_session_state(&mut sessions);
+			session.user_name.clone()
+		};
+		if user_name.is_empty() {
+			let mut sessions = self.ctx.state.sessions.lock().unwrap();
+			let session = self.ensure_session_state(&mut sessions);
+			session.push_status = "login first to register push".to_string();
+			self.ctx.pubsub().publish("rerender", ());
+			return true;
+		}
+
+		match change.subscription.clone() {
+			Some(raw_subscription) => {
+				match serde_json::from_value::<WebPushSubscription>(raw_subscription) {
+					Ok(subscription) => {
+						self.upsert_web_push_subscription(&user_name, &subscription)
+							.await;
+						let mut sessions = self.ctx.state.sessions.lock().unwrap();
+						let session = self.ensure_session_state(&mut sessions);
+						session.push_status = "web push subscription saved".to_string();
+					}
+					Err(err) => {
+						let mut sessions = self.ctx.state.sessions.lock().unwrap();
+						let session = self.ensure_session_state(&mut sessions);
+						session.push_status =
+							format!("invalid web push subscription payload: {}", err);
+					}
+				}
+			}
+			None => {
+				let removed = self.remove_web_push_subscriptions(&user_name);
+				let mut sessions = self.ctx.state.sessions.lock().unwrap();
+				let session = self.ensure_session_state(&mut sessions);
+				session.push_status = if removed > 0 {
+					"push notifications disabled".to_string()
+				} else {
+					"no active push subscriptions found".to_string()
+				};
+			}
+		}
+
+		self.ctx.pubsub().publish("rerender", ());
+		true
+	}
+
 	pub(crate) async fn send_message(&mut self) {
 		let message = {
 			let mut sessions = self.ctx.state.sessions.lock().unwrap();
@@ -562,7 +816,8 @@ impl Puppychat {
 				dm_thread_key,
 			}
 		};
-		self.ctx.db().messages.save(message).await;
+		let saved_message = self.ctx.db().messages.save(message).await;
+		self.dispatch_push_for_message(&saved_message).await;
 
 		let mut sessions = self.ctx.state.sessions.lock().unwrap();
 		let session = self.ensure_session_state(&mut sessions);
@@ -589,7 +844,8 @@ impl Puppychat {
 				dm_thread_key,
 			}
 		};
-		self.ctx.db().messages.save(message).await;
+		let saved_message = self.ctx.db().messages.save(message).await;
+		self.dispatch_push_for_message(&saved_message).await;
 
 		let mut sessions = self.ctx.state.sessions.lock().unwrap();
 		let session = self.ensure_session_state(&mut sessions);
