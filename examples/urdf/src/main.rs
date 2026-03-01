@@ -5,9 +5,15 @@ use std::path::{Component, Path, PathBuf};
 use wgui::*;
 
 const JOINT_SLIDER_BASE_ID: u32 = 10_000;
+const BASE_SLIDER_BASE_ID: u32 = 9_000;
 const URDF_TEXTAREA_ID: u32 = 20_001;
 const APPLY_URDF_BUTTON_ID: u32 = 20_002;
 const VALUE_SCALE: f32 = 1000.0;
+const BASE_POSITION_RANGE: i32 = 2_000;
+const BASE_ROTATION_MIN: i32 = (-std::f32::consts::PI * VALUE_SCALE) as i32;
+const BASE_ROTATION_MAX: i32 = (std::f32::consts::PI * VALUE_SCALE) as i32;
+const URDF_ROTATION_ORDER: &str = "ZYX";
+const URDF_TO_VIEW_ROT_X: f32 = -std::f32::consts::FRAC_PI_2;
 
 #[derive(Clone)]
 struct LinkVisual {
@@ -66,6 +72,8 @@ struct RobotModel {
 struct State {
 	robot: RobotModel,
 	joint_values: Vec<i32>,
+	base_translation_values: [i32; 3],
+	base_rotation_values: [i32; 3],
 	urdf_label: String,
 	urdf_xml: String,
 	urdf_base_dir: PathBuf,
@@ -462,10 +470,14 @@ fn joint_slider_range(joint: &JointDef) -> (i32, i32) {
 fn value_to_joint_units(joint: &JointDef, slider_value: i32) -> f32 {
 	match joint.joint_type {
 		JointType::Revolute | JointType::Continuous | JointType::Prismatic => {
-			slider_value as f32 / VALUE_SCALE
+			slider_value_to_units(slider_value)
 		}
 		_ => 0.0,
 	}
+}
+
+fn slider_value_to_units(slider_value: i32) -> f32 {
+	slider_value as f32 / VALUE_SCALE
 }
 
 fn push_link_visuals(link: &LinkDef, id_gen: &mut u32, children: &mut Vec<ThreeNode>) {
@@ -551,6 +563,12 @@ fn push_link_visuals(link: &LinkDef, id_gen: &mut u32, children: &mut Vec<ThreeN
 						y: visual.origin_rpy[1],
 						z: visual.origin_rpy[2],
 					},
+				)
+				.prop(
+					"rotationOrder",
+					ThreePropValue::String {
+						value: URDF_ROTATION_ORDER.to_string(),
+					},
 				),
 		);
 	}
@@ -627,6 +645,12 @@ fn build_link_subtree(
 							y: joint.origin_rpy[1],
 							z: joint.origin_rpy[2],
 						},
+					)
+					.prop(
+						"rotationOrder",
+						ThreePropValue::String {
+							value: URDF_ROTATION_ORDER.to_string(),
+						},
 					),
 			);
 		}
@@ -641,6 +665,17 @@ fn build_link_subtree(
 }
 
 fn render(state: &State) -> Item {
+	let base_translation = [
+		slider_value_to_units(state.base_translation_values[0]),
+		slider_value_to_units(state.base_translation_values[1]),
+		slider_value_to_units(state.base_translation_values[2]),
+	];
+	let base_rotation = [
+		slider_value_to_units(state.base_rotation_values[0]),
+		slider_value_to_units(state.base_rotation_values[1]),
+		slider_value_to_units(state.base_rotation_values[2]),
+	];
+
 	let mut id_gen = 100;
 	let mut scene_children = vec![
 		perspective_camera(2)
@@ -682,7 +717,42 @@ fn render(state: &State) -> Item {
 			model_children.push(root_tree);
 		}
 	}
-	scene_children.push(group(90, model_children));
+	let urdf_frame_group = group(
+		91,
+		[group(92, model_children).prop(
+			"rotation",
+			ThreePropValue::Vec3 {
+				x: URDF_TO_VIEW_ROT_X,
+				y: 0.0,
+				z: 0.0,
+			},
+		)],
+	);
+	scene_children.push(
+		group(90, [urdf_frame_group])
+			.prop(
+				"position",
+				ThreePropValue::Vec3 {
+					x: base_translation[0],
+					y: base_translation[1],
+					z: base_translation[2],
+				},
+			)
+			.prop(
+				"rotation",
+				ThreePropValue::Vec3 {
+					x: base_rotation[0],
+					y: base_rotation[1],
+					z: base_rotation[2],
+				},
+			)
+			.prop(
+				"rotationOrder",
+				ThreePropValue::String {
+					value: URDF_ROTATION_ORDER.to_string(),
+				},
+			),
+	);
 
 	let three_panel = three_view(scene(1, scene_children))
 		.height(680)
@@ -700,6 +770,103 @@ fn render(state: &State) -> Item {
 		))
 		.margin_bottom(12),
 	];
+	controls.push(text("Base transform").margin_bottom(6));
+	controls.push(text("Base X position"));
+	controls.push(
+		slider()
+			.id(BASE_SLIDER_BASE_ID)
+			.min(-BASE_POSITION_RANGE)
+			.max(BASE_POSITION_RANGE)
+			.ivalue(state.base_translation_values[0])
+			.step(1),
+	);
+	controls.push(
+		text(&format!(
+			"{:.4}",
+			slider_value_to_units(state.base_translation_values[0])
+		))
+		.margin_bottom(6),
+	);
+	controls.push(text("Base Y position"));
+	controls.push(
+		slider()
+			.id(BASE_SLIDER_BASE_ID + 1)
+			.min(-BASE_POSITION_RANGE)
+			.max(BASE_POSITION_RANGE)
+			.ivalue(state.base_translation_values[1])
+			.step(1),
+	);
+	controls.push(
+		text(&format!(
+			"{:.4}",
+			slider_value_to_units(state.base_translation_values[1])
+		))
+		.margin_bottom(6),
+	);
+	controls.push(text("Base Z position"));
+	controls.push(
+		slider()
+			.id(BASE_SLIDER_BASE_ID + 2)
+			.min(-BASE_POSITION_RANGE)
+			.max(BASE_POSITION_RANGE)
+			.ivalue(state.base_translation_values[2])
+			.step(1),
+	);
+	controls.push(
+		text(&format!(
+			"{:.4}",
+			slider_value_to_units(state.base_translation_values[2])
+		))
+		.margin_bottom(8),
+	);
+	controls.push(text("Base roll (X)"));
+	controls.push(
+		slider()
+			.id(BASE_SLIDER_BASE_ID + 3)
+			.min(BASE_ROTATION_MIN)
+			.max(BASE_ROTATION_MAX)
+			.ivalue(state.base_rotation_values[0])
+			.step(1),
+	);
+	controls.push(
+		text(&format!(
+			"{:.4}",
+			slider_value_to_units(state.base_rotation_values[0])
+		))
+		.margin_bottom(6),
+	);
+	controls.push(text("Base pitch (Y)"));
+	controls.push(
+		slider()
+			.id(BASE_SLIDER_BASE_ID + 4)
+			.min(BASE_ROTATION_MIN)
+			.max(BASE_ROTATION_MAX)
+			.ivalue(state.base_rotation_values[1])
+			.step(1),
+	);
+	controls.push(
+		text(&format!(
+			"{:.4}",
+			slider_value_to_units(state.base_rotation_values[1])
+		))
+		.margin_bottom(6),
+	);
+	controls.push(text("Base yaw (Z)"));
+	controls.push(
+		slider()
+			.id(BASE_SLIDER_BASE_ID + 5)
+			.min(BASE_ROTATION_MIN)
+			.max(BASE_ROTATION_MAX)
+			.ivalue(state.base_rotation_values[2])
+			.step(1),
+	);
+	controls.push(
+		text(&format!(
+			"{:.4}",
+			slider_value_to_units(state.base_rotation_values[2])
+		))
+		.margin_bottom(12),
+	);
 
 	if state.robot.movable_joint_indices.is_empty() {
 		controls
@@ -773,6 +940,8 @@ async fn main() {
 	let urdf_base_dir = urdf_path.parent().unwrap_or(Path::new(".")).to_path_buf();
 	let mut state = State {
 		joint_values: vec![0; robot.joints.len()],
+		base_translation_values: [0, 0, 0],
+		base_rotation_values: [0, 0, 0],
 		robot,
 		urdf_label: urdf_arg,
 		urdf_xml,
@@ -794,7 +963,14 @@ async fn main() {
 				client_ids.insert(client_id);
 			}
 			ClientEvent::OnSliderChange(change) => {
-				if change.id >= JOINT_SLIDER_BASE_ID {
+				if change.id >= BASE_SLIDER_BASE_ID && change.id < BASE_SLIDER_BASE_ID + 6 {
+					let slot = (change.id - BASE_SLIDER_BASE_ID) as usize;
+					if slot < 3 {
+						state.base_translation_values[slot] = change.value;
+					} else {
+						state.base_rotation_values[slot - 3] = change.value;
+					}
+				} else if change.id >= JOINT_SLIDER_BASE_ID {
 					let slot = (change.id - JOINT_SLIDER_BASE_ID) as usize;
 					if let Some(joint_index) = state.robot.movable_joint_indices.get(slot) {
 						if let Some(value) = state.joint_values.get_mut(*joint_index) {
