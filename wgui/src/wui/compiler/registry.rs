@@ -99,6 +99,31 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 				},
 			],
 		}),
+		"DatePicker" => Some(TagSchema {
+			name: "DatePicker",
+			props: &[
+				PropSchema {
+					name: "value",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "bind:value",
+					kind: PropKind::Bind(ValueType::String),
+				},
+				PropSchema {
+					name: "placeholder",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "onTextChanged",
+					kind: PropKind::Event(EventKind::TextChanged),
+				},
+				PropSchema {
+					name: "grow",
+					kind: PropKind::Value(ValueType::Number),
+				},
+			],
+		}),
 		"Checkbox" => Some(TagSchema {
 			name: "Checkbox",
 			props: &[

@@ -356,6 +356,8 @@ fn normalize_prop_name(tag: &str, name: &str) -> String {
 	match (tag, name) {
 		("TextInput", "value") => "svalue".to_string(),
 		("TextInput", "bind:value") => "bind:svalue".to_string(),
+		("DatePicker", "value") => "svalue".to_string(),
+		("DatePicker", "bind:value") => "bind:svalue".to_string(),
 		("Slider", "value") => "ivalue".to_string(),
 		("Slider", "bind:value") => "bind:ivalue".to_string(),
 		_ => name.to_string(),

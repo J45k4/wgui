@@ -355,6 +355,30 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		return slider
 	}
 
+	if (payload.type === "datePicker") {
+		let input: HTMLInputElement
+		if (old instanceof HTMLInputElement) {
+			input = old
+		} else {
+			input = document.createElement("input")
+			if (old) old.replaceWith(input)
+		}
+		input.type = "date"
+		input.placeholder = payload.placeholder as string
+		input.value = payload.value
+		if (item.id) {
+			input.oninput = (e: any) => {
+				ctx.sender.send({
+					type: "onTextChanged",
+					id: item.id,
+					inx: item.inx,
+					value: e.target.value,
+				})
+			}
+		}
+		return input
+	}
+
 	if (payload.type === "textInput") {
 		let input: HTMLInputElement
 		if (old instanceof HTMLInputElement) {

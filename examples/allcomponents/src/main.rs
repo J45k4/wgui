@@ -10,11 +10,13 @@ const TEXTAREA: u32 = 5;
 const OPEN_MODAL_BUTTON: u32 = 6;
 const CLOSE_MODAL_BUTTON: u32 = 7;
 const MODAL_BACKDROP: u32 = 8;
+const DATE_PICKER: u32 = 9;
 
 #[derive(Default, Debug)]
 struct State {
 	option: String,
 	text_input_value: String,
+	date_value: String,
 	slider_value: i32,
 	show_table: bool,
 	show_modal: bool,
@@ -40,6 +42,10 @@ fn render(state: &State) -> Item {
 			.id(TEXT_INPUT)
 			.width(100)
 			.svalue(&state.text_input_value)
+			.margin_bottom(10),
+		date_picker()
+			.id(DATE_PICKER)
+			.svalue(&state.date_value)
 			.margin_bottom(10),
 		select([
 			option("Option 1", "option1"),
@@ -130,6 +136,8 @@ async fn main() {
 			ClientEvent::OnTextChanged(t) => {
 				if t.id == TEXT_INPUT {
 					state.text_input_value = t.value;
+				} else if t.id == DATE_PICKER {
+					state.date_value = t.value;
 				}
 			}
 			ClientEvent::OnSliderChange(s) => {

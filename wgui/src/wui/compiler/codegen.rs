@@ -358,6 +358,7 @@ fn emit_widget(widget: &IrWidget, indent: usize) -> String {
 		"Text" => emit_text(widget),
 		"Button" => emit_textual("button", widget, "text"),
 		"TextInput" => "wgui::text_input()".to_string(),
+		"DatePicker" => "wgui::date_picker()".to_string(),
 		"Checkbox" => "wgui::checkbox()".to_string(),
 		"Slider" => "wgui::slider()".to_string(),
 		"Image" => emit_image(widget),

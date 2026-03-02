@@ -25,6 +25,9 @@ pub fn render_item(item: &Item) -> String {
 		ItemPayload::TextInput { value, placeholder } => {
 			render_text_input(item, value, placeholder)
 		}
+		ItemPayload::DatePicker { value, placeholder } => {
+			render_date_picker(item, value, placeholder)
+		}
 		ItemPayload::Textarea { value, placeholder } => render_textarea(item, value, placeholder),
 		ItemPayload::Select { value, options } => render_select(item, value, options),
 		ItemPayload::Checkbox { checked } => render_checkbox(item, *checked),
@@ -123,6 +126,19 @@ fn render_text_input(item: &Item, value: &str, placeholder: &str) -> String {
 	let classes = Vec::new();
 	let mut attrs = collect_item_attrs(item);
 	attrs.push(("type".to_string(), "text".to_string()));
+	attrs.push(("value".to_string(), escape_attr(value)));
+	if !placeholder.is_empty() {
+		attrs.push(("placeholder".to_string(), escape_attr(placeholder)));
+	}
+	render_void_element("input", &classes, style, &attrs)
+}
+
+fn render_date_picker(item: &Item, value: &str, placeholder: &str) -> String {
+	let mut style = StyleBuilder::new();
+	apply_item_styles(item, &mut style);
+	let classes = Vec::new();
+	let mut attrs = collect_item_attrs(item);
+	attrs.push(("type".to_string(), "date".to_string()));
 	attrs.push(("value".to_string(), escape_attr(value)));
 	if !placeholder.is_empty() {
 		attrs.push(("placeholder".to_string(), escape_attr(placeholder)));

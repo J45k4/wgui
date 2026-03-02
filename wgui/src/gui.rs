@@ -98,6 +98,10 @@ pub enum ItemPayload {
 		value: String,
 		placeholder: String,
 	},
+	DatePicker {
+		value: String,
+		placeholder: String,
+	},
 	Textarea {
 		value: String,
 		placeholder: String,
@@ -265,6 +269,16 @@ pub fn text(text: &str) -> Item {
 pub fn text_input() -> Item {
 	Item {
 		payload: ItemPayload::TextInput {
+			value: "".to_string(),
+			placeholder: "".to_string(),
+		},
+		..Default::default()
+	}
+}
+
+pub fn date_picker() -> Item {
+	Item {
+		payload: ItemPayload::DatePicker {
 			value: "".to_string(),
 			placeholder: "".to_string(),
 		},
@@ -626,6 +640,9 @@ impl Item {
 			ItemPayload::TextInput { ref mut value, .. } => {
 				*value = v.to_string();
 			}
+			ItemPayload::DatePicker { ref mut value, .. } => {
+				*value = v.to_string();
+			}
 			ItemPayload::Textarea { ref mut value, .. } => {
 				*value = v.to_string();
 			}
@@ -710,6 +727,12 @@ impl Item {
 	pub fn placeholder(mut self, p: &str) -> Self {
 		match self.payload {
 			ItemPayload::TextInput {
+				ref mut placeholder,
+				..
+			} => {
+				*placeholder = p.to_string();
+			}
+			ItemPayload::DatePicker {
 				ref mut placeholder,
 				..
 			} => {

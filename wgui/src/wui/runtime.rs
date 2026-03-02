@@ -561,6 +561,7 @@ fn render_widget(widget: &IrWidget, ctx: &mut EvalContext) -> Item {
 		"Text" => gui::text(&text_value(widget, ctx)),
 		"Button" => gui::button(&textual_value(widget, ctx, "text")),
 		"TextInput" => gui::text_input(),
+		"DatePicker" => gui::date_picker(),
 		"Checkbox" => gui::checkbox(),
 		"Slider" => gui::slider(),
 		"Image" => {

@@ -62,6 +62,12 @@ export type TextInput = {
     value: string
 }
 
+export type DatePicker = {
+	type: "datePicker"
+	placeholder: string
+	value: string
+}
+
 export type Textarea = {
 	type: "textarea"
 	value: string
@@ -213,8 +219,9 @@ export type ThreeView = {
 }
 
 export type ItemPayload = Text |
- 	TextInput |
- 	Textarea |
+  	TextInput |
+	DatePicker |
+  	Textarea |
  	Table |
  	Thead |
  	Tbody |
