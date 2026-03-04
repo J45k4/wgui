@@ -65,7 +65,7 @@ struct RobotModel {
 	children_by_parent: HashMap<String, Vec<usize>>,
 	joints: Vec<JointDef>,
 	roots: Vec<String>,
-	movable_joint_indices: Vec<usize>,
+	joint_control_indices: Vec<usize>,
 }
 
 #[derive(Clone)]
@@ -405,23 +405,14 @@ fn parse_robot_from_xml(
 		}
 	}
 
-	let movable_joint_indices = joints
-		.iter()
-		.enumerate()
-		.filter_map(|(index, joint)| {
-			(joint.joint_type == JointType::Revolute
-				|| joint.joint_type == JointType::Continuous
-				|| joint.joint_type == JointType::Prismatic)
-				.then_some(index)
-		})
-		.collect();
+	let joint_control_indices = (0..joints.len()).collect();
 
 	Ok(RobotModel {
 		links,
 		children_by_parent,
 		joints,
 		roots,
-		movable_joint_indices,
+		joint_control_indices,
 	})
 }
 
@@ -463,16 +454,30 @@ fn joint_slider_range(joint: &JointDef) -> (i32, i32) {
 			let max = joint.upper.unwrap_or(0.05);
 			((min * VALUE_SCALE) as i32, (max * VALUE_SCALE) as i32)
 		}
-		_ => (0, 0),
+		JointType::Fixed | JointType::Other => (
+			(-std::f32::consts::PI * VALUE_SCALE) as i32,
+			(std::f32::consts::PI * VALUE_SCALE) as i32,
+		),
 	}
 }
 
 fn value_to_joint_units(joint: &JointDef, slider_value: i32) -> f32 {
 	match joint.joint_type {
-		JointType::Revolute | JointType::Continuous | JointType::Prismatic => {
-			slider_value_to_units(slider_value)
-		}
-		_ => 0.0,
+		JointType::Revolute
+		| JointType::Continuous
+		| JointType::Prismatic
+		| JointType::Fixed
+		| JointType::Other => slider_value_to_units(slider_value),
+	}
+}
+
+fn joint_type_label(joint_type: JointType) -> &'static str {
+	match joint_type {
+		JointType::Fixed => "fixed",
+		JointType::Revolute => "revolute",
+		JointType::Continuous => "continuous",
+		JointType::Prismatic => "prismatic",
+		JointType::Other => "other",
 	}
 }
 
@@ -620,7 +625,17 @@ fn build_link_subtree(
 						},
 					);
 				}
-				_ => {}
+				JointType::Fixed | JointType::Other => {
+					let delta = axis_to_euler(joint.axis, unit_value);
+					motion_group = motion_group.prop(
+						"rotation",
+						ThreePropValue::Vec3 {
+							x: delta[0],
+							y: delta[1],
+							z: delta[2],
+						},
+					);
+				}
 			}
 
 			if let Some(child_tree) = build_link_subtree(robot, &joint.child, joint_values, id_gen)
@@ -868,17 +883,20 @@ fn render(state: &State) -> Item {
 		.margin_bottom(12),
 	);
 
-	if state.robot.movable_joint_indices.is_empty() {
-		controls
-			.push(text("No controllable joints found (URDF joints are fixed).").margin_bottom(8));
+	if state.robot.joint_control_indices.is_empty() {
+		controls.push(text("No joints found in URDF.").margin_bottom(8));
 	}
 
-	for (slider_slot, joint_index) in state.robot.movable_joint_indices.iter().enumerate() {
+	for (slider_slot, joint_index) in state.robot.joint_control_indices.iter().enumerate() {
 		let joint = &state.robot.joints[*joint_index];
 		let slider_id = JOINT_SLIDER_BASE_ID + slider_slot as u32;
 		let value = state.joint_values.get(*joint_index).copied().unwrap_or(0);
 		let (min, max) = joint_slider_range(joint);
-		controls.push(text(&joint.name));
+		let mut label = format!("{} ({})", joint.name, joint_type_label(joint.joint_type));
+		if joint.joint_type == JointType::Fixed || joint.joint_type == JointType::Other {
+			label.push_str(" debug-rotate");
+		}
+		controls.push(text(&label));
 		controls.push(
 			slider()
 				.id(slider_id)
@@ -972,7 +990,7 @@ async fn main() {
 					}
 				} else if change.id >= JOINT_SLIDER_BASE_ID {
 					let slot = (change.id - JOINT_SLIDER_BASE_ID) as usize;
-					if let Some(joint_index) = state.robot.movable_joint_indices.get(slot) {
+					if let Some(joint_index) = state.robot.joint_control_indices.get(slot) {
 						if let Some(value) = state.joint_values.get_mut(*joint_index) {
 							*value = change.value;
 						}
