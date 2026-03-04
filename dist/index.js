@@ -1386,6 +1386,30 @@ var renderPayload = (item, ctx, old) => {
     }
     return slider;
   }
+  if (payload.type === "datePicker") {
+    let input;
+    if (old instanceof HTMLInputElement) {
+      input = old;
+    } else {
+      input = document.createElement("input");
+      if (old)
+        old.replaceWith(input);
+    }
+    input.type = "date";
+    input.placeholder = payload.placeholder;
+    input.value = payload.value;
+    if (item.id) {
+      input.oninput = (e) => {
+        ctx.sender.send({
+          type: "onTextChanged",
+          id: item.id,
+          inx: item.inx,
+          value: e.target.value
+        });
+      };
+    }
+    return input;
+  }
   if (payload.type === "textInput") {
     let input;
     if (old instanceof HTMLInputElement) {

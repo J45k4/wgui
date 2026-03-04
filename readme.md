@@ -41,7 +41,7 @@ async fn main() {
 ## Examples
 
 - Todo list app (interactive text input + checkbox): `cargo run -p todo`
-- Component showcase (text input, select, slider, modal, table): `cargo run -p allcomponents`
+- Component showcase (text input, date picker, select, slider, modal, table): `cargo run -p allcomponents`
 - Three.js scene demo (procedural + STL geometry): `cargo run -p three_demo`
 - URDF viewer (STL meshes + joint sliders): `cargo run -p urdf -- assets/puppyarm/puppyarm.urdf`
 - WUI template examples: `cargo run -p todo_wui` and `cargo run -p puppychat`
@@ -64,7 +64,7 @@ Component builders
 
 - Layout: `vstack`, `hstack`
 - Text: `text`
-- Inputs: `text_input`, `textarea`, `select` + `option`, `checkbox`, `slider`
+- Inputs: `text_input`, `date_picker`, `textarea`, `select` + `option`, `checkbox`, `slider`
 - Actions: `button`
 - Table: `table`, `thead`, `tbody`, `tr`, `th`, `td`
 - Media: `img`

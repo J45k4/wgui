@@ -24,6 +24,11 @@ struct State {
 
 fn render(state: &State) -> Item {
 	log::info!("render state: {:?}", state);
+	let date_value = if state.date_value.is_empty() {
+		"not set"
+	} else {
+		state.date_value.as_str()
+	};
 
 	vstack([
 		hstack([
@@ -43,10 +48,13 @@ fn render(state: &State) -> Item {
 			.width(100)
 			.svalue(&state.text_input_value)
 			.margin_bottom(10),
+		text("Date picker").margin_bottom(4),
 		date_picker()
 			.id(DATE_PICKER)
+			.placeholder("Select a date")
 			.svalue(&state.date_value)
 			.margin_bottom(10),
+		text(&format!("Selected date: {}", date_value)),
 		select([
 			option("Option 1", "option1"),
 			option("Option 2", "option2"),
