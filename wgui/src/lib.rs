@@ -58,15 +58,37 @@ type ControllerFactory = Arc<dyn Fn() -> ControllerFuture + Send + Sync>;
 type SsrRenderer = Arc<dyn Fn(&str) -> Option<Item> + Send + Sync>;
 type SsrComponentFactories = Arc<std::sync::RwLock<Vec<(String, ControllerFactory)>>>;
 
-fn path_matches(route_path: &str, current_path: &str) -> bool {
+fn route_match_score(route_path: &str, current_path: &str) -> Option<usize> {
 	if route_path == "/" {
-		return true;
+		return Some(0);
 	}
 	if current_path == route_path {
-		return true;
+		return Some(route_path.trim_end_matches('/').len());
 	}
 	let prefix = format!("{}/", route_path.trim_end_matches('/'));
-	current_path.starts_with(&prefix)
+	if current_path.starts_with(&prefix) {
+		return Some(route_path.trim_end_matches('/').len());
+	}
+	None
+}
+
+fn best_matching_route_index<T, F>(routes: &[T], current_path: &str, route_path: F) -> Option<usize>
+where
+	F: Fn(&T) -> &str,
+{
+	let mut best = None;
+	for (index, route) in routes.iter().enumerate() {
+		let Some(score) = route_match_score(route_path(route), current_path) else {
+			continue;
+		};
+		if best
+			.map(|(_, best_score)| score > best_score)
+			.unwrap_or(true)
+		{
+			best = Some((index, score));
+		}
+	}
+	best.map(|(index, _)| index)
 }
 
 #[derive(Clone)]
@@ -294,17 +316,17 @@ impl Wgui<()> {
 			let sessions = sessions.clone();
 			let ssr_components = ssr_components.clone();
 			let ssr: Option<SsrRenderer> = Some(Arc::new(move |path: &str| {
-				let factories = ssr_components.read().unwrap();
-				for (route_path, factory) in factories.iter() {
-					if !path_matches(route_path, path) {
-						continue;
-					}
-					let controller = tokio::task::block_in_place(|| {
-						tokio::runtime::Handle::current().block_on((factory)())
-					});
-					return Some(controller.render_with_path(path));
-				}
-				None
+				let factory = {
+					let factories = ssr_components.read().unwrap();
+					let index = best_matching_route_index(&factories, path, |(route_path, _)| {
+						route_path.as_str()
+					})?;
+					factories[index].1.clone()
+				};
+				let controller = tokio::task::block_in_place(|| {
+					tokio::runtime::Handle::current().block_on((factory)())
+				});
+				Some(controller.render_with_path(path))
 			}));
 			tokio::spawn(async move {
 				Server::new(addr, event_tx, clients, sessions, ssr)
@@ -551,9 +573,14 @@ where
 						.cloned()
 						.unwrap_or_else(|| "/".to_string());
 					let session = handle.session_for_client(client_id).await;
+					let selected =
+						best_matching_route_index(&self.components, &current_path, |component| {
+							component.route_path.as_str()
+						});
 
-					for component in self.components.iter_mut() {
-						if !path_matches(&component.route_path, &current_path) {
+					for (index, component) in self.components.iter_mut().enumerate() {
+						if Some(index) != selected {
+							component.controllers.remove(&client_id);
 							continue;
 						}
 						let mut controller = (component.factory)().await;
@@ -768,9 +795,13 @@ where
 				ClientEvent::PathChanged(change) => {
 					paths.insert(client_id, change.path.clone());
 					let session = handle.session_for_client(client_id).await;
+					let selected =
+						best_matching_route_index(&self.components, &change.path, |component| {
+							component.route_path.as_str()
+						});
 
-					for component in self.components.iter_mut() {
-						if !path_matches(&component.route_path, &change.path) {
+					for (index, component) in self.components.iter_mut().enumerate() {
+						if Some(index) != selected {
 							component.controllers.remove(&client_id);
 							continue;
 						}
@@ -837,5 +868,41 @@ where
 				}
 			}
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn root_route_is_fallback_match() {
+		assert_eq!(route_match_score("/", "/"), Some(0));
+		assert_eq!(route_match_score("/", "/login"), Some(0));
+	}
+
+	#[test]
+	fn component_route_requires_exact_segment_prefix() {
+		assert_eq!(route_match_score("/peers", "/peers"), Some(6));
+		assert_eq!(route_match_score("/peers", "/peers/abc"), Some(6));
+		assert_eq!(route_match_score("/peers", "/peers-other"), None);
+	}
+
+	#[test]
+	fn best_matching_route_prefers_specific_route_over_root() {
+		let routes = vec!["/".to_string(), "/login".to_string(), "/peers".to_string()];
+
+		assert_eq!(
+			best_matching_route_index(&routes, "/login", |route| route.as_str()),
+			Some(1)
+		);
+		assert_eq!(
+			best_matching_route_index(&routes, "/peers/abc", |route| route.as_str()),
+			Some(2)
+		);
+		assert_eq!(
+			best_matching_route_index(&routes, "/missing", |route| route.as_str()),
+			Some(0)
+		);
 	}
 }
