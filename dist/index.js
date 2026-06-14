@@ -2542,6 +2542,33 @@ var applySetProp = (element, set) => {
       break;
   }
 };
+var clearModalOverlayElement = (element) => {
+  if (element.dataset.modal !== "overlay") {
+    return;
+  }
+  delete element.dataset.modal;
+  element.removeAttribute("role");
+  element.removeAttribute("aria-modal");
+  element.removeAttribute("aria-hidden");
+  element.onclick = null;
+  element.style.position = "";
+  element.style.left = "";
+  element.style.top = "";
+  element.style.alignItems = "";
+  element.style.justifyContent = "";
+  element.style.backgroundColor = "";
+  element.style.backdropFilter = "";
+  element.style.zIndex = "";
+  element.style.pointerEvents = "";
+};
+var clearModalOverlays = (root) => {
+  clearModalOverlayElement(root);
+  for (const overlay of root.querySelectorAll("[data-modal='overlay']")) {
+    if (overlay instanceof HTMLElement) {
+      clearModalOverlayElement(overlay);
+    }
+  }
+};
 window.onload = () => {
   const res = document.querySelector("body");
   if (!res) {
@@ -2580,6 +2607,7 @@ window.onload = () => {
       for (const message of msgs) {
         if (message.type === "pushState") {
           history.pushState({}, "", message.url);
+          clearModalOverlays(root);
           sender2.send({
             type: "pathChanged",
             path: location.pathname,
@@ -2695,6 +2723,7 @@ window.onload = () => {
     }
   });
   window.addEventListener("popstate", (evet) => {
+    clearModalOverlays(root);
     const params = new URLSearchParams(location.search);
     const query = {};
     params.forEach((value, key) => {
