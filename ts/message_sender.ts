@@ -2,6 +2,12 @@ import { MessageToSrv } from "./types.ts";
 
 type SendMsgs = (msg: MessageToSrv[]) => void
 
+const messageKey = (msg: MessageToSrv) => {
+	const id = "id" in msg ? msg.id : ""
+	const inx = "inx" in msg ? (msg.inx ?? "") : ""
+	return `${msg.type}:${id}:${inx}`
+}
+
 export class MessageSender {
     private sender: SendMsgs
     private queue: MessageToSrv[] = []
@@ -11,8 +17,9 @@ export class MessageSender {
     }
 
     public send(msg: MessageToSrv) {
+		const key = messageKey(msg)
 		this.queue = this.queue.filter((m) => {
-			if (m.type === msg.type) {
+			if (messageKey(m) === key) {
 				return false
 			}
 			return true

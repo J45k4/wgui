@@ -2349,6 +2349,12 @@ var disableWebPush = async (sender, message) => {
 };
 
 // ts/message_sender.ts
+var messageKey = (msg) => {
+  const id = "id" in msg ? msg.id : "";
+  const inx = "inx" in msg ? msg.inx ?? "" : "";
+  return `${msg.type}:${id}:${inx}`;
+};
+
 class MessageSender {
   sender;
   queue = [];
@@ -2357,8 +2363,9 @@ class MessageSender {
     this.sender = send;
   }
   send(msg) {
+    const key = messageKey(msg);
     this.queue = this.queue.filter((m) => {
-      if (m.type === msg.type) {
+      if (messageKey(m) === key) {
         return false;
       }
       return true;
