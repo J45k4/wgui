@@ -59,6 +59,12 @@ export type Button = {
     title: string
 }
 
+export type Link = {
+	type: "link"
+	href: string
+	text: string
+}
+
 export type TextInput = {
     type: "textInput"
     placeholder: string
@@ -236,6 +242,7 @@ export type ItemPayload = Text |
  	Slider |
  	Layout |
  	Button |
+	Link |
  	Image |
 	Video |
 	Audio |

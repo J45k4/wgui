@@ -122,6 +122,10 @@ pub enum ItemPayload {
 	Button {
 		title: String,
 	},
+	Link {
+		href: String,
+		text: String,
+	},
 	Table {
 		items: Vec<Item>,
 	},
@@ -254,6 +258,16 @@ pub fn button(title: &str) -> Item {
 	Item {
 		payload: ItemPayload::Button {
 			title: title.to_string(),
+		},
+		..Default::default()
+	}
+}
+
+pub fn link(href: &str, text: &str) -> Item {
+	Item {
+		payload: ItemPayload::Link {
+			href: href.to_string(),
+			text: text.to_string(),
 		},
 		..Default::default()
 	}

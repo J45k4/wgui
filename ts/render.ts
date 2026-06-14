@@ -114,6 +114,44 @@ const bindAutoClick = (element: HTMLElement, item: Item, ctx: Context) => {
 	}
 }
 
+const pathQuery = (search: string): { [key: string]: string } => {
+	const params = new URLSearchParams(search)
+	const query: { [key: string]: string } = {}
+	params.forEach((value, key) => {
+		query[key] = value
+	})
+	return query
+}
+
+const navigateLink = (event: MouseEvent, anchor: HTMLAnchorElement, ctx: Context) => {
+	if (
+		event.button !== 0 ||
+		event.metaKey ||
+		event.ctrlKey ||
+		event.shiftKey ||
+		event.altKey ||
+		(anchor.target && anchor.target !== "_self") ||
+		anchor.hasAttribute("download")
+	) {
+		return
+	}
+	const target = new URL(anchor.href, window.location.href)
+	if (target.origin !== window.location.origin) {
+		return
+	}
+	event.preventDefault()
+	const next = `${target.pathname}${target.search}${target.hash}`
+	if (next !== `${location.pathname}${location.search}${location.hash}`) {
+		history.pushState({}, "", next)
+	}
+	ctx.sender.send({
+		type: "pathChanged",
+		path: location.pathname,
+		query: pathQuery(location.search),
+	})
+	ctx.sender.sendNow()
+}
+
 const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 	const payload = item.payload
 	if (payload.type === "checkbox") {
@@ -293,6 +331,20 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			}
 		}
 		return button
+	}
+
+	if (payload.type === "link") {
+		let anchor: HTMLAnchorElement
+		if (old instanceof HTMLAnchorElement) {
+			anchor = old
+		} else {
+			anchor = document.createElement("a")
+			if (old) old.replaceWith(anchor)
+		}
+		anchor.href = payload.href
+		anchor.textContent = payload.text
+		anchor.onclick = (event) => navigateLink(event, anchor, ctx)
+		return anchor
 	}
 
 	if (payload.type === "img") {

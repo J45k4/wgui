@@ -38,6 +38,7 @@ pub fn render_item(item: &Item) -> String {
 			step,
 		} => render_slider(item, *min, *max, *value, *step),
 		ItemPayload::Button { title } => render_button(item, title),
+		ItemPayload::Link { href, text } => render_link(item, href, text),
 		ItemPayload::Table { items } => render_table(item, items),
 		ItemPayload::Thead { items } => render_section(item, "thead", items),
 		ItemPayload::Tbody { items } => render_section(item, "tbody", items),
@@ -219,6 +220,15 @@ fn render_button(item: &Item, title: &str) -> String {
 	let classes = Vec::new();
 	let attrs = collect_item_attrs(item);
 	render_element("button", &classes, style, &attrs, &escape_text(title))
+}
+
+fn render_link(item: &Item, href: &str, text: &str) -> String {
+	let mut style = StyleBuilder::new();
+	apply_item_styles(item, &mut style);
+	let classes = Vec::new();
+	let mut attrs = collect_item_attrs(item);
+	attrs.push(("href".to_string(), escape_attr(href)));
+	render_element("a", &classes, style, &attrs, &escape_text(text))
 }
 
 fn render_table(item: &Item, items: &[Item]) -> String {

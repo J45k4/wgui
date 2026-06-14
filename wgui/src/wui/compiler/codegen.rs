@@ -357,6 +357,7 @@ fn emit_widget(widget: &IrWidget, indent: usize) -> String {
 		"HStack" => emit_container("hstack", &widget.children, indent),
 		"Text" => emit_text(widget),
 		"Button" => emit_textual("button", widget, "text"),
+		"Link" => emit_link(widget),
 		"TextInput" => "wgui::text_input()".to_string(),
 		"DatePicker" => "wgui::date_picker()".to_string(),
 		"Checkbox" => "wgui::checkbox()".to_string(),
@@ -424,6 +425,21 @@ fn emit_textual(kind: &str, widget: &IrWidget, prop_name: &str) -> String {
 		}
 	}
 	format!("wgui::{kind}(\"\")")
+}
+
+fn emit_link(widget: &IrWidget) -> String {
+	let mut href = "\"\"".to_string();
+	let mut text = "\"\"".to_string();
+	for prop in &widget.props {
+		match prop {
+			IrProp::Literal { name, value } if name == "href" => href = format!("{:?}", value),
+			IrProp::Value { name, expr } if name == "href" => href = emit_string_expr(expr),
+			IrProp::Literal { name, value } if name == "text" => text = format!("{:?}", value),
+			IrProp::Value { name, expr } if name == "text" => text = emit_string_expr(expr),
+			_ => {}
+		}
+	}
+	format!("wgui::link({href}, {text})")
 }
 
 fn emit_image(widget: &IrWidget) -> String {
@@ -622,6 +638,7 @@ fn should_emit_prop(tag: &str, prop: &IrProp) -> bool {
 		| IrProp::Bind { name, .. } => match tag {
 			"Text" => name != "value",
 			"Button" => name != "text",
+			"Link" => name != "href" && name != "text",
 			"Image" => name != "src" && name != "alt",
 			"Video" | "Audio" => name != "room",
 			_ => name != "arg",

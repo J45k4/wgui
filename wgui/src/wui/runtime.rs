@@ -640,6 +640,10 @@ fn render_widget(widget: &IrWidget, ctx: &mut EvalContext) -> Item {
 		"HStack" => render_container(gui::hstack, &widget.children, ctx),
 		"Text" => gui::text(&text_value(widget, ctx)),
 		"Button" => gui::button(&textual_value(widget, ctx, "text")),
+		"Link" => gui::link(
+			&textual_value(widget, ctx, "href"),
+			&textual_value(widget, ctx, "text"),
+		),
 		"TextInput" => gui::text_input(),
 		"DatePicker" => gui::date_picker(),
 		"Checkbox" => gui::checkbox(),
@@ -754,6 +758,7 @@ fn should_apply_prop(tag: &str, prop: &IrProp) -> bool {
 		| IrProp::Bind { name, .. } => match tag {
 			"Text" => name != "value",
 			"Button" => name != "text",
+			"Link" => name != "href" && name != "text",
 			"Image" => name != "src" && name != "alt",
 			"Video" | "Audio" => name != "room",
 			_ => true,
@@ -1068,6 +1073,27 @@ mod tests {
 				"comments".to_string(),
 				"Hello".to_string(),
 			]
+		);
+	}
+
+	#[test]
+	fn template_renders_link_widget() {
+		let template = Template::parse(r#"<Link href="/peers" text="Peers" />"#, "test")
+			.expect("parse template");
+		let rendered = template.render(&WuiValue::Null);
+
+		let ItemPayload::Layout(layout) = rendered.payload else {
+			panic!("expected root layout");
+		};
+		let Some(item) = layout.body.first() else {
+			panic!("expected link item");
+		};
+		assert_eq!(
+			item.payload,
+			ItemPayload::Link {
+				href: "/peers".to_string(),
+				text: "Peers".to_string(),
+			}
 		);
 	}
 }

@@ -86,6 +86,19 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 				},
 			],
 		}),
+		"Link" => Some(TagSchema {
+			name: "Link",
+			props: &[
+				PropSchema {
+					name: "href",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "text",
+					kind: PropKind::Value(ValueType::String),
+				},
+			],
+		}),
 		"TextInput" => Some(TagSchema {
 			name: "TextInput",
 			props: &[
