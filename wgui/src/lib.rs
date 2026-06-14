@@ -40,6 +40,8 @@ use crate::wui::runtime::{MountResult, RouteContext};
 pub use db_table::{Db, DbTable};
 pub use dist::*;
 pub use gui::*;
+#[cfg(feature = "hyper")]
+pub use server::{HttpHandler, HttpRequest, HttpResponse};
 #[cfg(feature = "sqlite")]
 pub use sqlite::{
 	apply_sqlite_migrations, configure_sqlite_env_for_project, default_db_path_for_schema,
@@ -213,6 +215,18 @@ impl WguiHandle {
 		sender.send(Command::PushState(url.to_string())).unwrap();
 	}
 
+	pub async fn navigate(&self, client_id: usize, url: &str) {
+		let clients = self.clients.read().await;
+		let sender = match clients.get(&client_id) {
+			Some(sender) => sender,
+			None => {
+				println!("client not found");
+				return;
+			}
+		};
+		sender.send(Command::Navigate(url.to_string())).unwrap();
+	}
+
 	pub async fn enable_web_push(
 		&self,
 		client_id: usize,
@@ -367,6 +381,8 @@ pub struct Wgui<DB = ()> {
 	ssr_pages: SsrPageFactories,
 	db: Arc<DB>,
 	contexts: HashMap<TypeId, Arc<dyn Any + Send + Sync>>,
+	#[cfg(feature = "hyper")]
+	http_handler: server::SharedHttpHandler,
 }
 
 impl Wgui<()> {
@@ -377,6 +393,7 @@ impl Wgui<()> {
 		let sessions: Sessions = Arc::new(RwLock::new(HashMap::new()));
 		let ssr_components: SsrComponentFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let ssr_pages: SsrPageFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
+		let http_handler = Arc::new(RwLock::new(None));
 
 		{
 			let clients = clients.clone();
@@ -384,6 +401,7 @@ impl Wgui<()> {
 			let sessions = sessions.clone();
 			let ssr_components = ssr_components.clone();
 			let ssr_pages = ssr_pages.clone();
+			let http_handler = http_handler.clone();
 			let ssr: Option<SsrRenderer> = Some(Arc::new(move |route: RouteContext| {
 				if let Some((factory, route)) = {
 					let pages = ssr_pages.read().unwrap();
@@ -424,7 +442,7 @@ impl Wgui<()> {
 				Some(controller.render_with_route(&route))
 			}));
 			tokio::spawn(async move {
-				Server::new(addr, event_tx, clients, sessions, ssr)
+				Server::new(addr, event_tx, clients, sessions, ssr, http_handler)
 					.await
 					.run()
 					.await;
@@ -440,6 +458,7 @@ impl Wgui<()> {
 			ssr_pages,
 			db: Arc::new(()),
 			contexts: HashMap::new(),
+			http_handler,
 		}
 	}
 
@@ -453,15 +472,17 @@ impl Wgui<()> {
 		let sessions: Sessions = Arc::new(RwLock::new(HashMap::new()));
 		let ssr_components: SsrComponentFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let ssr_pages: SsrPageFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
+		let http_handler = Arc::new(RwLock::new(None));
 
 		{
 			let clients = clients.clone();
 			let event_tx = events_tx.clone();
 			let sessions = sessions.clone();
+			let http_handler = http_handler.clone();
 			let ssr: Option<SsrRenderer> =
 				Some(Arc::new(move |_route: RouteContext| Some((renderer)())));
 			tokio::spawn(async move {
-				Server::new(addr, event_tx, clients, sessions, ssr)
+				Server::new(addr, event_tx, clients, sessions, ssr, http_handler)
 					.await
 					.run()
 					.await;
@@ -477,6 +498,7 @@ impl Wgui<()> {
 			ssr_pages,
 			db: Arc::new(()),
 			contexts: HashMap::new(),
+			http_handler,
 		}
 	}
 
@@ -486,6 +508,8 @@ impl Wgui<()> {
 		let sessions: Sessions = Arc::new(RwLock::new(HashMap::new()));
 		let ssr_components: SsrComponentFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let ssr_pages: SsrPageFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
+		#[cfg(feature = "hyper")]
+		let http_handler = Arc::new(RwLock::new(None));
 
 		Self {
 			events_rx,
@@ -496,6 +520,8 @@ impl Wgui<()> {
 			ssr_pages,
 			db: Arc::new(()),
 			contexts: HashMap::new(),
+			#[cfg(feature = "hyper")]
+			http_handler,
 		}
 	}
 }
@@ -517,7 +543,19 @@ where
 			ssr_pages: self.ssr_pages,
 			db: Arc::new(db),
 			contexts: HashMap::new(),
+			#[cfg(feature = "hyper")]
+			http_handler: self.http_handler,
 		}
+	}
+
+	#[cfg(feature = "hyper")]
+	pub async fn set_http_handler<F, Fut>(&self, handler: F)
+	where
+		F: Fn(HttpRequest) -> Fut + Send + Sync + 'static,
+		Fut: Future<Output = Option<HttpResponse>> + Send + 'static,
+	{
+		let handler: HttpHandler = Arc::new(move |request| Box::pin(handler(request)));
+		*self.http_handler.write().await = Some(handler);
 	}
 
 	pub fn handle(&self) -> WguiHandle {
@@ -575,6 +613,9 @@ where
 					}
 					crate::wui::runtime::RuntimeCommand::PushState { client_id, url } => {
 						handle.push_state(client_id, &url).await;
+					}
+					crate::wui::runtime::RuntimeCommand::Navigate { client_id, url } => {
+						handle.navigate(client_id, &url).await;
 					}
 					crate::wui::runtime::RuntimeCommand::WebPushEnable {
 						client_id,

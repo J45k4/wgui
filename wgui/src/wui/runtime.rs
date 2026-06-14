@@ -131,6 +131,15 @@ where
 		}
 	}
 
+	pub fn navigate(&self, url: impl Into<String>) {
+		let url = url.into();
+		if let Some(client_id) = *self.current_client.lock().unwrap() {
+			let _ = self
+				.command_tx
+				.send(RuntimeCommand::Navigate { client_id, url });
+		}
+	}
+
 	pub fn enable_web_push(
 		&self,
 		service_worker_path: impl Into<String>,
@@ -246,6 +255,10 @@ pub enum RuntimeCommand {
 		title: String,
 	},
 	PushState {
+		client_id: usize,
+		url: String,
+	},
+	Navigate {
 		client_id: usize,
 		url: String,
 	},

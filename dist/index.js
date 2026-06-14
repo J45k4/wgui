@@ -2660,6 +2660,10 @@ window.onload = () => {
           sender2.sendNow();
           continue;
         }
+        if (message.type === "navigate") {
+          window.location.assign(message.url);
+          continue;
+        }
         if (message.type === "replaceState") {
           history.replaceState({}, "", message.url);
           continue;

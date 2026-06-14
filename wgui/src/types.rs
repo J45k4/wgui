@@ -156,6 +156,11 @@ pub struct PushState {
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Navigate {
+	pub url: String,
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ReplaceState {
 	pub url: String,
 }
@@ -241,6 +246,7 @@ pub enum ClientAction {
 	InsertAt(InsertAt),
 	RemoveInx(RemoveInx),
 	PushState(PushState),
+	Navigate(Navigate),
 	ReplaceState(ReplaceState),
 	SetQuery(SetQuery),
 	SetProp {
@@ -294,6 +300,7 @@ pub enum Command {
 	Render(Item),
 	SetTitle(String),
 	PushState(String),
+	Navigate(String),
 	Actions(Vec<ClientAction>),
 }
 

@@ -138,6 +138,11 @@ where
 				let str = serde_json::to_string(&changes).unwrap();
 				self.ws.send(WsMessage::Text(str)).await?;
 			}
+			Command::Navigate(url) => {
+				let changes = vec![ClientAction::Navigate(crate::types::Navigate { url })];
+				let str = serde_json::to_string(&changes).unwrap();
+				self.ws.send(WsMessage::Text(str)).await?;
+			}
 			Command::Actions(actions) => {
 				if actions.is_empty() {
 					return Ok(());

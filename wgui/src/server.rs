@@ -1,17 +1,21 @@
 #![cfg(feature = "hyper")]
 
-use http_body_util::Full;
+use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::Request;
 use hyper::Response;
 use hyper_util::rt::TokioIo;
+use std::collections::HashMap;
+use std::future::Future;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+use tokio::sync::RwLock;
 
 use crate::gui::Item;
 use crate::ssr;
@@ -23,6 +27,42 @@ use crate::{Sessions, WguiHandle};
 const INDEX_HTML_BYTES: &[u8] = include_bytes!("../../dist/index.html");
 const INDEX_JS_BYTES: &[u8] = include_bytes!("../../dist/index.js");
 const CSS_JS_BYTES: &[u8] = include_bytes!("../../dist/index.css");
+
+pub type HttpHandler = Arc<
+	dyn Fn(HttpRequest) -> Pin<Box<dyn Future<Output = Option<HttpResponse>> + Send>> + Send + Sync,
+>;
+pub(crate) type SharedHttpHandler = Arc<RwLock<Option<HttpHandler>>>;
+
+#[derive(Debug, Clone)]
+pub struct HttpRequest {
+	pub method: String,
+	pub path: String,
+	pub query: HashMap<String, String>,
+	pub headers: HashMap<String, String>,
+	pub body: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub struct HttpResponse {
+	pub status: u16,
+	pub headers: Vec<(String, String)>,
+	pub body: Vec<u8>,
+}
+
+impl HttpResponse {
+	pub fn new(status: u16, body: impl Into<Vec<u8>>) -> Self {
+		Self {
+			status,
+			headers: Vec::new(),
+			body: body.into(),
+		}
+	}
+
+	pub fn header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+		self.headers.push((name.into(), value.into()));
+		self
+	}
+}
 
 fn content_type_for(path: &Path) -> &'static str {
 	match path
@@ -82,10 +122,11 @@ struct Ctx {
 	clients: Clients,
 	sessions: Sessions,
 	ssr: Option<Arc<dyn Fn(RouteContext) -> Option<Item> + Send + Sync>>,
+	http_handler: SharedHttpHandler,
 }
 
-fn query_map(req: &Request<hyper::body::Incoming>) -> std::collections::HashMap<String, String> {
-	let mut out = std::collections::HashMap::new();
+fn query_map(req: &Request<hyper::body::Incoming>) -> HashMap<String, String> {
+	let mut out = HashMap::new();
 	let Some(query) = req.uri().query() else {
 		return out;
 	};
@@ -101,6 +142,31 @@ fn query_map(req: &Request<hyper::body::Incoming>) -> std::collections::HashMap<
 	out
 }
 
+fn header_map(req: &Request<hyper::body::Incoming>) -> HashMap<String, String> {
+	let mut out = HashMap::new();
+	for (name, value) in req.headers() {
+		if let Ok(value) = value.to_str() {
+			out.insert(name.as_str().to_ascii_lowercase(), value.to_string());
+		}
+	}
+	out
+}
+
+fn cookie_value(req: &Request<hyper::body::Incoming>, name: &str) -> Option<String> {
+	let raw = req.headers().get(hyper::header::COOKIE)?;
+	let header = raw.to_str().ok()?;
+	for part in header.split(';') {
+		let mut kv = part.trim().splitn(2, '=');
+		let (Some(key), Some(value)) = (kv.next(), kv.next()) else {
+			continue;
+		};
+		if key == name && !value.is_empty() {
+			return Some(value.to_string());
+		}
+	}
+	None
+}
+
 fn session_from_query(req: &Request<hyper::body::Incoming>) -> Option<String> {
 	let query = req.uri().query()?;
 	for pair in query.split('&') {
@@ -112,6 +178,40 @@ fn session_from_query(req: &Request<hyper::body::Incoming>) -> Option<String> {
 		}
 	}
 	None
+}
+
+fn session_from_request(req: &Request<hyper::body::Incoming>) -> Option<String> {
+	cookie_value(req, "sid").or_else(|| session_from_query(req))
+}
+
+fn http_response(response: HttpResponse) -> Response<Full<Bytes>> {
+	let mut builder = Response::builder().status(response.status);
+	for (name, value) in response.headers {
+		builder = builder.header(name.as_str(), value.as_str());
+	}
+	builder.body(Full::new(Bytes::from(response.body))).unwrap()
+}
+
+async fn custom_http_response(
+	req: &mut Request<hyper::body::Incoming>,
+	handler: &SharedHttpHandler,
+) -> Result<Option<Response<Full<Bytes>>>, hyper::Error> {
+	let Some(handler) = handler.read().await.clone() else {
+		return Ok(None);
+	};
+	let method = req.method().as_str().to_string();
+	let path = req.uri().path().to_string();
+	let query = query_map(req);
+	let headers = header_map(req);
+	let body = req.body_mut().collect().await?.to_bytes().to_vec();
+	let request = HttpRequest {
+		method,
+		path,
+		query,
+		headers,
+		body,
+	};
+	Ok((handler)(request).await.map(http_response))
 }
 
 async fn handle_req(
@@ -126,7 +226,7 @@ async fn handle_req(
 		let event_tx = ctx.event_tx.clone();
 		let clients = ctx.clients.clone();
 		let sessions = ctx.sessions.clone();
-		let session = session_from_query(&req);
+		let session = session_from_request(&req);
 		tokio::spawn(async move {
 			match websocket.await {
 				Ok(ws) => {
@@ -140,6 +240,10 @@ async fn handle_req(
 				}
 			}
 		});
+		return Ok(response);
+	}
+
+	if let Some(response) = custom_http_response(&mut req, &ctx.http_handler).await? {
 		return Ok(response);
 	}
 
@@ -233,6 +337,7 @@ pub struct Server {
 	clients: Clients,
 	sessions: Sessions,
 	ssr: Option<Arc<dyn Fn(RouteContext) -> Option<Item> + Send + Sync>>,
+	http_handler: SharedHttpHandler,
 }
 
 impl Server {
@@ -242,6 +347,7 @@ impl Server {
 		clients: Clients,
 		sessions: Sessions,
 		ssr: Option<Arc<dyn Fn(RouteContext) -> Option<Item> + Send + Sync>>,
+		http_handler: SharedHttpHandler,
 	) -> Self {
 		let listener = TcpListener::bind(addr).await.unwrap();
 		log::info!("listening on http://localhost:{}", addr.port());
@@ -252,10 +358,11 @@ impl Server {
 			clients,
 			sessions,
 			ssr,
+			http_handler,
 		}
 	}
 
-	pub async fn run(mut self) {
+	pub async fn run(self) {
 		loop {
 			tokio::select! {
 				res = self.listener.accept() => {
@@ -265,17 +372,19 @@ impl Server {
 							let io = TokioIo::new(socket);
 							let event_tx = self.event_tx.clone();
 							let clients = self.clients.clone();
-							let sessions = self.sessions.clone();
-							let ssr = self.ssr.clone();
-							tokio::spawn(async move {
-								let service = service_fn(move |req| {
-									handle_req(req, Ctx {
-										event_tx: event_tx.clone(),
-										clients: clients.clone(),
-										sessions: sessions.clone(),
-										ssr: ssr.clone(),
-									})
-								});
+								let sessions = self.sessions.clone();
+								let ssr = self.ssr.clone();
+								let http_handler = self.http_handler.clone();
+								tokio::spawn(async move {
+									let service = service_fn(move |req| {
+										handle_req(req, Ctx {
+											event_tx: event_tx.clone(),
+											clients: clients.clone(),
+											sessions: sessions.clone(),
+											ssr: ssr.clone(),
+											http_handler: http_handler.clone(),
+										})
+									});
 
 								if let Err(err) = http1::Builder::new()
 									.serve_connection(io, service)

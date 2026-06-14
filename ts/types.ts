@@ -355,6 +355,11 @@ export type PushState = {
     url: string
 }
 
+export type Navigate = {
+	type: "navigate"
+	url: string
+}
+
 export type ReplaceState = {
     type: "replaceState"
     url: string
@@ -423,12 +428,13 @@ export type WebPushDisable = {
 
 export type SrvMessage = Replace |
     ReplaceAt |
-    AddBack | 
-    AddFront | 
-    InsertAt | 
-    RemoveInx |
-    PushState |
-    ReplaceState |
+    AddBack |
+    AddFront |
+	InsertAt |
+	RemoveInx |
+	PushState |
+	Navigate |
+	ReplaceState |
     SetQuery |
 	SetProp |
 	ThreePatch |
