@@ -144,6 +144,11 @@ async fn handle_req(
 	}
 
 	match req.uri().path() {
+		"/favicon.ico" => Ok(Response::builder()
+			.status(204)
+			.header("cache-control", "public, max-age=86400")
+			.body(Full::new(Bytes::new()))
+			.unwrap()),
 		"/index.js" => Ok(Response::builder()
 			.header("content-type", "text/javascript")
 			.header("cache-control", "no-store")
