@@ -224,6 +224,8 @@ fn render_button(item: &Item, title: &str) -> String {
 
 fn render_link(item: &Item, href: &str, text: &str) -> String {
 	let mut style = StyleBuilder::new();
+	style.push("color", "inherit");
+	style.push("text-decoration", "none");
 	apply_item_styles(item, &mut style);
 	let classes = Vec::new();
 	let mut attrs = collect_item_attrs(item);

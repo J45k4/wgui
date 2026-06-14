@@ -343,6 +343,8 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		}
 		anchor.href = payload.href
 		anchor.textContent = payload.text
+		anchor.style.color = "inherit"
+		anchor.style.textDecoration = "none"
 		anchor.onclick = (event) => navigateLink(event, anchor, ctx)
 		return anchor
 	}
