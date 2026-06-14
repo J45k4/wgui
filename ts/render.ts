@@ -12,6 +12,27 @@ const renderChildren = (element: HTMLElement, items: Item[], ctx: Context) => {
 	}
 }
 
+const clearModalState = (element: HTMLElement, item: Item) => {
+	if (item.payload.type === "modal" || element.dataset.modal !== "overlay") {
+		return
+	}
+
+	delete element.dataset.modal
+	element.removeAttribute("role")
+	element.removeAttribute("aria-modal")
+	element.removeAttribute("aria-hidden")
+	element.onclick = null
+	element.style.position = ""
+	element.style.left = ""
+	element.style.top = ""
+	element.style.alignItems = ""
+	element.style.justifyContent = ""
+	element.style.backgroundColor = ""
+	element.style.backdropFilter = ""
+	element.style.zIndex = ""
+	element.style.pointerEvents = ""
+}
+
 const fileToDataUrl = (file: File): Promise<string> =>
 	new Promise<string>((resolve, reject) => {
 		const reader = new FileReader()
@@ -696,6 +717,8 @@ export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 		return
 	}
 
+	clearModalState(element, item)
+
 	element.style.width = item.fill ? "100%" : item.width ? item.width + "px" : ""
 	element.style.boxSizing = item.fill ? "border-box" : ""
 	element.style.height = item.height ? item.height + "px" : ""
@@ -703,13 +726,9 @@ export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 	element.style.maxWidth = item.maxWidth ? item.maxWidth + "px" : ""
 	element.style.minHeight = item.minHeight ? item.minHeight + "px" : ""
 	element.style.maxHeight = item.maxHeight ? item.maxHeight + "px" : ""
-	if (item.grow) {
-		element.style.flexGrow = item.grow.toString()
-		element.classList.add("grow")
-	}
-	if (item.backgroundColor) {
-		element.style.backgroundColor = item.backgroundColor
-	}
+	element.style.flexGrow = item.grow ? item.grow.toString() : ""
+	element.classList.toggle("grow", !!item.grow)
+	element.style.backgroundColor = item.backgroundColor || ""
 	if (item.breakWords) {
 		element.style.overflowWrap = "anywhere"
 		element.style.wordBreak = "break-word"
@@ -717,47 +736,23 @@ export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 		element.style.overflowWrap = ""
 		element.style.wordBreak = ""
 	}
-	if (item.textAlign) {
-		element.style.textAlign = item.textAlign
-	}
-	if (item.cursor) {
-		element.style.cursor = item.cursor
-	}
-	if (item.margin) {
-		element.style.margin = item.margin + "px"
-	}
-	if (item.marginLeft) {
-		element.style.marginLeft = item.marginLeft + "px"
-	}
-	if (item.marginRight) {
-		element.style.marginRight = item.marginRight + "px"
-	}
-	if (item.marginTop) {
-		element.style.marginTop = item.marginTop + "px"
-	}
-	if (item.marginBottom) {
-		element.style.marginBottom = item.marginBottom + "px"
-	}
-	if (item.padding) {
-		element.style.padding = item.padding + "px"
-	}
-	if (item.paddingLeft) {
-		element.style.paddingLeft = item.paddingLeft + "px"
-	}
-	if (item.paddingRight) {
-		element.style.paddingRight = item.paddingRight + "px"
-	}
-	if (item.paddingTop) {
-		element.style.paddingTop = item.paddingTop + "px"
-	}
-	if (item.paddingBottom) {
-		element.style.paddingBottom = item.paddingBottom + "px"
-	}
-	if (item.border) {
-		element.style.border = item.border
-	}
+	element.style.textAlign = item.textAlign || ""
+	element.style.cursor = item.cursor || ""
+	element.style.margin = item.margin ? item.margin + "px" : ""
+	element.style.marginLeft = item.marginLeft ? item.marginLeft + "px" : ""
+	element.style.marginRight = item.marginRight ? item.marginRight + "px" : ""
+	element.style.marginTop = item.marginTop ? item.marginTop + "px" : ""
+	element.style.marginBottom = item.marginBottom ? item.marginBottom + "px" : ""
+	element.style.padding = item.padding ? item.padding + "px" : ""
+	element.style.paddingLeft = item.paddingLeft ? item.paddingLeft + "px" : ""
+	element.style.paddingRight = item.paddingRight ? item.paddingRight + "px" : ""
+	element.style.paddingTop = item.paddingTop ? item.paddingTop + "px" : ""
+	element.style.paddingBottom = item.paddingBottom ? item.paddingBottom + "px" : ""
+	element.style.border = item.border || ""
 	if (item.editable) {
 		element.contentEditable = "true"
+	} else {
+		element.removeAttribute("contenteditable")
 	}
 	if (item.overflow) {
 		element.style.overflow = item.overflow
