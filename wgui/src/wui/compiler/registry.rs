@@ -48,6 +48,18 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 					kind: PropKind::Value(ValueType::Number),
 				},
 				PropSchema {
+					name: "minWidth",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "breakWords",
+					kind: PropKind::Value(ValueType::Bool),
+				},
+				PropSchema {
+					name: "fill",
+					kind: PropKind::Value(ValueType::Bool),
+				},
+				PropSchema {
 					name: "textAlign",
 					kind: PropKind::Value(ValueType::String),
 				},
@@ -96,6 +108,14 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 				PropSchema {
 					name: "grow",
 					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "minWidth",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "fill",
+					kind: PropKind::Value(ValueType::Bool),
 				},
 			],
 		}),
@@ -489,6 +509,14 @@ fn layout_props() -> &'static [PropSchema] {
 		PropSchema {
 			name: "grow",
 			kind: PropKind::Value(ValueType::Number),
+		},
+		PropSchema {
+			name: "fill",
+			kind: PropKind::Value(ValueType::Bool),
+		},
+		PropSchema {
+			name: "breakWords",
+			kind: PropKind::Value(ValueType::Bool),
 		},
 		PropSchema {
 			name: "textAlign",

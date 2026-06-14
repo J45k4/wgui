@@ -1,7 +1,9 @@
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-	parse_macro_input, Data, DeriveInput, Fields, FnArg, ImplItem, ItemImpl, ReturnType, Type,
+	parse::{Parse, ParseStream},
+	parse_macro_input, Data, DeriveInput, Fields, FnArg, ImplItem, ItemImpl, LitStr, ReturnType,
+	Token, Type,
 };
 
 #[proc_macro_derive(WguiModel)]
@@ -118,11 +120,41 @@ fn derive_wui_value_convert(input: TokenStream, label: &str) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn wgui_controller(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn wgui_controller(attr: TokenStream, item: TokenStream) -> TokenStream {
+	let args = parse_macro_input!(attr as WguiControllerArgs);
 	let impl_block = parse_macro_input!(item as ItemImpl);
-	match expand_wgui_controller(impl_block) {
+	match expand_wgui_controller(args, impl_block) {
 		Ok(tokens) => tokens,
 		Err(err) => err.to_compile_error().into(),
+	}
+}
+
+#[derive(Default)]
+struct WguiControllerArgs {
+	template: Option<String>,
+}
+
+impl Parse for WguiControllerArgs {
+	fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+		let mut args = Self::default();
+		while !input.is_empty() {
+			let ident: syn::Ident = input.parse()?;
+			input.parse::<Token![=]>()?;
+			if ident == "template" {
+				let value: LitStr = input.parse()?;
+				args.template = Some(value.value());
+			} else {
+				return Err(syn::Error::new_spanned(
+					ident,
+					"unsupported wgui_controller argument",
+				));
+			}
+			if input.is_empty() {
+				break;
+			}
+			input.parse::<Token![,]>()?;
+		}
+		Ok(args)
 	}
 }
 
@@ -144,7 +176,15 @@ struct FallbackEventHandler {
 	is_async: bool,
 }
 
-fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
+enum TitleReturn {
+	String,
+	OptionString,
+}
+
+fn expand_wgui_controller(
+	args: WguiControllerArgs,
+	impl_block: ItemImpl,
+) -> syn::Result<TokenStream> {
 	let controller_ident = match *impl_block.self_ty.clone() {
 		Type::Path(path) => path
 			.path
@@ -160,7 +200,9 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 		}
 	};
 
-	let mut model_method: Option<(syn::Ident, Type)> = None;
+	let mut state_method: Option<(syn::Ident, Type)> = None;
+	let mut fallback_model_methods: Vec<(syn::Ident, Type)> = Vec::new();
+	let mut title_method: Option<(syn::Ident, TitleReturn)> = None;
 	let mut handlers = Vec::new();
 	let mut fallback_event_handler: Option<FallbackEventHandler> = None;
 
@@ -191,13 +233,26 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 						if matches!(**ty, Type::Tuple(_)) {
 							continue;
 						}
-						if model_method.is_some() {
-							return Err(syn::Error::new_spanned(
-								&method.sig.ident,
-								"wgui_controller requires exactly one &self method returning a model",
-							));
+						if method.sig.ident == "title" {
+							if title_method.is_some() {
+								return Err(syn::Error::new_spanned(
+									&method.sig.ident,
+									"wgui_controller allows only one title method",
+								));
+							}
+							title_method =
+								Some((method.sig.ident.clone(), title_return_from_type(ty)?));
+						} else if method.sig.ident == "state" {
+							if state_method.is_some() {
+								return Err(syn::Error::new_spanned(
+									&method.sig.ident,
+									"wgui_controller allows only one state method",
+								));
+							}
+							state_method = Some((method.sig.ident.clone(), (**ty).clone()));
+						} else {
+							fallback_model_methods.push((method.sig.ident.clone(), (**ty).clone()));
 						}
-						model_method = Some((method.sig.ident.clone(), (**ty).clone()));
 					}
 				}
 			}
@@ -241,12 +296,22 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 		}
 	}
 
-	let (model_method_ident, model_type) = model_method.ok_or_else(|| {
-		syn::Error::new_spanned(
-			&controller_ident,
-			"wgui_controller requires an &self method that returns a model",
-		)
-	})?;
+	let (model_method_ident, model_type) = if let Some(state_method) = state_method {
+		state_method
+	} else {
+		if fallback_model_methods.len() > 1 {
+			return Err(syn::Error::new_spanned(
+				&controller_ident,
+				"wgui_controller requires exactly one &self method returning a model, or a method named state",
+			));
+		}
+		fallback_model_methods.pop().ok_or_else(|| {
+			syn::Error::new_spanned(
+				&controller_ident,
+				"wgui_controller requires an &self method that returns a model",
+			)
+		})?
+	};
 
 	let model_type_ident = match &model_type {
 		Type::Path(path) => path
@@ -273,9 +338,26 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 		name
 	};
 
+	let explicit_template = if let Some(template) = args.template {
+		quote! { ::std::option::Option::Some(#template.to_string()) }
+	} else {
+		quote! { ::std::option::Option::None }
+	};
 	let template_fn = format_ident!("__wgui_template_for_{}", controller_ident);
 	let action_fn = format_ident!("__wgui_action_name_for_{}", controller_ident);
 	let module_name_fn = format_ident!("__wgui_module_name_for_{}", controller_ident);
+	let title_impl = title_method.map(|(ident, return_type)| match return_type {
+		TitleReturn::String => quote! {
+			fn title(&self) -> ::std::option::Option<::std::string::String> {
+				::std::option::Option::Some(self.#ident())
+			}
+		},
+		TitleReturn::OptionString => quote! {
+			fn title(&self) -> ::std::option::Option<::std::string::String> {
+				self.#ident()
+			}
+		},
+	});
 
 	let no_arg_arms = handlers
 		.iter()
@@ -348,14 +430,19 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 		#impl_block
 
 		#[allow(non_snake_case)]
-		fn #module_name_fn() -> ::std::string::String {
+		fn #module_name_fn() -> ::std::vec::Vec<::std::string::String> {
+			if let ::std::option::Option::Some(explicit) = #explicit_template {
+				return ::std::vec![explicit];
+			}
+
 			let fallback = #module_name;
 			let path = ::std::path::Path::new(file!());
 			let stem = path
 				.file_stem()
 				.and_then(|value| value.to_str())
 				.unwrap_or("");
-			let derived = if stem == "mod" {
+
+			let old_derived = if stem == "mod" {
 				path.parent()
 					.and_then(|parent| parent.file_name())
 					.and_then(|value| value.to_str())
@@ -363,25 +450,67 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 			} else {
 				stem
 			};
-			if derived.is_empty() {
-				fallback.to_string()
-			} else {
-				derived.to_string()
+
+			let mut candidates = ::std::vec::Vec::new();
+			let parts = path
+				.components()
+				.filter_map(|component| match component {
+					::std::path::Component::Normal(value) => value.to_str(),
+					_ => ::std::option::Option::None,
+				})
+				.collect::<::std::vec::Vec<_>>();
+			if let ::std::option::Option::Some(src_index) = parts.iter().rposition(|part| *part == "src") {
+				let mut module_parts = parts
+					.iter()
+					.skip(src_index + 1)
+					.map(|part| (*part).to_string())
+					.collect::<::std::vec::Vec<_>>();
+				if let ::std::option::Option::Some(last) = module_parts.last_mut() {
+					if let ::std::option::Option::Some(stripped) = last.strip_suffix(".rs") {
+						*last = stripped.to_string();
+					}
+				}
+				if module_parts.last().map(|part| part == "mod").unwrap_or(false) {
+					module_parts.pop();
+				}
+				if !module_parts.is_empty() {
+					candidates.push(module_parts.join("/"));
+				}
 			}
+			if !old_derived.is_empty() {
+				candidates.push(old_derived.to_string());
+			}
+			candidates.push(fallback.to_string());
+
+			let mut unique = ::std::vec::Vec::new();
+			for candidate in candidates {
+				if !unique.iter().any(|existing| existing == &candidate) {
+					unique.push(candidate);
+				}
+			}
+			unique
 		}
 
 	#[allow(non_snake_case)]
 	fn #template_fn() -> &'static ::wgui::wui::runtime::Template {
 		static TEMPLATE: ::std::sync::OnceLock<::wgui::wui::runtime::Template> = ::std::sync::OnceLock::new();
 		TEMPLATE.get_or_init(|| {
-			let module_name = #module_name_fn();
 			let base_dir = ::std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/wui"));
-			let source_path = base_dir.join(format!("{}.wui", module_name));
-			let source = ::std::fs::read_to_string(&source_path).unwrap_or_else(|err| {
-				panic!("failed to read wui template {}: {}", source_path.display(), err)
-			});
-			::wgui::wui::runtime::Template::parse_with_dir(&source, &module_name, Some(base_dir))
-				.unwrap_or_else(|diags| panic!("failed to parse wui template {}: {:?}", module_name, diags))
+			let candidates = #module_name_fn();
+			let mut read_errors = ::std::vec::Vec::new();
+			for module_name in candidates {
+				let source_path = base_dir.join(format!("{}.wui", module_name));
+				let source = match ::std::fs::read_to_string(&source_path) {
+					::std::result::Result::Ok(source) => source,
+					::std::result::Result::Err(err) => {
+						read_errors.push(format!("{}: {}", source_path.display(), err));
+						continue;
+					}
+				};
+				return ::wgui::wui::runtime::Template::parse_with_dir(&source, &module_name, source_path.parent())
+					.unwrap_or_else(|diags| panic!("failed to parse wui template {}: {:?}", module_name, diags));
+			}
+			panic!("failed to read wui template; tried {}", read_errors.join(", "))
 		})
 	}
 
@@ -414,6 +543,16 @@ fn expand_wgui_controller(impl_block: ItemImpl) -> syn::Result<TokenStream> {
 			let model = self.#model_method_ident();
 			#template_fn().render_with_path(&model, path)
 		}
+
+		fn render_with_route(
+			&self,
+			route: &::wgui::wui::runtime::RouteContext,
+		) -> ::wgui::Item {
+			let model = self.#model_method_ident();
+			#template_fn().render_with_route(&model, route)
+		}
+
+		#title_impl
 
 		fn route_title(&self, path: &str) -> ::std::option::Option<::std::string::String> {
 			#template_fn().title_for_path(path)
@@ -477,6 +616,56 @@ fn handler_arg_from_type(ty: &Type) -> Option<HandlerArg> {
 		"u32" => Some(HandlerArg::U32),
 		"i32" => Some(HandlerArg::I32),
 		_ => None,
+	}
+}
+
+fn title_return_from_type(ty: &Type) -> syn::Result<TitleReturn> {
+	let Type::Path(path) = ty else {
+		return Err(syn::Error::new_spanned(
+			ty,
+			"title must return String or Option<String>",
+		));
+	};
+	let Some(segment) = path.path.segments.last() else {
+		return Err(syn::Error::new_spanned(
+			ty,
+			"title must return String or Option<String>",
+		));
+	};
+	if segment.ident == "String" {
+		return Ok(TitleReturn::String);
+	}
+	if segment.ident != "Option" {
+		return Err(syn::Error::new_spanned(
+			ty,
+			"title must return String or Option<String>",
+		));
+	}
+	let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+		return Err(syn::Error::new_spanned(
+			ty,
+			"title must return String or Option<String>",
+		));
+	};
+	let Some(syn::GenericArgument::Type(Type::Path(inner))) = args.args.first() else {
+		return Err(syn::Error::new_spanned(
+			ty,
+			"title must return String or Option<String>",
+		));
+	};
+	let is_string = inner
+		.path
+		.segments
+		.last()
+		.map(|segment| segment.ident == "String")
+		.unwrap_or(false);
+	if is_string {
+		Ok(TitleReturn::OptionString)
+	} else {
+		Err(syn::Error::new_spanned(
+			ty,
+			"title must return String or Option<String>",
+		))
 	}
 }
 

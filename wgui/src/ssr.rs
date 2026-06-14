@@ -436,6 +436,10 @@ fn render_attributes(
 }
 
 fn apply_item_styles(item: &Item, style: &mut StyleBuilder) {
+	if item.fill {
+		style.push("width", "100%");
+		style.push("box-sizing", "border-box");
+	}
 	if item.width > 0 {
 		style.push("width", &format!("{}px", item.width));
 	}
@@ -459,6 +463,10 @@ fn apply_item_styles(item: &Item, style: &mut StyleBuilder) {
 	}
 	if !item.background_color.is_empty() {
 		style.push("background-color", &item.background_color);
+	}
+	if item.break_words {
+		style.push("overflow-wrap", "anywhere");
+		style.push("word-break", "break-word");
 	}
 	if !item.text_align.is_empty() {
 		style.push("text-align", &item.text_align);

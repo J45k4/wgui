@@ -696,9 +696,10 @@ export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 		return
 	}
 
-	element.style.width = item.width ? item.width + "px" : ""
+	element.style.width = item.fill ? "100%" : item.width ? item.width + "px" : ""
+	element.style.boxSizing = item.fill ? "border-box" : ""
 	element.style.height = item.height ? item.height + "px" : ""
-	element.style.minWidth = item.minWidth ? item.minWidth + "px" : ""
+	element.style.minWidth = item.minWidth !== undefined ? item.minWidth + "px" : ""
 	element.style.maxWidth = item.maxWidth ? item.maxWidth + "px" : ""
 	element.style.minHeight = item.minHeight ? item.minHeight + "px" : ""
 	element.style.maxHeight = item.maxHeight ? item.maxHeight + "px" : ""
@@ -708,6 +709,13 @@ export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 	}
 	if (item.backgroundColor) {
 		element.style.backgroundColor = item.backgroundColor
+	}
+	if (item.breakWords) {
+		element.style.overflowWrap = "anywhere"
+		element.style.wordBreak = "break-word"
+	} else {
+		element.style.overflowWrap = ""
+		element.style.wordBreak = ""
 	}
 	if (item.textAlign) {
 		element.style.textAlign = item.textAlign

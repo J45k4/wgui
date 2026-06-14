@@ -1721,9 +1721,10 @@ var renderItem = (item, ctx, old) => {
   if (!element) {
     return;
   }
-  element.style.width = item.width ? item.width + "px" : "";
+  element.style.width = item.fill ? "100%" : item.width ? item.width + "px" : "";
+  element.style.boxSizing = item.fill ? "border-box" : "";
   element.style.height = item.height ? item.height + "px" : "";
-  element.style.minWidth = item.minWidth ? item.minWidth + "px" : "";
+  element.style.minWidth = item.minWidth !== undefined ? item.minWidth + "px" : "";
   element.style.maxWidth = item.maxWidth ? item.maxWidth + "px" : "";
   element.style.minHeight = item.minHeight ? item.minHeight + "px" : "";
   element.style.maxHeight = item.maxHeight ? item.maxHeight + "px" : "";
@@ -1733,6 +1734,13 @@ var renderItem = (item, ctx, old) => {
   }
   if (item.backgroundColor) {
     element.style.backgroundColor = item.backgroundColor;
+  }
+  if (item.breakWords) {
+    element.style.overflowWrap = "anywhere";
+    element.style.wordBreak = "break-word";
+  } else {
+    element.style.overflowWrap = "";
+    element.style.wordBreak = "";
   }
   if (item.textAlign) {
     element.style.textAlign = item.textAlign;
@@ -2498,6 +2506,10 @@ var applySetProp = (element, set) => {
     case "Grow":
       element.style.flexGrow = value;
       break;
+    case "Fill":
+      element.style.width = value === "0" ? "" : "100%";
+      element.style.boxSizing = value === "0" ? "" : "border-box";
+      break;
     case "Width":
       element.style.width = value === "0" ? "" : `${value}px`;
       break;
@@ -2521,6 +2533,10 @@ var applySetProp = (element, set) => {
       break;
     case "Overflow":
       element.style.overflow = value;
+      break;
+    case "BreakWords":
+      element.style.overflowWrap = value === "0" ? "" : "anywhere";
+      element.style.wordBreak = value === "0" ? "" : "break-word";
       break;
     case "ID":
       element.id = value;

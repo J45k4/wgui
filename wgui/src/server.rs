@@ -17,6 +17,7 @@ use crate::gui::Item;
 use crate::ssr;
 use crate::types::{ClientMessage, Clients};
 use crate::ws::TungsteniteWs;
+use crate::wui::runtime::RouteContext;
 use crate::{Sessions, WguiHandle};
 
 const INDEX_HTML_BYTES: &[u8] = include_bytes!("../../dist/index.html");
@@ -80,7 +81,24 @@ struct Ctx {
 	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	clients: Clients,
 	sessions: Sessions,
-	ssr: Option<Arc<dyn Fn(&str) -> Option<Item> + Send + Sync>>,
+	ssr: Option<Arc<dyn Fn(RouteContext) -> Option<Item> + Send + Sync>>,
+}
+
+fn query_map(req: &Request<hyper::body::Incoming>) -> std::collections::HashMap<String, String> {
+	let mut out = std::collections::HashMap::new();
+	let Some(query) = req.uri().query() else {
+		return out;
+	};
+	for pair in query.split('&') {
+		let mut parts = pair.splitn(2, '=');
+		let key = parts.next().unwrap_or("");
+		if key.is_empty() {
+			continue;
+		}
+		let value = parts.next().unwrap_or("");
+		out.insert(key.to_string(), value.to_string());
+	}
+	out
 }
 
 fn session_from_query(req: &Request<hyper::body::Incoming>) -> Option<String> {
@@ -174,7 +192,12 @@ async fn handle_req(
 		}
 		_ => {
 			if let Some(renderer) = ctx.ssr {
-				if let Some(item) = (renderer)(req.uri().path()) {
+				let route = RouteContext {
+					path: req.uri().path().to_string(),
+					params: std::collections::HashMap::new(),
+					query: query_map(&req),
+				};
+				if let Some(item) = (renderer)(route) {
 					let html = ssr::render_document(&item);
 					Ok(Response::builder()
 						.header("content-type", "text/html")
@@ -204,7 +227,7 @@ pub struct Server {
 	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	clients: Clients,
 	sessions: Sessions,
-	ssr: Option<Arc<dyn Fn(&str) -> Option<Item> + Send + Sync>>,
+	ssr: Option<Arc<dyn Fn(RouteContext) -> Option<Item> + Send + Sync>>,
 }
 
 impl Server {
@@ -213,7 +236,7 @@ impl Server {
 		event_tx: mpsc::UnboundedSender<ClientMessage>,
 		clients: Clients,
 		sessions: Sessions,
-		ssr: Option<Arc<dyn Fn(&str) -> Option<Item> + Send + Sync>>,
+		ssr: Option<Arc<dyn Fn(RouteContext) -> Option<Item> + Send + Sync>>,
 	) -> Self {
 		let listener = TcpListener::bind(addr).await.unwrap();
 		log::info!("listening on http://localhost:{}", addr.port());

@@ -519,6 +519,8 @@ fn prop_method(name: &str) -> String {
 		"grow" => "grow".to_string(),
 		"textAlign" => "text_align".to_string(),
 		"cursor" => "cursor".to_string(),
+		"breakWords" => "break_words".to_string(),
+		"fill" => "fill".to_string(),
 		"wrap" => "wrap".to_string(),
 		"overflow" => "overflow".to_string(),
 		"placeholder" => "placeholder".to_string(),

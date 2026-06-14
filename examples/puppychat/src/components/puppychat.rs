@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use wgui::wgui_controller;
-use wgui::wui::runtime::{Component, Ctx};
+use wgui::wui::runtime::{Component, Ctx, MountResult, RouteContext};
 
 use crate::notifications::{NotificationChannel, PushPayload, PushTarget, WebPushSubscription};
 
@@ -860,9 +860,12 @@ impl Component for Puppychat {
 	type Db = PuppyDb;
 	type Model = ChatViewState;
 
-	async fn mount(ctx: Arc<Ctx<SharedContext, PuppyDb>>) -> Self {
+	async fn mount(
+		ctx: Arc<Ctx<SharedContext, PuppyDb>>,
+		_route: RouteContext,
+	) -> MountResult<Self> {
 		let _ = ctx.db().channels.find(1).await;
-		Self::new(ctx)
+		MountResult::Ready(Self::new(ctx))
 	}
 
 	fn render(&self, _ctx: &Ctx<SharedContext, PuppyDb>) -> Self::Model {

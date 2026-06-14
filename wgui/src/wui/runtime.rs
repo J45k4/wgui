@@ -3,6 +3,7 @@ use crate::wui::ast::{BinaryOp, Expr, Literal, UnaryOp};
 use crate::wui::compiler::ir::{ActionDef, ActionPayload, EventKind, IrNode, IrProp, IrWidget};
 use crate::wui::diagnostic::Diagnostic;
 use crate::wui::imports;
+use crate::wui::routing::route_params;
 
 pub use async_trait::async_trait;
 use std::collections::HashMap;
@@ -19,6 +20,28 @@ pub struct Template {
 	doc: crate::wui::compiler::ir::IrDocument,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RouteContext {
+	pub path: String,
+	pub params: HashMap<String, String>,
+	pub query: HashMap<String, String>,
+}
+
+pub enum MountResult<C> {
+	Ready(C),
+	Redirect(String),
+}
+
+impl<C> MountResult<C> {
+	pub fn ready(controller: C) -> Self {
+		Self::Ready(controller)
+	}
+
+	pub fn redirect(url: impl Into<String>) -> Self {
+		Self::Redirect(url.into())
+	}
+}
+
 #[async_trait]
 pub trait WuiController {
 	fn render(&self) -> Item;
@@ -26,10 +49,17 @@ pub trait WuiController {
 		let _ = path;
 		self.render()
 	}
+	fn render_with_route(&self, route: &RouteContext) -> Item {
+		self.render_with_path(&route.path)
+	}
+	fn title(&self) -> Option<String> {
+		None
+	}
 	fn route_title(&self, _path: &str) -> Option<String> {
 		None
 	}
 	fn set_runtime_context(&mut self, _client_id: Option<usize>, _session: Option<String>) {}
+	fn set_route_context(&mut self, _route: Option<RouteContext>) {}
 	async fn handle(&mut self, event: &crate::types::ClientEvent) -> bool;
 }
 
@@ -38,6 +68,7 @@ pub struct Ctx<T, DB = ()> {
 	pub db: Arc<DB>,
 	current_client: Arc<Mutex<Option<usize>>>,
 	current_session: Arc<Mutex<Option<String>>>,
+	current_route: Arc<Mutex<Option<RouteContext>>>,
 	pubsub: crate::PubSub<()>,
 	command_tx: mpsc::UnboundedSender<RuntimeCommand>,
 	command_rx: Mutex<Option<mpsc::UnboundedReceiver<RuntimeCommand>>>,
@@ -63,6 +94,7 @@ where
 			db: db.into(),
 			current_client: Arc::new(Mutex::new(None)),
 			current_session: Arc::new(Mutex::new(None)),
+			current_route: Arc::new(Mutex::new(None)),
 			pubsub: crate::PubSub::new(),
 			command_tx,
 			command_rx: Mutex::new(Some(command_rx)),
@@ -138,6 +170,26 @@ where
 		*self.current_client.lock().unwrap()
 	}
 
+	pub fn route(&self) -> Option<RouteContext> {
+		self.current_route.lock().unwrap().clone()
+	}
+
+	pub fn param(&self, name: &str) -> Option<String> {
+		self.current_route
+			.lock()
+			.unwrap()
+			.as_ref()
+			.and_then(|route| route.params.get(name).cloned())
+	}
+
+	pub fn query(&self, name: &str) -> Option<String> {
+		self.current_route
+			.lock()
+			.unwrap()
+			.as_ref()
+			.and_then(|route| route.query.get(name).cloned())
+	}
+
 	pub fn pubsub(&self) -> crate::PubSub<()> {
 		self.pubsub.clone()
 	}
@@ -148,6 +200,10 @@ where
 
 	pub(crate) fn set_current_session(&self, session: Option<String>) {
 		*self.current_session.lock().unwrap() = session;
+	}
+
+	pub(crate) fn set_current_route(&self, route: Option<RouteContext>) {
+		*self.current_route.lock().unwrap() = route;
 	}
 
 	pub(crate) fn take_command_rx(&self) -> mpsc::UnboundedReceiver<RuntimeCommand> {
@@ -165,7 +221,12 @@ pub trait Component: Send + Sync + 'static {
 	type Db: Send + Sync + 'static;
 	type Model: WguiModel;
 
-	async fn mount(ctx: Arc<Ctx<Self::Context, Self::Db>>) -> Self;
+	async fn mount(
+		ctx: Arc<Ctx<Self::Context, Self::Db>>,
+		route: RouteContext,
+	) -> MountResult<Self>
+	where
+		Self: Sized;
 	fn render(&self, ctx: &Ctx<Self::Context, Self::Db>) -> Self::Model;
 	fn unmount(self, ctx: Arc<Ctx<Self::Context, Self::Db>>);
 }
@@ -352,7 +413,16 @@ impl Template {
 	}
 
 	pub fn render_with_path<T: WuiValueProvider>(&self, state: &T, path: &str) -> Item {
-		let mut ctx = EvalContext::new(state.wui_value(), path);
+		let route = RouteContext {
+			path: path.to_string(),
+			params: HashMap::new(),
+			query: HashMap::new(),
+		};
+		self.render_with_route(state, &route)
+	}
+
+	pub fn render_with_route<T: WuiValueProvider>(&self, state: &T, route: &RouteContext) -> Item {
+		let mut ctx = EvalContext::new(state.wui_value(), route);
 		let mut children = Vec::new();
 		render_nodes(&self.doc.nodes, &mut children, &mut ctx);
 		gui::vstack(children)
@@ -424,10 +494,12 @@ struct EvalContext {
 }
 
 impl EvalContext {
-	fn new(state: WuiValue, path: &str) -> Self {
+	fn new(state: WuiValue, route: &RouteContext) -> Self {
 		let mut vars = HashMap::new();
 		vars.insert("state".to_string(), state);
-		vars.insert("path".to_string(), WuiValue::String(path.to_string()));
+		vars.insert("path".to_string(), WuiValue::String(route.path.clone()));
+		vars.insert("params".to_string(), string_map_to_wui_value(&route.params));
+		vars.insert("query".to_string(), string_map_to_wui_value(&route.query));
 		Self { vars }
 	}
 
@@ -436,6 +508,14 @@ impl EvalContext {
 		vars.insert(name.to_string(), value);
 		Self { vars }
 	}
+}
+
+fn string_map_to_wui_value(map: &HashMap<String, String>) -> WuiValue {
+	WuiValue::object(
+		map.iter()
+			.map(|(key, value)| (key.clone(), WuiValue::String(value.clone())))
+			.collect(),
+	)
 }
 
 fn decode_action(action: &ActionDef, event: &crate::types::ClientEvent) -> Option<RuntimeAction> {
@@ -765,6 +845,8 @@ fn apply_number_prop(item: Item, name: &str, value: f64) -> Item {
 fn apply_bool_prop(item: Item, name: &str, value: bool) -> Item {
 	match name {
 		"checked" | "bind:checked" => item.checked(value),
+		"breakWords" => item.break_words(value),
+		"fill" => item.fill(value),
 		"wrap" => item.wrap(value),
 		"open" => item.open(value),
 		"hresize" => item.hresize(value),
@@ -906,65 +988,6 @@ fn values_equal(left: &WuiValue, right: &WuiValue) -> bool {
 	}
 }
 
-fn route_params(route: &str, path: &str) -> Option<HashMap<String, String>> {
-	if route == path {
-		return Some(HashMap::new());
-	}
-	let route_parts: Vec<&str> = route
-		.trim_matches('/')
-		.split('/')
-		.filter(|s| !s.is_empty())
-		.collect();
-	let path_parts: Vec<&str> = path
-		.trim_matches('/')
-		.split('/')
-		.filter(|s| !s.is_empty())
-		.collect();
-	let mut params = HashMap::new();
-	let mut wildcard_at = None;
-	for (index, seg) in route_parts.iter().enumerate() {
-		if *seg == "*" || *seg == "{*wildcard}" {
-			wildcard_at = Some(index);
-			break;
-		}
-	}
-	let end = wildcard_at.unwrap_or(route_parts.len());
-	if wildcard_at.is_none() && end != path_parts.len() {
-		return None;
-	}
-	if wildcard_at.is_some() && path_parts.len() < end {
-		return None;
-	}
-	for i in 0..end {
-		let route_seg = route_parts[i];
-		let path_seg = path_parts[i];
-		if let Some(name) = param_name(route_seg) {
-			params.insert(name.to_string(), path_seg.to_string());
-		} else if route_seg != path_seg {
-			return None;
-		}
-	}
-	Some(params)
-}
-
-fn param_name(segment: &str) -> Option<&str> {
-	if let Some(name) = segment.strip_prefix(':') {
-		if !name.is_empty() {
-			return Some(name);
-		}
-	}
-	if segment.starts_with('{') && segment.ends_with('}') {
-		let inner = &segment[1..segment.len() - 1];
-		if inner.starts_with('*') {
-			return None;
-		}
-		if !inner.is_empty() {
-			return Some(inner);
-		}
-	}
-	None
-}
-
 fn action_id(name: &str) -> u32 {
 	let mut hash = 0x811c9dc5u32;
 	for byte in name.as_bytes() {
@@ -975,5 +998,76 @@ fn action_id(name: &str) -> u32 {
 		1
 	} else {
 		hash
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::gui::{Item, ItemPayload};
+
+	fn text_values(item: &Item, out: &mut Vec<String>) {
+		match &item.payload {
+			ItemPayload::Text { value } => out.push(value.clone()),
+			ItemPayload::Layout(layout) => {
+				for child in &layout.body {
+					text_values(child, out);
+				}
+			}
+			_ => {}
+		}
+	}
+
+	#[test]
+	fn ctx_exposes_current_route_params_and_query() {
+		let ctx = Ctx::new(());
+		ctx.set_current_route(Some(RouteContext {
+			path: "/posts/123".to_string(),
+			params: HashMap::from([("post_id".to_string(), "123".to_string())]),
+			query: HashMap::from([("tab".to_string(), "comments".to_string())]),
+		}));
+
+		assert_eq!(ctx.param("post_id"), Some("123".to_string()));
+		assert_eq!(ctx.query("tab"), Some("comments".to_string()));
+		assert_eq!(
+			ctx.route().map(|route| route.path),
+			Some("/posts/123".to_string())
+		);
+	}
+
+	#[test]
+	fn template_eval_context_includes_route_params_query_and_path() {
+		let template = Template::parse(
+			r#"
+			<Text value={path} />
+			<Text value={params.post_id} />
+			<Text value={query.tab} />
+			<Text value={state.title} />
+			"#,
+			"test",
+		)
+		.expect("parse template");
+		let state = WuiValue::object(vec![(
+			"title".to_string(),
+			WuiValue::String("Hello".to_string()),
+		)]);
+		let route = RouteContext {
+			path: "/posts/123".to_string(),
+			params: HashMap::from([("post_id".to_string(), "123".to_string())]),
+			query: HashMap::from([("tab".to_string(), "comments".to_string())]),
+		};
+		let rendered = template.render_with_route(&state, &route);
+		let mut values = Vec::new();
+		text_values(&rendered, &mut values);
+
+		assert_eq!(
+			values,
+			vec![
+				"/posts/123".to_string(),
+				"123".to_string(),
+				"comments".to_string(),
+				"Hello".to_string(),
+			]
+		);
 	}
 }

@@ -75,7 +75,7 @@ Item modifiers
 
 - Identity: `.id(u32)`, `.inx(u32)`
 - Value helpers: `.svalue(&str)`, `.ivalue(i32)`, `.checked(bool)`, `.placeholder(&str)`, `.min(i32)`, `.max(i32)`, `.step(i32)`, `.open(bool)`
-- Layout/style: `.spacing(u32)`, `.wrap(bool)`, `.grow(u32)`, `.width(u32)`, `.min_width(u32)`, `.max_width(u32)`, `.height(u32)`, `.min_height(u32)`, `.max_height(u32)`
+- Layout/style: `.spacing(u32)`, `.wrap(bool)`, `.grow(u32)`, `.fill(bool)`, `.width(u32)`, `.min_width(u32)`, `.max_width(u32)`, `.height(u32)`, `.min_height(u32)`, `.max_height(u32)`, `.break_words(bool)`
 - Box model: `.margin(u16)`, `.margin_left(u16)`, `.margin_right(u16)`, `.margin_top(u16)`, `.margin_bottom(u16)`, `.padding(u16)`, `.padding_left(u16)`, `.padding_right(u16)`, `.padding_top(u16)`, `.padding_bottom(u16)`
 - Visuals: `.border(&str)`, `.background_color(&str)`, `.text_align(&str)`, `.cursor(&str)`, `.overflow(&str)`, `.editable(bool)`, `.hresize(bool)`, `.vresize(bool)`
 

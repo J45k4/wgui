@@ -187,6 +187,8 @@ pub enum PropKey {
 	MaxHeight = 12,
 	Padding = 13,
 	Overflow = 14,
+	BreakWords = 15,
+	Fill = 16,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]

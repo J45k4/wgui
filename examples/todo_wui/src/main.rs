@@ -4,8 +4,8 @@ use wgui::wui::runtime::Ctx;
 use wgui::Wgui;
 use wgui::WguiModel;
 
-mod components;
 mod context;
+mod pages;
 
 #[derive(Debug, Clone, WguiModel)]
 pub struct TodoItem {
@@ -27,6 +27,8 @@ async fn main() {
 	let ctx = Arc::new(Ctx::new(context::SharedContext::default()));
 	let mut wgui = Wgui::new("0.0.0.0:12345".parse().unwrap());
 	wgui.set_ctx(ctx.clone());
-	wgui.add_component::<components::todo::Todo>("/");
+	wgui.add_page::<pages::todo::Index>("/");
+	wgui.add_page::<pages::todo::Show>("/todo/:todo_id");
+	wgui.add_page::<pages::not_found::NotFound>("/*");
 	wgui.run().await;
 }

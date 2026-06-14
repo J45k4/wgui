@@ -135,6 +135,12 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 			value: Value::Number(new.grow),
 		});
 	}
+	if old.fill != new.fill {
+		sets.push(SetProp {
+			key: PropKey::Fill,
+			value: Value::Number(new.fill as u32),
+		});
+	}
 	if old.width != new.width {
 		sets.push(SetProp {
 			key: PropKey::Width,
@@ -194,6 +200,12 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 		sets.push(SetProp {
 			key: PropKey::BackgroundColor,
 			value: Value::String(new.background_color.clone()),
+		});
+	}
+	if old.break_words != new.break_words {
+		sets.push(SetProp {
+			key: PropKey::BreakWords,
+			value: Value::Number(new.break_words as u32),
 		});
 	}
 	if old.overflow != new.overflow {

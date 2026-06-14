@@ -191,6 +191,8 @@ pub struct Item {
 	pub border: String,
 	pub background_color: String,
 	pub cursor: String,
+	pub break_words: bool,
+	pub fill: bool,
 	pub height: u32,
 	pub width: u32,
 	pub min_height: u32,
@@ -756,6 +758,16 @@ impl Item {
 
 	pub fn background_color(mut self, c: &str) -> Self {
 		self.background_color = c.to_string();
+		self
+	}
+
+	pub fn break_words(mut self, value: bool) -> Self {
+		self.break_words = value;
+		self
+	}
+
+	pub fn fill(mut self, value: bool) -> Self {
+		self.fill = value;
 		self
 	}
 

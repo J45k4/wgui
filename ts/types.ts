@@ -40,8 +40,11 @@ export type Layout = {
 	spacing?: number
 	border?: string
 	backgroundColor?: string
+	breakWords?: boolean
 	cursor?: string
+	fill?: boolean
 	wrap?: boolean
+	minWidth?: number
 	maxWidth?: number
 	pos?: Pos
 	horizontalResize?: boolean
@@ -254,6 +257,8 @@ export type Item = {
 	maxWidth: number
 	grow?: number
 	backgroundColor?: string
+	breakWords?: boolean
+	fill?: boolean
 	textAlign?: string
 	cursor?: string
 	margin?: number
@@ -325,6 +330,8 @@ export type PropKey =
 	| "MaxHeight"
 	| "Padding"
 	| "Overflow"
+	| "BreakWords"
+	| "Fill"
 
 export type PropValue = {
     String?: string

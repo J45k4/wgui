@@ -34,6 +34,8 @@ pub use wui::runtime::{WdbModel, WdbSchema, WguiModel};
 pub use wui_derive::{wgui_controller, Wdb, WguiModel};
 
 use crate::ui_client::UiWsWorker;
+use crate::wui::routing::{best_route_index, RoutePattern};
+use crate::wui::runtime::{MountResult, RouteContext};
 
 pub use db_table::{Db, DbTable};
 pub use dist::*;
@@ -55,10 +57,19 @@ pub(crate) type Sessions = Arc<RwLock<HashMap<usize, Option<String>>>>;
 type BoxedController = Box<dyn crate::wui::runtime::WuiController + Send>;
 type ControllerFuture = Pin<Box<dyn Future<Output = BoxedController> + Send>>;
 type ControllerFactory = Arc<dyn Fn() -> ControllerFuture + Send + Sync>;
-type SsrRenderer = Arc<dyn Fn(&str) -> Option<Item> + Send + Sync>;
+type PageControllerFuture = Pin<Box<dyn Future<Output = PageMount> + Send>>;
+type PageControllerFactory =
+	Arc<dyn Fn(RouteContext, Option<usize>, Option<String>) -> PageControllerFuture + Send + Sync>;
+type SsrRenderer = Arc<dyn Fn(RouteContext) -> Option<Item> + Send + Sync>;
 type SsrComponentFactories = Arc<std::sync::RwLock<Vec<(String, ControllerFactory)>>>;
+type SsrPageFactories = Arc<std::sync::RwLock<Vec<(RoutePattern, PageControllerFactory)>>>;
 
-fn route_match_score(route_path: &str, current_path: &str) -> Option<usize> {
+enum PageMount {
+	Ready(BoxedController),
+	Redirect(String),
+}
+
+fn component_route_match_score(route_path: &str, current_path: &str) -> Option<usize> {
 	if route_path == "/" {
 		return Some(0);
 	}
@@ -72,13 +83,17 @@ fn route_match_score(route_path: &str, current_path: &str) -> Option<usize> {
 	None
 }
 
-fn best_matching_route_index<T, F>(routes: &[T], current_path: &str, route_path: F) -> Option<usize>
+fn best_component_route_index<T, F>(
+	routes: &[T],
+	current_path: &str,
+	route_path: F,
+) -> Option<usize>
 where
 	F: Fn(&T) -> &str,
 {
 	let mut best = None;
 	for (index, route) in routes.iter().enumerate() {
-		let Some(score) = route_match_score(route_path(route), current_path) else {
+		let Some(score) = component_route_match_score(route_path(route), current_path) else {
 			continue;
 		};
 		if best
@@ -89,6 +104,27 @@ where
 		}
 	}
 	best.map(|(index, _)| index)
+}
+
+fn page_route_context(
+	pattern: &RoutePattern,
+	path: &str,
+	query: &HashMap<String, String>,
+) -> Option<RouteContext> {
+	let matched = pattern.match_path(path)?;
+	Some(RouteContext {
+		path: path.to_string(),
+		params: matched.params,
+		query: query.clone(),
+	})
+}
+
+fn component_route_context(path: &str, query: &HashMap<String, String>) -> RouteContext {
+	RouteContext {
+		path: path.to_string(),
+		params: HashMap::new(),
+		query: query.clone(),
+	}
 }
 
 #[derive(Clone)]
@@ -253,6 +289,22 @@ impl ComponentRegistration {
 	}
 }
 
+struct PageRegistration {
+	pattern: RoutePattern,
+	factory: PageControllerFactory,
+	controllers: HashMap<usize, BoxedController>,
+}
+
+impl PageRegistration {
+	fn new(pattern: RoutePattern, factory: PageControllerFactory) -> Self {
+		Self {
+			pattern,
+			factory,
+			controllers: HashMap::new(),
+		}
+	}
+}
+
 struct ContextAwareController<C, T, DB>
 where
 	C: crate::wui::runtime::WuiController + Send + 'static,
@@ -278,6 +330,14 @@ where
 		self.inner.render_with_path(path)
 	}
 
+	fn render_with_route(&self, route: &RouteContext) -> Item {
+		self.inner.render_with_route(route)
+	}
+
+	fn title(&self) -> Option<String> {
+		self.inner.title()
+	}
+
 	fn route_title(&self, path: &str) -> Option<String> {
 		self.inner.route_title(path)
 	}
@@ -286,6 +346,11 @@ where
 		self.ctx.set_current_client(client_id);
 		self.ctx.set_current_session(session.clone());
 		self.inner.set_runtime_context(client_id, session);
+	}
+
+	fn set_route_context(&mut self, route: Option<RouteContext>) {
+		self.ctx.set_current_route(route.clone());
+		self.inner.set_route_context(route);
 	}
 
 	async fn handle(&mut self, event: &crate::types::ClientEvent) -> bool {
@@ -297,7 +362,9 @@ pub struct Wgui<DB = ()> {
 	events_rx: mpsc::UnboundedReceiver<ClientMessage>,
 	handle: WguiHandle,
 	components: Vec<ComponentRegistration>,
+	pages: Vec<PageRegistration>,
 	ssr_components: SsrComponentFactories,
+	ssr_pages: SsrPageFactories,
 	db: Arc<DB>,
 	contexts: HashMap<TypeId, Arc<dyn Any + Send + Sync>>,
 }
@@ -309,24 +376,52 @@ impl Wgui<()> {
 		let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
 		let sessions: Sessions = Arc::new(RwLock::new(HashMap::new()));
 		let ssr_components: SsrComponentFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
+		let ssr_pages: SsrPageFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 
 		{
 			let clients = clients.clone();
 			let event_tx = events_tx.clone();
 			let sessions = sessions.clone();
 			let ssr_components = ssr_components.clone();
-			let ssr: Option<SsrRenderer> = Some(Arc::new(move |path: &str| {
+			let ssr_pages = ssr_pages.clone();
+			let ssr: Option<SsrRenderer> = Some(Arc::new(move |route: RouteContext| {
+				if let Some((factory, route)) = {
+					let pages = ssr_pages.read().unwrap();
+					let index = best_route_index(&pages, &route.path, |(pattern, _)| pattern)?;
+					let pattern = &pages[index].0;
+					let route = page_route_context(pattern, &route.path, &route.query)?;
+					Some((pages[index].1.clone(), route))
+				} {
+					let mount = tokio::task::block_in_place(|| {
+						tokio::runtime::Handle::current().block_on((factory)(
+							route.clone(),
+							None,
+							None,
+						))
+					});
+					return match mount {
+						PageMount::Ready(mut controller) => {
+							controller.set_route_context(Some(route.clone()));
+							Some(controller.render_with_route(&route))
+						}
+						PageMount::Redirect(_) => None,
+					};
+				}
+
 				let factory = {
 					let factories = ssr_components.read().unwrap();
-					let index = best_matching_route_index(&factories, path, |(route_path, _)| {
-						route_path.as_str()
-					})?;
+					let index =
+						best_component_route_index(&factories, &route.path, |(route_path, _)| {
+							route_path.as_str()
+						})?;
 					factories[index].1.clone()
 				};
-				let controller = tokio::task::block_in_place(|| {
+				let route = component_route_context(&route.path, &route.query);
+				let mut controller = tokio::task::block_in_place(|| {
 					tokio::runtime::Handle::current().block_on((factory)())
 				});
-				Some(controller.render_with_path(path))
+				controller.set_route_context(Some(route.clone()));
+				Some(controller.render_with_route(&route))
 			}));
 			tokio::spawn(async move {
 				Server::new(addr, event_tx, clients, sessions, ssr)
@@ -340,7 +435,9 @@ impl Wgui<()> {
 			events_rx,
 			handle: WguiHandle::new(events_tx, clients, sessions),
 			components: Vec::new(),
+			pages: Vec::new(),
 			ssr_components,
+			ssr_pages,
 			db: Arc::new(()),
 			contexts: HashMap::new(),
 		}
@@ -355,12 +452,14 @@ impl Wgui<()> {
 		let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
 		let sessions: Sessions = Arc::new(RwLock::new(HashMap::new()));
 		let ssr_components: SsrComponentFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
+		let ssr_pages: SsrPageFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 
 		{
 			let clients = clients.clone();
 			let event_tx = events_tx.clone();
 			let sessions = sessions.clone();
-			let ssr: Option<SsrRenderer> = Some(Arc::new(move |_path: &str| Some((renderer)())));
+			let ssr: Option<SsrRenderer> =
+				Some(Arc::new(move |_route: RouteContext| Some((renderer)())));
 			tokio::spawn(async move {
 				Server::new(addr, event_tx, clients, sessions, ssr)
 					.await
@@ -373,7 +472,9 @@ impl Wgui<()> {
 			events_rx,
 			handle: WguiHandle::new(events_tx, clients, sessions),
 			components: Vec::new(),
+			pages: Vec::new(),
 			ssr_components,
+			ssr_pages,
 			db: Arc::new(()),
 			contexts: HashMap::new(),
 		}
@@ -384,12 +485,15 @@ impl Wgui<()> {
 		let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
 		let sessions: Sessions = Arc::new(RwLock::new(HashMap::new()));
 		let ssr_components: SsrComponentFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
+		let ssr_pages: SsrPageFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 
 		Self {
 			events_rx,
 			handle: WguiHandle::new(events_tx, clients, sessions),
 			components: Vec::new(),
+			pages: Vec::new(),
 			ssr_components,
+			ssr_pages,
 			db: Arc::new(()),
 			contexts: HashMap::new(),
 		}
@@ -408,7 +512,9 @@ where
 			events_rx: self.events_rx,
 			handle: self.handle,
 			components: self.components,
+			pages: self.pages,
 			ssr_components: self.ssr_components,
+			ssr_pages: self.ssr_pages,
 			db: Arc::new(db),
 			contexts: HashMap::new(),
 		}
@@ -506,6 +612,24 @@ where
 		self.set_ctx(ctx);
 	}
 
+	pub fn add_component_with<C, F, Fut>(&mut self, path: &str, controller: F)
+	where
+		C: crate::wui::runtime::WuiController + Send + 'static,
+		F: Fn() -> Fut + Send + Sync + 'static,
+		Fut: Future<Output = C> + Send + 'static,
+	{
+		let factory: ControllerFactory = Arc::new(move || {
+			let fut = controller();
+			Box::pin(async move { Box::new(fut.await) as BoxedController })
+		});
+		self.ssr_components
+			.write()
+			.unwrap()
+			.push((path.to_string(), factory.clone()));
+		self.components
+			.push(ComponentRegistration::new(path.to_string(), factory));
+	}
+
 	pub fn add_component<C>(&mut self, path: &str)
 	where
 		C: crate::wui::runtime::Component<Db = DB>
@@ -532,34 +656,85 @@ where
 			let ctx = ctx.clone();
 			async move {
 				ContextAwareController {
-					inner: C::mount(ctx.clone()).await,
+					inner: match C::mount(ctx.clone(), RouteContext::default()).await {
+						MountResult::Ready(inner) => inner,
+						MountResult::Redirect(_) => {
+							panic!(
+								"component mount cannot redirect; use add_page for routable pages"
+							)
+						}
+					},
 					ctx,
 				}
 			}
 		});
 	}
 
-	pub fn add_component_with<C, F, Fut>(&mut self, path: &str, controller: F)
+	pub fn add_page_with<C, F, Fut>(&mut self, route: &str, controller: F)
 	where
 		C: crate::wui::runtime::WuiController + Send + 'static,
 		F: Fn() -> Fut + Send + Sync + 'static,
 		Fut: Future<Output = C> + Send + 'static,
 	{
-		let factory: ControllerFactory = Arc::new(move || {
+		let pattern = RoutePattern::parse(route);
+		let factory: PageControllerFactory = Arc::new(move |_route, _client_id, _session| {
 			let fut = controller();
-			Box::pin(async move { Box::new(fut.await) as BoxedController })
+			Box::pin(async move { PageMount::Ready(Box::new(fut.await) as BoxedController) })
 		});
-		self.ssr_components
+		self.ssr_pages
 			.write()
 			.unwrap()
-			.push((path.to_string(), factory.clone()));
-		self.components
-			.push(ComponentRegistration::new(path.to_string(), factory));
+			.push((pattern.clone(), factory.clone()));
+		self.pages.push(PageRegistration::new(pattern, factory));
+	}
+
+	pub fn add_page<C>(&mut self, route: &str)
+	where
+		C: crate::wui::runtime::Component<Db = DB>
+			+ crate::wui::runtime::WuiController
+			+ Send
+			+ 'static,
+		<C as crate::wui::runtime::Component>::Context: Send + Sync + 'static,
+	{
+		let Some(ctx_any) = self
+			.contexts
+			.get(&TypeId::of::<<C as crate::wui::runtime::Component>::Context>())
+			.cloned()
+		else {
+			panic!("missing context for page; call wgui.set_ctx(...) first");
+		};
+		let Ok(ctx) = ctx_any
+			.downcast::<crate::wui::runtime::Ctx<<C as crate::wui::runtime::Component>::Context, DB>>(
+			)
+		else {
+			panic!("invalid context type for page");
+		};
+
+		let pattern = RoutePattern::parse(route);
+		let factory: PageControllerFactory = Arc::new(move |route, client_id, session| {
+			let ctx = ctx.clone();
+			Box::pin(async move {
+				ctx.set_current_client(client_id);
+				ctx.set_current_session(session.clone());
+				ctx.set_current_route(Some(route.clone()));
+				match C::mount(ctx.clone(), route).await {
+					MountResult::Ready(inner) => PageMount::Ready(
+						Box::new(ContextAwareController { inner, ctx }) as BoxedController,
+					),
+					MountResult::Redirect(url) => PageMount::Redirect(url),
+				}
+			})
+		});
+		self.ssr_pages
+			.write()
+			.unwrap()
+			.push((pattern.clone(), factory.clone()));
+		self.pages.push(PageRegistration::new(pattern, factory));
 	}
 
 	pub async fn run(&mut self) {
 		let handle = self.handle();
-		let mut paths: HashMap<usize, String> = HashMap::new();
+		let mut routes: HashMap<usize, RouteContext> = HashMap::new();
 		let mut rtc_rooms: HashMap<String, BTreeSet<usize>> = HashMap::new();
 		let mut rtc_client_rooms: HashMap<usize, BTreeSet<String>> = HashMap::new();
 		let mut rtc_room_names: HashMap<String, HashMap<usize, String>> = HashMap::new();
@@ -568,25 +743,76 @@ where
 			let client_id = message.client_id;
 			match &message.event {
 				ClientEvent::Connected { id: _ } => {
-					let current_path = paths
+					let current_route = routes
 						.get(&client_id)
 						.cloned()
-						.unwrap_or_else(|| "/".to_string());
+						.unwrap_or_else(|| component_route_context("/", &HashMap::new()));
 					let session = handle.session_for_client(client_id).await;
-					let selected =
-						best_matching_route_index(&self.components, &current_path, |component| {
-							component.route_path.as_str()
-						});
+					let selected_page =
+						best_route_index(&self.pages, &current_route.path, |page| &page.pattern);
+
+					for (index, page) in self.pages.iter_mut().enumerate() {
+						if Some(index) != selected_page {
+							page.controllers.remove(&client_id);
+							continue;
+						}
+						let Some(route) = page_route_context(
+							&page.pattern,
+							&current_route.path,
+							&current_route.query,
+						) else {
+							page.controllers.remove(&client_id);
+							continue;
+						};
+						match (page.factory)(route.clone(), Some(client_id), session.clone()).await
+						{
+							PageMount::Ready(mut controller) => {
+								controller.set_runtime_context(Some(client_id), session.clone());
+								controller.set_route_context(Some(route.clone()));
+								let item = controller.render_with_route(&route);
+								let title = controller
+									.title()
+									.or_else(|| controller.route_title(&route.path));
+								if let Some(title) = title {
+									handle.set_title(client_id, &title).await;
+								}
+								handle.render(client_id, item).await;
+								page.controllers.insert(client_id, controller);
+							}
+							PageMount::Redirect(url) => {
+								page.controllers.remove(&client_id);
+								handle.push_state(client_id, &url).await;
+							}
+						}
+					}
+
+					if selected_page.is_some() {
+						for component in self.components.iter_mut() {
+							component.controllers.remove(&client_id);
+						}
+						continue;
+					}
+
+					let selected_component = best_component_route_index(
+						&self.components,
+						&current_route.path,
+						|component| component.route_path.as_str(),
+					);
 
 					for (index, component) in self.components.iter_mut().enumerate() {
-						if Some(index) != selected {
+						if Some(index) != selected_component {
 							component.controllers.remove(&client_id);
 							continue;
 						}
+						let route =
+							component_route_context(&current_route.path, &current_route.query);
 						let mut controller = (component.factory)().await;
 						controller.set_runtime_context(Some(client_id), session.clone());
-						let item = controller.render_with_path(&current_path);
-						let title = controller.route_title(&current_path);
+						controller.set_route_context(Some(route.clone()));
+						let item = controller.render_with_route(&route);
+						let title = controller
+							.title()
+							.or_else(|| controller.route_title(&route.path));
 						if let Some(title) = title {
 							handle.set_title(client_id, &title).await;
 						}
@@ -648,7 +874,10 @@ where
 					for component in self.components.iter_mut() {
 						component.controllers.remove(&client_id);
 					}
-					paths.remove(&client_id);
+					for page in self.pages.iter_mut() {
+						page.controllers.remove(&client_id);
+					}
+					routes.remove(&client_id);
 					handle.clear_session(client_id).await;
 				}
 				ClientEvent::WebRtcJoin(join) => {
@@ -793,23 +1022,71 @@ where
 					}
 				}
 				ClientEvent::PathChanged(change) => {
-					paths.insert(client_id, change.path.clone());
 					let session = handle.session_for_client(client_id).await;
-					let selected =
-						best_matching_route_index(&self.components, &change.path, |component| {
+					let selected_page =
+						best_route_index(&self.pages, &change.path, |page| &page.pattern);
+					let active_route = if let Some(index) = selected_page {
+						page_route_context(&self.pages[index].pattern, &change.path, &change.query)
+							.unwrap_or_else(|| component_route_context(&change.path, &change.query))
+					} else {
+						component_route_context(&change.path, &change.query)
+					};
+					routes.insert(client_id, active_route.clone());
+
+					for (index, page) in self.pages.iter_mut().enumerate() {
+						if Some(index) != selected_page {
+							page.controllers.remove(&client_id);
+							continue;
+						}
+
+						match (page.factory)(active_route.clone(), Some(client_id), session.clone())
+							.await
+						{
+							PageMount::Ready(mut controller) => {
+								controller.set_runtime_context(Some(client_id), session.clone());
+								controller.set_route_context(Some(active_route.clone()));
+								let item = controller.render_with_route(&active_route);
+								let title = controller
+									.title()
+									.or_else(|| controller.route_title(&active_route.path));
+								if let Some(title) = title {
+									handle.set_title(client_id, &title).await;
+								}
+								handle.render(client_id, item).await;
+								page.controllers.insert(client_id, controller);
+							}
+							PageMount::Redirect(url) => {
+								page.controllers.remove(&client_id);
+								handle.push_state(client_id, &url).await;
+							}
+						}
+					}
+
+					if selected_page.is_some() {
+						for component in self.components.iter_mut() {
+							component.controllers.remove(&client_id);
+						}
+						continue;
+					}
+
+					let selected_component =
+						best_component_route_index(&self.components, &change.path, |component| {
 							component.route_path.as_str()
 						});
 
 					for (index, component) in self.components.iter_mut().enumerate() {
-						if Some(index) != selected {
+						if Some(index) != selected_component {
 							component.controllers.remove(&client_id);
 							continue;
 						}
 
 						if let Some(controller) = component.controllers.get_mut(&client_id) {
 							controller.set_runtime_context(Some(client_id), session.clone());
-							let item = controller.render_with_path(&change.path);
-							let title = controller.route_title(&change.path);
+							controller.set_route_context(Some(active_route.clone()));
+							let item = controller.render_with_route(&active_route);
+							let title = controller
+								.title()
+								.or_else(|| controller.route_title(&active_route.path));
 							if let Some(title) = title {
 								handle.set_title(client_id, &title).await;
 							}
@@ -817,8 +1094,11 @@ where
 						} else {
 							let mut controller = (component.factory)().await;
 							controller.set_runtime_context(Some(client_id), session.clone());
-							let item = controller.render_with_path(&change.path);
-							let title = controller.route_title(&change.path);
+							controller.set_route_context(Some(active_route.clone()));
+							let item = controller.render_with_route(&active_route);
+							let title = controller
+								.title()
+								.or_else(|| controller.route_title(&active_route.path));
 							if let Some(title) = title {
 								handle.set_title(client_id, &title).await;
 							}
@@ -830,15 +1110,17 @@ where
 				ClientEvent::Input(_) => {}
 				_ => {
 					let session = handle.session_for_client(client_id).await;
+					let mut handled = false;
 					for component in self.components.iter_mut() {
-						let handled =
-							if let Some(controller) = component.controllers.get_mut(&client_id) {
-								controller.set_runtime_context(Some(client_id), session.clone());
-								controller.handle(&message.event).await
-							} else {
-								false
-							};
-
+						if let Some(controller) = component.controllers.get_mut(&client_id) {
+							let route = routes
+								.get(&client_id)
+								.cloned()
+								.unwrap_or_else(|| component_route_context("/", &HashMap::new()));
+							controller.set_runtime_context(Some(client_id), session.clone());
+							controller.set_route_context(Some(route));
+							handled = controller.handle(&message.event).await;
+						}
 						if handled {
 							let mut updates: Vec<(usize, Item, Option<String>)> = Vec::new();
 							for (mounted_client_id, mounted_controller) in
@@ -846,14 +1128,17 @@ where
 							{
 								let mounted_session =
 									handle.session_for_client(*mounted_client_id).await;
+								let route =
+									routes.get(mounted_client_id).cloned().unwrap_or_else(|| {
+										component_route_context("/", &HashMap::new())
+									});
 								mounted_controller
 									.set_runtime_context(Some(*mounted_client_id), mounted_session);
-								let current_path = paths
-									.get(mounted_client_id)
-									.cloned()
-									.unwrap_or_else(|| "/".to_string());
-								let item = mounted_controller.render_with_path(&current_path);
-								let title = mounted_controller.route_title(&current_path);
+								mounted_controller.set_route_context(Some(route.clone()));
+								let item = mounted_controller.render_with_route(&route);
+								let title = mounted_controller
+									.title()
+									.or_else(|| mounted_controller.route_title(&route.path));
 								updates.push((*mounted_client_id, item, title));
 							}
 
@@ -863,6 +1148,50 @@ where
 								}
 								handle.render(mounted_client_id, item).await;
 							}
+							break;
+						}
+					}
+					if handled {
+						continue;
+					}
+					for page in self.pages.iter_mut() {
+						if let Some(controller) = page.controllers.get_mut(&client_id) {
+							let route = routes
+								.get(&client_id)
+								.cloned()
+								.unwrap_or_else(|| component_route_context("/", &HashMap::new()));
+							controller.set_runtime_context(Some(client_id), session.clone());
+							controller.set_route_context(Some(route));
+							handled = controller.handle(&message.event).await;
+						}
+						if handled {
+							let mut updates: Vec<(usize, Item, Option<String>)> = Vec::new();
+							for (mounted_client_id, mounted_controller) in
+								page.controllers.iter_mut()
+							{
+								let mounted_session =
+									handle.session_for_client(*mounted_client_id).await;
+								let route =
+									routes.get(mounted_client_id).cloned().unwrap_or_else(|| {
+										component_route_context("/", &HashMap::new())
+									});
+								mounted_controller
+									.set_runtime_context(Some(*mounted_client_id), mounted_session);
+								mounted_controller.set_route_context(Some(route.clone()));
+								let item = mounted_controller.render_with_route(&route);
+								let title = mounted_controller
+									.title()
+									.or_else(|| mounted_controller.route_title(&route.path));
+								updates.push((*mounted_client_id, item, title));
+							}
+
+							for (mounted_client_id, item, title) in updates {
+								if let Some(title) = title {
+									handle.set_title(mounted_client_id, &title).await;
+								}
+								handle.render(mounted_client_id, item).await;
+							}
+							break;
 						}
 					}
 				}
@@ -877,15 +1206,15 @@ mod tests {
 
 	#[test]
 	fn root_route_is_fallback_match() {
-		assert_eq!(route_match_score("/", "/"), Some(0));
-		assert_eq!(route_match_score("/", "/login"), Some(0));
+		assert_eq!(component_route_match_score("/", "/"), Some(0));
+		assert_eq!(component_route_match_score("/", "/login"), Some(0));
 	}
 
 	#[test]
 	fn component_route_requires_exact_segment_prefix() {
-		assert_eq!(route_match_score("/peers", "/peers"), Some(6));
-		assert_eq!(route_match_score("/peers", "/peers/abc"), Some(6));
-		assert_eq!(route_match_score("/peers", "/peers-other"), None);
+		assert_eq!(component_route_match_score("/peers", "/peers"), Some(6));
+		assert_eq!(component_route_match_score("/peers", "/peers/abc"), Some(6));
+		assert_eq!(component_route_match_score("/peers", "/peers-other"), None);
 	}
 
 	#[test]
@@ -893,15 +1222,15 @@ mod tests {
 		let routes = vec!["/".to_string(), "/login".to_string(), "/peers".to_string()];
 
 		assert_eq!(
-			best_matching_route_index(&routes, "/login", |route| route.as_str()),
+			best_component_route_index(&routes, "/login", |route| route.as_str()),
 			Some(1)
 		);
 		assert_eq!(
-			best_matching_route_index(&routes, "/peers/abc", |route| route.as_str()),
+			best_component_route_index(&routes, "/peers/abc", |route| route.as_str()),
 			Some(2)
 		);
 		assert_eq!(
-			best_matching_route_index(&routes, "/missing", |route| route.as_str()),
+			best_component_route_index(&routes, "/missing", |route| route.as_str()),
 			Some(0)
 		);
 	}

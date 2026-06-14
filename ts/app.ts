@@ -49,6 +49,10 @@ const applySetProp = (element: Element, set: SetPropSet) => {
         case "Grow":
             element.style.flexGrow = value
             break
+        case "Fill":
+            element.style.width = value === "0" ? "" : "100%"
+            element.style.boxSizing = value === "0" ? "" : "border-box"
+            break
         case "Width":
             element.style.width = value === "0" ? "" : `${value}px`
             break
@@ -72,6 +76,10 @@ const applySetProp = (element: Element, set: SetPropSet) => {
             break
         case "Overflow":
             element.style.overflow = value
+            break
+        case "BreakWords":
+            element.style.overflowWrap = value === "0" ? "" : "anywhere"
+            element.style.wordBreak = value === "0" ? "" : "break-word"
             break
         case "ID":
             element.id = value
