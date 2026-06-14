@@ -12,10 +12,9 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use tokio::sync::RwLock;
 
 use crate::gui::Item;
 use crate::ssr;
@@ -196,7 +195,7 @@ async fn custom_http_response(
 	req: &mut Request<hyper::body::Incoming>,
 	handler: &SharedHttpHandler,
 ) -> Result<Option<Response<Full<Bytes>>>, hyper::Error> {
-	let Some(handler) = handler.read().await.clone() else {
+	let Some(handler) = handler.read().unwrap().clone() else {
 		return Ok(None);
 	};
 	let method = req.method().as_str().to_string();

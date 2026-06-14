@@ -393,7 +393,7 @@ impl Wgui<()> {
 		let sessions: Sessions = Arc::new(RwLock::new(HashMap::new()));
 		let ssr_components: SsrComponentFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let ssr_pages: SsrPageFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
-		let http_handler = Arc::new(RwLock::new(None));
+		let http_handler = Arc::new(std::sync::RwLock::new(None));
 
 		{
 			let clients = clients.clone();
@@ -472,7 +472,7 @@ impl Wgui<()> {
 		let sessions: Sessions = Arc::new(RwLock::new(HashMap::new()));
 		let ssr_components: SsrComponentFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let ssr_pages: SsrPageFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
-		let http_handler = Arc::new(RwLock::new(None));
+		let http_handler = Arc::new(std::sync::RwLock::new(None));
 
 		{
 			let clients = clients.clone();
@@ -509,7 +509,7 @@ impl Wgui<()> {
 		let ssr_components: SsrComponentFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let ssr_pages: SsrPageFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		#[cfg(feature = "hyper")]
-		let http_handler = Arc::new(RwLock::new(None));
+		let http_handler = Arc::new(std::sync::RwLock::new(None));
 
 		Self {
 			events_rx,
@@ -549,13 +549,13 @@ where
 	}
 
 	#[cfg(feature = "hyper")]
-	pub async fn set_http_handler<F, Fut>(&self, handler: F)
+	pub fn set_http_handler<F, Fut>(&self, handler: F)
 	where
 		F: Fn(HttpRequest) -> Fut + Send + Sync + 'static,
 		Fut: Future<Output = Option<HttpResponse>> + Send + 'static,
 	{
 		let handler: HttpHandler = Arc::new(move |request| Box::pin(handler(request)));
-		*self.http_handler.write().await = Some(handler);
+		*self.http_handler.write().unwrap() = Some(handler);
 	}
 
 	pub fn handle(&self) -> WguiHandle {
