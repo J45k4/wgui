@@ -438,7 +438,7 @@ impl Template {
 		let mut ctx = EvalContext::new(state.wui_value(), route);
 		let mut children = Vec::new();
 		render_nodes(&self.doc.nodes, &mut children, &mut ctx);
-		gui::vstack(children)
+		gui::vstack(children).fill(true)
 	}
 
 	pub fn title_for_path(&self, path: &str) -> Option<String> {
@@ -1087,6 +1087,23 @@ mod tests {
 				"Hello".to_string(),
 			]
 		);
+	}
+
+	#[test]
+	fn template_root_fills_width() {
+		let template =
+			Template::parse(r#"<Text value="Hello" />"#, "test").expect("parse template");
+		let state = WuiValue::object(Vec::new());
+		let rendered = template.render_with_route(
+			&state,
+			&RouteContext {
+				path: "/".to_string(),
+				params: HashMap::new(),
+				query: HashMap::new(),
+			},
+		);
+
+		assert!(rendered.fill);
 	}
 
 	#[test]
