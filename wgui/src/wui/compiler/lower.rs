@@ -1,7 +1,7 @@
 use crate::wui::ast::{AttrValue, Element, Expr, Node};
 use crate::wui::compiler::ir::{
-	ActionDef, ActionPayload, EventKind, IrDocument, IrFor, IrIf, IrNode, IrProp, IrRoute, IrScope,
-	IrSwitch, IrWidget, PageMeta,
+	ActionDef, ActionPayload, EventKind, IrComponent, IrDocument, IrFor, IrIf, IrNode, IrProp,
+	IrRoute, IrScope, IrSwitch, IrWidget, PageMeta,
 };
 use crate::wui::compiler::registry::schema_for;
 use crate::wui::diagnostic::{Diagnostic, Span};
@@ -14,8 +14,14 @@ pub fn lower(
 ) -> IrDocument {
 	let mut ctx = LowerContext::new(module_name);
 	let nodes = lower_nodes(&doc.nodes, &mut ctx, diags);
+	let mut components = HashMap::new();
+	for (name, nodes) in &doc.components {
+		let body = lower_nodes(nodes, &mut ctx, diags);
+		components.insert(name.clone(), IrComponent { body });
+	}
 	IrDocument {
 		nodes,
+		components,
 		actions: ctx.actions,
 		pages: ctx.pages,
 	}
@@ -187,6 +193,9 @@ fn lower_nodes(nodes: &[Node], ctx: &mut LowerContext, diags: &mut Vec<Diagnosti
 				}
 				out.push(IrNode::Switch(IrSwitch { cases }));
 			}
+			Node::Element(el) if el.name == "Children" => {
+				out.push(IrNode::Children);
+			}
 			Node::Element(el) => {
 				if let Some(widget) = lower_widget(el, ctx, diags) {
 					out.push(IrNode::Widget(widget));
@@ -218,59 +227,45 @@ fn lower_widget(
 	ctx: &mut LowerContext,
 	diags: &mut Vec<Diagnostic>,
 ) -> Option<IrWidget> {
-	let Some(schema) = schema_for(&el.name) else {
-		return None;
-	};
 	let mut props = Vec::new();
 	let mut event_prop: Option<(String, EventKind, Option<Expr>, Span)> = None;
 
-	for attr in &el.attrs {
-		if let Some(def) = schema.props.iter().find(|p| p.name == attr.name) {
-			match def.kind {
-				crate::wui::compiler::registry::PropKind::Event(kind) => {
-					let action_name = match &attr.value {
-						AttrValue::String(name, _) => name.clone(),
-						_ => continue,
-					};
-					let scoped = ctx.scoped_action(&action_name);
-					let arg = get_expr_like(el, "arg");
-					event_prop = Some((scoped, kind, arg, attr.span));
-				}
-				crate::wui::compiler::registry::PropKind::Bind(_) => {
-					if let AttrValue::Expr(expr) = &attr.value {
+	if let Some(schema) = schema_for(&el.name) {
+		for attr in &el.attrs {
+			if let Some(def) = schema.props.iter().find(|p| p.name == attr.name) {
+				match def.kind {
+					crate::wui::compiler::registry::PropKind::Event(kind) => {
+						let action_name = match &attr.value {
+							AttrValue::String(name, _) => name.clone(),
+							_ => continue,
+						};
+						let scoped = ctx.scoped_action(&action_name);
+						let arg = get_expr_like(el, "arg");
+						event_prop = Some((scoped, kind, arg, attr.span));
+					}
+					crate::wui::compiler::registry::PropKind::Bind(_) => {
+						if let AttrValue::Expr(expr) = &attr.value {
+							let prop_name = normalize_prop_name(&el.name, &attr.name);
+							props.push(IrProp::Bind {
+								name: prop_name,
+								expr: expr.clone(),
+							});
+						}
+					}
+					crate::wui::compiler::registry::PropKind::Value(_) => {
+						if attr.name == "arg" {
+							continue;
+						}
 						let prop_name = normalize_prop_name(&el.name, &attr.name);
-						props.push(IrProp::Bind {
-							name: prop_name,
-							expr: expr.clone(),
-						});
-					}
-				}
-				crate::wui::compiler::registry::PropKind::Value(_) => {
-					if attr.name == "arg" {
-						continue;
-					}
-					let prop_name = normalize_prop_name(&el.name, &attr.name);
-					match &attr.value {
-						AttrValue::String(value, _) => props.push(IrProp::Literal {
-							name: prop_name,
-							value: value.clone(),
-						}),
-						AttrValue::Number(value, _) => props.push(IrProp::Number {
-							name: prop_name,
-							value: *value,
-						}),
-						AttrValue::Bool(value, _) => props.push(IrProp::Bool {
-							name: prop_name,
-							value: *value,
-						}),
-						AttrValue::Expr(expr) => props.push(IrProp::Value {
-							name: prop_name,
-							expr: expr.clone(),
-						}),
-						AttrValue::Null(_) => {}
+						lower_value_prop(&mut props, prop_name, &attr.value);
 					}
 				}
 			}
+		}
+	} else {
+		for attr in &el.attrs {
+			let prop_name = attr.name.clone();
+			lower_value_prop(&mut props, prop_name, &attr.value);
 		}
 	}
 
@@ -301,6 +296,28 @@ fn lower_widget(
 		props,
 		children,
 	})
+}
+
+fn lower_value_prop(props: &mut Vec<IrProp>, prop_name: String, value: &AttrValue) {
+	match value {
+		AttrValue::String(value, _) => props.push(IrProp::Literal {
+			name: prop_name,
+			value: value.clone(),
+		}),
+		AttrValue::Number(value, _) => props.push(IrProp::Number {
+			name: prop_name,
+			value: *value,
+		}),
+		AttrValue::Bool(value, _) => props.push(IrProp::Bool {
+			name: prop_name,
+			value: *value,
+		}),
+		AttrValue::Expr(expr) => props.push(IrProp::Value {
+			name: prop_name,
+			expr: expr.clone(),
+		}),
+		AttrValue::Null(_) => {}
+	}
 }
 
 fn kind_name(kind: EventKind) -> String {

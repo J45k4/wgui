@@ -249,7 +249,8 @@ impl Backend {
 fn analyze(text: &str) -> Vec<WuiDiagnostic> {
 	let parsed = wgui::wui::parser::Parser::new(text).parse();
 	let mut diags = parsed.diagnostics;
-	let validated = wgui::wui::compiler::validate::validate(&parsed.nodes, &mut diags);
+	let components = std::collections::HashMap::new();
+	let validated = wgui::wui::compiler::validate::validate(&parsed.nodes, &components, &mut diags);
 	if validated.is_none() {
 		return diags;
 	}

@@ -410,7 +410,11 @@ impl Template {
 	) -> Result<Self, Vec<Diagnostic>> {
 		let resolved = imports::resolve(source, module_name, base_dir)?;
 		let mut diags = Vec::new();
-		let validated = crate::wui::compiler::validate::validate(&resolved.nodes, &mut diags);
+		let validated = crate::wui::compiler::validate::validate(
+			&resolved.nodes,
+			&resolved.components,
+			&mut diags,
+		);
 		let Some(validated) = validated else {
 			return Err(diags);
 		};
@@ -435,10 +439,10 @@ impl Template {
 	}
 
 	pub fn render_with_route<T: WuiValueProvider>(&self, state: &T, route: &RouteContext) -> Item {
-		let mut ctx = EvalContext::new(state.wui_value(), route);
+		let mut ctx = EvalContext::new(state.wui_value(), route, &self.doc.components);
 		let mut children = Vec::new();
 		render_nodes(&self.doc.nodes, &mut children, &mut ctx);
-		gui::vstack(children).fill(true)
+		single_or_wrapped(children)
 	}
 
 	pub fn title_for_path(&self, path: &str) -> Option<String> {
@@ -504,22 +508,36 @@ impl WuiValue {
 
 struct EvalContext {
 	vars: HashMap<String, WuiValue>,
+	components: HashMap<String, crate::wui::compiler::ir::IrComponent>,
+	children: Vec<IrNode>,
 }
 
 impl EvalContext {
-	fn new(state: WuiValue, route: &RouteContext) -> Self {
+	fn new(
+		state: WuiValue,
+		route: &RouteContext,
+		components: &HashMap<String, crate::wui::compiler::ir::IrComponent>,
+	) -> Self {
 		let mut vars = HashMap::new();
 		vars.insert("state".to_string(), state);
 		vars.insert("path".to_string(), WuiValue::String(route.path.clone()));
 		vars.insert("params".to_string(), string_map_to_wui_value(&route.params));
 		vars.insert("query".to_string(), string_map_to_wui_value(&route.query));
-		Self { vars }
+		Self {
+			vars,
+			components: components.clone(),
+			children: Vec::new(),
+		}
 	}
 
 	fn with_var(&self, name: &str, value: WuiValue) -> Self {
 		let mut vars = self.vars.clone();
 		vars.insert(name.to_string(), value);
-		Self { vars }
+		Self {
+			vars,
+			components: self.components.clone(),
+			children: self.children.clone(),
+		}
 	}
 }
 
@@ -581,6 +599,10 @@ fn render_nodes(nodes: &[IrNode], out: &mut Vec<Item>, ctx: &mut EvalContext) {
 	for node in nodes {
 		match node {
 			IrNode::Widget(widget) => out.push(render_widget(widget, ctx)),
+			IrNode::Children => {
+				let children = ctx.children.clone();
+				render_nodes(&children, out, ctx);
+			}
 			IrNode::Text(text) => out.push(gui::text(text)),
 			IrNode::For(node) => {
 				let list_value = eval_expr(&node.each, ctx);
@@ -648,6 +670,9 @@ fn render_nodes(nodes: &[IrNode], out: &mut Vec<Item>, ctx: &mut EvalContext) {
 }
 
 fn render_widget(widget: &IrWidget, ctx: &mut EvalContext) -> Item {
+	if ctx.components.contains_key(&widget.tag) {
+		return single_or_wrapped(render_component(widget, ctx));
+	}
 	let mut base = match widget.tag.as_str() {
 		"VStack" => render_container(gui::vstack, &widget.children, ctx),
 		"HStack" => render_container(gui::hstack, &widget.children, ctx),
@@ -686,6 +711,44 @@ fn render_widget(widget: &IrWidget, ctx: &mut EvalContext) -> Item {
 	}
 
 	base
+}
+
+fn render_component(widget: &IrWidget, ctx: &mut EvalContext) -> Vec<Item> {
+	let Some(component) = ctx.components.get(&widget.tag).cloned() else {
+		return vec![gui::text("unsupported")];
+	};
+	let mut vars = ctx.vars.clone();
+	for prop in &widget.props {
+		let (name, value) = prop_value(prop, ctx);
+		vars.insert(name, value);
+	}
+	let mut nested = EvalContext {
+		vars,
+		components: ctx.components.clone(),
+		children: widget.children.clone(),
+	};
+	let mut items = Vec::new();
+	render_nodes(&component.body, &mut items, &mut nested);
+	items
+}
+
+fn single_or_wrapped(mut items: Vec<Item>) -> Item {
+	if items.len() == 1 {
+		items.remove(0)
+	} else {
+		gui::vstack(items).fill(true)
+	}
+}
+
+fn prop_value(prop: &IrProp, ctx: &mut EvalContext) -> (String, WuiValue) {
+	match prop {
+		IrProp::Literal { name, value } => (name.clone(), WuiValue::String(value.clone())),
+		IrProp::Number { name, value } => (name.clone(), WuiValue::Number(*value)),
+		IrProp::Bool { name, value } => (name.clone(), WuiValue::Bool(*value)),
+		IrProp::Value { name, expr } => (name.clone(), eval_expr(expr, ctx)),
+		IrProp::Bind { name, expr } => (name.clone(), eval_expr(expr, ctx)),
+		IrProp::Event { name, .. } => (name.clone(), WuiValue::Null),
+	}
 }
 
 fn render_container<F>(builder: F, children: &[IrNode], ctx: &mut EvalContext) -> Item
@@ -1090,7 +1153,7 @@ mod tests {
 	}
 
 	#[test]
-	fn template_root_fills_width() {
+	fn single_root_template_renders_directly() {
 		let template =
 			Template::parse(r#"<Text value="Hello" />"#, "test").expect("parse template");
 		let state = WuiValue::object(Vec::new());
@@ -1103,7 +1166,61 @@ mod tests {
 			},
 		);
 
+		assert_eq!(
+			rendered.payload,
+			ItemPayload::Text {
+				value: "Hello".to_string()
+			}
+		);
+	}
+
+	#[test]
+	fn multi_root_template_fallback_fills_width() {
+		let template = Template::parse(r#"<Text value="Hello" /><Text value="World" />"#, "test")
+			.expect("parse template");
+		let rendered = template.render(&WuiValue::Null);
+
+		let ItemPayload::Layout(_) = rendered.payload else {
+			panic!("expected root layout");
+		};
 		assert!(rendered.fill);
+	}
+
+	#[test]
+	fn imported_component_renders_props_and_children() {
+		let suffix = std::time::SystemTime::now()
+			.duration_since(std::time::UNIX_EPOCH)
+			.unwrap()
+			.as_nanos();
+		let dir = std::env::temp_dir().join(format!("wui_runtime_component_test_{}", suffix));
+		std::fs::create_dir_all(&dir).expect("create temp dir");
+		std::fs::write(
+			dir.join("layout.wui"),
+			r#"
+			<VStack fill=true>
+				<Text value={title} />
+				<Children />
+			</VStack>
+			"#,
+		)
+		.expect("write layout");
+		let template = Template::parse_with_dir(
+			r#"
+			<Import name="AppLayout" from="layout" />
+			<AppLayout title="Peers">
+				<Text value="Body" />
+			</AppLayout>
+			"#,
+			"test",
+			Some(&dir),
+		)
+		.expect("parse template");
+		let rendered = template.render(&WuiValue::Null);
+		let mut values = Vec::new();
+		text_values(&rendered, &mut values);
+
+		assert!(rendered.fill);
+		assert_eq!(values, vec!["Peers".to_string(), "Body".to_string()]);
 	}
 
 	#[test]
@@ -1112,14 +1229,8 @@ mod tests {
 			.expect("parse template");
 		let rendered = template.render(&WuiValue::Null);
 
-		let ItemPayload::Layout(layout) = rendered.payload else {
-			panic!("expected root layout");
-		};
-		let Some(item) = layout.body.first() else {
-			panic!("expected link item");
-		};
 		assert_eq!(
-			item.payload,
+			rendered.payload,
 			ItemPayload::Link {
 				href: "/peers".to_string(),
 				text: "Peers".to_string(),

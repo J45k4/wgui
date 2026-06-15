@@ -1,10 +1,12 @@
 use crate::wui::ast::{AttrValue, Expr, Literal, Node};
 use crate::wui::compiler::registry::{is_structural, schema_for, PropKind, ValueType};
 use crate::wui::diagnostic::Diagnostic;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct ValidatedDocument {
 	pub nodes: Vec<Node>,
+	pub components: HashMap<String, Vec<Node>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,29 +18,45 @@ enum ExprType {
 	Unknown,
 }
 
-pub fn validate(nodes: &[Node], diags: &mut Vec<Diagnostic>) -> Option<ValidatedDocument> {
+pub fn validate(
+	nodes: &[Node],
+	components: &HashMap<String, Vec<Node>>,
+	diags: &mut Vec<Diagnostic>,
+) -> Option<ValidatedDocument> {
 	for node in nodes {
-		validate_node(node, diags);
+		validate_node(node, components, diags);
+	}
+	for nodes in components.values() {
+		for node in nodes {
+			validate_node(node, components, diags);
+		}
 	}
 	if diags.is_empty() {
 		Some(ValidatedDocument {
 			nodes: nodes.to_vec(),
+			components: components.clone(),
 		})
 	} else {
 		None
 	}
 }
 
-fn validate_node(node: &Node, diags: &mut Vec<Diagnostic>) {
+fn validate_node(
+	node: &Node,
+	components: &HashMap<String, Vec<Node>>,
+	diags: &mut Vec<Diagnostic>,
+) {
 	match node {
 		Node::Element(el) => {
 			if is_structural(&el.name) {
 				validate_structural(el, diags);
+			} else if components.contains_key(&el.name) {
+				validate_component_use(el, components, diags);
 			} else {
 				validate_widget(el, diags);
 			}
 			for child in &el.children {
-				validate_node(child, diags);
+				validate_node(child, components, diags);
 			}
 		}
 		Node::Text(_, _) | Node::Expr(_) => {}
@@ -128,15 +146,75 @@ fn validate_structural(el: &crate::wui::ast::Element, diags: &mut Vec<Diagnostic
 			allow_only(el, &["path", "route", "title", "state"], diags);
 		}
 		"Import" => {
-			require_attr(el, "src", diags);
-			require_string_attr(el, "src", diags);
-			allow_only(el, &["src"], diags);
+			if el.attrs.iter().any(|attr| attr.name == "name") {
+				require_attr(el, "name", diags);
+				require_string_attr(el, "name", diags);
+				if el.attrs.iter().any(|attr| attr.name == "from") {
+					require_string_attr(el, "from", diags);
+				} else {
+					require_attr(el, "src", diags);
+					require_string_attr(el, "src", diags);
+				}
+				allow_only(el, &["name", "from", "src"], diags);
+			} else {
+				require_attr(el, "src", diags);
+				require_string_attr(el, "src", diags);
+				allow_only(el, &["src"], diags);
+			}
 			if !el.children.is_empty() {
 				diags.push(Diagnostic::new("Import does not take children", el.span));
 			}
 		}
+		"Children" => {
+			if !el.attrs.is_empty() {
+				diags.push(Diagnostic::new(
+					"Children does not take attributes",
+					el.span,
+				));
+			}
+			if !el.children.is_empty() {
+				diags.push(Diagnostic::new("Children does not take children", el.span));
+			}
+		}
 		_ => {}
 	}
+}
+
+fn validate_component_use(
+	el: &crate::wui::ast::Element,
+	components: &HashMap<String, Vec<Node>>,
+	diags: &mut Vec<Diagnostic>,
+) {
+	let Some(component_nodes) = components.get(&el.name) else {
+		return;
+	};
+	let accepts_children = component_uses_children(component_nodes);
+	if !accepts_children && !el.children.is_empty() {
+		diags.push(Diagnostic::new(
+			format!("{} does not render Children", el.name),
+			el.span,
+		));
+	}
+	for attr in &el.attrs {
+		if matches!(attr.value, AttrValue::Null(_)) {
+			diags.push(Diagnostic::new(
+				format!("invalid value for {}", attr.name),
+				attr.span,
+			));
+		}
+	}
+}
+
+fn component_uses_children(nodes: &[Node]) -> bool {
+	for node in nodes {
+		let Node::Element(el) = node else {
+			continue;
+		};
+		if el.name == "Children" || component_uses_children(&el.children) {
+			return true;
+		}
+	}
+	false
 }
 
 fn validate_widget(el: &crate::wui::ast::Element, diags: &mut Vec<Diagnostic>) {

@@ -437,7 +437,12 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 pub fn is_structural(tag: &str) -> bool {
 	matches!(
 		tag,
-		"For" | "If" | "Else" | "Scope" | "Page" | "Route" | "Switch" | "Case" | "Import"
+		"For"
+			| "If" | "Else"
+			| "Scope" | "Page"
+			| "Route" | "Switch"
+			| "Case" | "Import"
+			| "Children"
 	)
 }
 

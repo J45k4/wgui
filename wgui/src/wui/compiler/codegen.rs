@@ -214,6 +214,7 @@ fn emit_node_into(node: &IrNode, indent: usize, target: &str) -> String {
 		IrNode::Scope(scope) => emit_scope(scope, indent, target),
 		IrNode::Route(route) => emit_route(route, indent, target),
 		IrNode::Switch(node) => emit_switch(node, indent, target),
+		IrNode::Children => String::new(),
 	}
 }
 
@@ -323,7 +324,7 @@ fn collect_param_names_into(nodes: &[IrNode], out: &mut BTreeSet<String>) {
 					collect_param_names_into(&case.body, out);
 				}
 			}
-			IrNode::Text(_) => {}
+			IrNode::Children | IrNode::Text(_) => {}
 		}
 	}
 }

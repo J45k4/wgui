@@ -1,10 +1,17 @@
 use crate::wui::ast::Expr;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct IrDocument {
 	pub nodes: Vec<IrNode>,
+	pub components: HashMap<String, IrComponent>,
 	pub actions: Vec<ActionDef>,
 	pub pages: Vec<PageMeta>,
+}
+
+#[derive(Debug, Clone)]
+pub struct IrComponent {
+	pub body: Vec<IrNode>,
 }
 
 #[derive(Debug, Clone)]
@@ -23,6 +30,7 @@ pub enum IrNode {
 	Scope(IrScope),
 	Route(IrRoute),
 	Switch(IrSwitch),
+	Children,
 	Text(String),
 }
 

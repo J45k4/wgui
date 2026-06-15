@@ -6,6 +6,7 @@ pub mod validate;
 
 use crate::wui::ast::Node;
 use crate::wui::diagnostic::Diagnostic;
+use std::collections::HashMap;
 use std::path::Path;
 
 #[derive(Debug)]
@@ -25,15 +26,24 @@ pub fn compile_with_dir(
 	base_dir: Option<&Path>,
 ) -> Result<GeneratedModule, Vec<Diagnostic>> {
 	let resolved = crate::wui::imports::resolve(source, module_name, base_dir)?;
-	compile_nodes(&resolved.nodes, module_name)
+	compile_nodes_with_components(&resolved.nodes, &resolved.components, module_name)
 }
 
 pub(crate) fn compile_nodes(
 	nodes: &[Node],
 	module_name: &str,
 ) -> Result<GeneratedModule, Vec<Diagnostic>> {
+	let components = HashMap::new();
+	compile_nodes_with_components(nodes, &components, module_name)
+}
+
+fn compile_nodes_with_components(
+	nodes: &[Node],
+	components: &HashMap<String, Vec<Node>>,
+	module_name: &str,
+) -> Result<GeneratedModule, Vec<Diagnostic>> {
 	let mut diags = Vec::new();
-	let validated = validate::validate(nodes, &mut diags);
+	let validated = validate::validate(nodes, &components, &mut diags);
 	let Some(validated) = validated else {
 		return Err(diags);
 	};
