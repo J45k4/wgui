@@ -8,6 +8,7 @@ pub fn render_document(item: &Item) -> String {
 		"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,maximum-scale=1\" />",
 	);
 	out.push_str("<link rel=\"stylesheet\" href=\"/index.css\"></link>");
+	out.push_str("<script defer src=\"/index.js\"></script>");
 	out.push_str("</head>");
 	out.push_str(
 		"<body style=\"display:flex;flex-direction:row;height:100vh;margin:0;width:100%;\">",
@@ -21,7 +22,6 @@ pub fn render_document(item: &Item) -> String {
 	out.push_str(&render_item(item));
 	out.push_str("</div>");
 	out.push_str("</div>");
-	out.push_str("<script src=\"/index.js\"></script>");
 	out.push_str("</body></html>");
 	out
 }
