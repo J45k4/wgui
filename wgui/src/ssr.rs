@@ -15,7 +15,11 @@ pub fn render_document(item: &Item) -> String {
 	out.push_str(
 		"<div id=\"wgui-root\" style=\"display:flex;flex-direction:column;flex-grow:1;min-height:100vh;width:100%;\">",
 	);
+	out.push_str(
+		"<div id=\"wgui-app\" style=\"display:flex;flex-direction:column;width:100%;\">",
+	);
 	out.push_str(&render_item(item));
+	out.push_str("</div>");
 	out.push_str("</div>");
 	out.push_str("<script src=\"/index.js\"></script>");
 	out.push_str("</body></html>");

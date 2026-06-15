@@ -2635,6 +2635,16 @@ window.onload = () => {
   root.style.flexGrow = "1";
   root.style.minHeight = "100vh";
   root.style.width = "100%";
+  let appRoot = root.querySelector("#wgui-app");
+  if (!appRoot) {
+    root.innerHTML = "";
+    appRoot = document.createElement("div");
+    appRoot.id = "wgui-app";
+    root.appendChild(appRoot);
+  }
+  appRoot.style.display = "flex";
+  appRoot.style.flexDirection = "column";
+  appRoot.style.width = "100%";
   const debouncer = new Deboncer;
   let rtc;
   const {
@@ -2688,7 +2698,7 @@ window.onload = () => {
           continue;
         }
         if (message.type === "threePatch") {
-          const target = getPathItem(message.path, root);
+          const target = getPathItem(message.path, appRoot);
           if (target) {
             applyThreePatch(target, message.ops);
           }
@@ -2707,7 +2717,7 @@ window.onload = () => {
           continue;
         }
         if (message.type === "setProp") {
-          const target = getPathItem(message.path, root);
+          const target = getPathItem(message.path, appRoot);
           if (!target) {
             continue;
           }
@@ -2716,7 +2726,7 @@ window.onload = () => {
           }
           continue;
         }
-        const element = getPathItem(message.path, root);
+        const element = getPathItem(message.path, appRoot);
         if (!element) {
           continue;
         }
