@@ -16,12 +16,11 @@ use std::sync::{Arc, RwLock};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
-use crate::gui::Item;
 use crate::ssr;
 use crate::types::{ClientMessage, Clients};
 use crate::ws::TungsteniteWs;
 use crate::wui::runtime::RouteContext;
-use crate::{Sessions, WguiHandle};
+use crate::{Sessions, SsrResponse, WguiHandle};
 
 const INDEX_HTML_BYTES: &[u8] = include_bytes!("../../dist/index.html");
 const INDEX_JS_BYTES: &[u8] = include_bytes!("../../dist/index.js");
@@ -120,7 +119,7 @@ struct Ctx {
 	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	clients: Clients,
 	sessions: Sessions,
-	ssr: Option<Arc<dyn Fn(RouteContext) -> Option<Item> + Send + Sync>>,
+	ssr: Option<Arc<dyn Fn(RouteContext) -> Option<SsrResponse> + Send + Sync>>,
 	http_handler: SharedHttpHandler,
 }
 
@@ -305,19 +304,26 @@ async fn handle_req(
 					params: std::collections::HashMap::new(),
 					query: query_map(&req),
 				};
-				if let Some(item) = (renderer)(route) {
-					let html = ssr::render_document(&item);
-					Ok(Response::builder()
-						.header("content-type", "text/html")
+				match (renderer)(route) {
+					Some(SsrResponse::Render(item)) => {
+						let html = ssr::render_document(&item);
+						Ok(Response::builder()
+							.header("content-type", "text/html")
+							.header("cache-control", "no-store")
+							.body(Full::new(Bytes::from(html)))
+							.unwrap())
+					}
+					Some(SsrResponse::Redirect(url)) => Ok(Response::builder()
+						.status(303)
+						.header("location", url)
 						.header("cache-control", "no-store")
-						.body(Full::new(Bytes::from(html)))
-						.unwrap())
-				} else {
-					Ok(Response::builder()
+						.body(Full::new(Bytes::new()))
+						.unwrap()),
+					None => Ok(Response::builder()
 						.header("content-type", "text/html")
 						.header("cache-control", "no-store")
 						.body(Full::new(Bytes::from(INDEX_HTML_BYTES)))
-						.unwrap())
+						.unwrap()),
 				}
 			} else {
 				Ok(Response::builder()
@@ -335,7 +341,7 @@ pub struct Server {
 	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	clients: Clients,
 	sessions: Sessions,
-	ssr: Option<Arc<dyn Fn(RouteContext) -> Option<Item> + Send + Sync>>,
+	ssr: Option<Arc<dyn Fn(RouteContext) -> Option<SsrResponse> + Send + Sync>>,
 	http_handler: SharedHttpHandler,
 }
 
@@ -345,7 +351,7 @@ impl Server {
 		event_tx: mpsc::UnboundedSender<ClientMessage>,
 		clients: Clients,
 		sessions: Sessions,
-		ssr: Option<Arc<dyn Fn(RouteContext) -> Option<Item> + Send + Sync>>,
+		ssr: Option<Arc<dyn Fn(RouteContext) -> Option<SsrResponse> + Send + Sync>>,
 		http_handler: SharedHttpHandler,
 	) -> Self {
 		let listener = TcpListener::bind(addr).await.unwrap();

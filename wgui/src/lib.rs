@@ -62,12 +62,17 @@ type ControllerFactory = Arc<dyn Fn() -> ControllerFuture + Send + Sync>;
 type PageControllerFuture = Pin<Box<dyn Future<Output = PageMount> + Send>>;
 type PageControllerFactory =
 	Arc<dyn Fn(RouteContext, Option<usize>, Option<String>) -> PageControllerFuture + Send + Sync>;
-type SsrRenderer = Arc<dyn Fn(RouteContext) -> Option<Item> + Send + Sync>;
+type SsrRenderer = Arc<dyn Fn(RouteContext) -> Option<SsrResponse> + Send + Sync>;
 type SsrComponentFactories = Arc<std::sync::RwLock<Vec<(String, ControllerFactory)>>>;
 type SsrPageFactories = Arc<std::sync::RwLock<Vec<(RoutePattern, PageControllerFactory)>>>;
 
 enum PageMount {
 	Ready(BoxedController),
+	Redirect(String),
+}
+
+pub(crate) enum SsrResponse {
+	Render(Item),
 	Redirect(String),
 }
 
@@ -420,9 +425,9 @@ impl Wgui<()> {
 					return match mount {
 						PageMount::Ready(mut controller) => {
 							controller.set_route_context(Some(route.clone()));
-							Some(controller.render_with_route(&route))
+							Some(SsrResponse::Render(controller.render_with_route(&route)))
 						}
-						PageMount::Redirect(_) => None,
+						PageMount::Redirect(url) => Some(SsrResponse::Redirect(url)),
 					};
 				}
 
@@ -439,7 +444,7 @@ impl Wgui<()> {
 					tokio::runtime::Handle::current().block_on((factory)())
 				});
 				controller.set_route_context(Some(route.clone()));
-				Some(controller.render_with_route(&route))
+				Some(SsrResponse::Render(controller.render_with_route(&route)))
 			}));
 			tokio::spawn(async move {
 				Server::new(addr, event_tx, clients, sessions, ssr, http_handler)
@@ -479,8 +484,9 @@ impl Wgui<()> {
 			let event_tx = events_tx.clone();
 			let sessions = sessions.clone();
 			let http_handler = http_handler.clone();
-			let ssr: Option<SsrRenderer> =
-				Some(Arc::new(move |_route: RouteContext| Some((renderer)())));
+			let ssr: Option<SsrRenderer> = Some(Arc::new(move |_route: RouteContext| {
+				Some(SsrResponse::Render((renderer)()))
+			}));
 			tokio::spawn(async move {
 				Server::new(addr, event_tx, clients, sessions, ssr, http_handler)
 					.await
