@@ -2,7 +2,7 @@ import { Deboncer } from "./debouncer.ts";
 import { getPathItem } from "./path.ts";
 import { renderItem } from "./render.ts";
 import { applyThreePatch } from "./three_host.ts";
-import { Context, PropValue, SetPropSet, SrvMessage } from "./types.ts";
+import { Context, Item, PropValue, SetPropSet, SrvMessage } from "./types.ts";
 import { WebRtcCoordinator } from "./webrtc.ts";
 import { disableWebPush, enableWebPush } from "./web_push.ts";
 import { connectWebsocket } from "./ws.ts";

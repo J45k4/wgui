@@ -1053,6 +1053,17 @@ var renderChildren = (element, items, ctx) => {
     }
   }
 };
+var reconcileChildren = (element, items, ctx) => {
+  for (let i = 0;i < items.length; i++) {
+    const child = renderItem(items[i], ctx, element.children.item(i));
+    if (child && !child.parentElement) {
+      element.appendChild(child);
+    }
+  }
+  while (element.children.length > items.length) {
+    element.children.item(items.length)?.remove();
+  }
+};
 var clearModalState = (element, item) => {
   if (item.payload.type === "modal" || element.dataset.modal !== "overlay") {
     return;
@@ -1204,13 +1215,7 @@ var renderPayload = (item, ctx, old) => {
     let element;
     if (old instanceof HTMLDivElement) {
       element = old;
-      old.innerHTML = "";
-      for (const i of payload.body) {
-        const el = renderItem(i, ctx);
-        if (el) {
-          old.appendChild(el);
-        }
-      }
+      reconcileChildren(element, payload.body, ctx);
     } else {
       const div = document.createElement("div");
       for (const i of payload.body) {

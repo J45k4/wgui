@@ -12,6 +12,18 @@ const renderChildren = (element: HTMLElement, items: Item[], ctx: Context) => {
 	}
 }
 
+const reconcileChildren = (element: HTMLElement, items: Item[], ctx: Context) => {
+	for (let i = 0; i < items.length; i++) {
+		const child = renderItem(items[i], ctx, element.children.item(i))
+		if (child && !child.parentElement) {
+			element.appendChild(child)
+		}
+	}
+	while (element.children.length > items.length) {
+		element.children.item(items.length)?.remove()
+	}
+}
+
 const clearModalState = (element: HTMLElement, item: Item) => {
 	if (item.payload.type === "modal" || element.dataset.modal !== "overlay") {
 		return
@@ -181,13 +193,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		let element: HTMLDivElement
 		if (old instanceof HTMLDivElement) {
 			element = old
-			old.innerHTML = ""
-			for (const i of payload.body) {
-				const el = renderItem(i, ctx)
-				if (el) {
-					old.appendChild(el as any)
-				}
-			}
+			reconcileChildren(element, payload.body, ctx)
 		} else {
 			const div = document.createElement("div")
 			for (const i of payload.body) {
