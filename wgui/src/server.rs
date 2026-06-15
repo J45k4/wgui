@@ -119,7 +119,7 @@ struct Ctx {
 	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	clients: Clients,
 	sessions: Sessions,
-	ssr: Option<Arc<dyn Fn(RouteContext) -> Option<SsrResponse> + Send + Sync>>,
+	ssr: Option<Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>>,
 	http_handler: SharedHttpHandler,
 }
 
@@ -299,12 +299,13 @@ async fn handle_req(
 		}
 		_ => {
 			if let Some(renderer) = ctx.ssr {
+				let session = session_from_request(&req);
 				let route = RouteContext {
 					path: req.uri().path().to_string(),
 					params: std::collections::HashMap::new(),
 					query: query_map(&req),
 				};
-				match (renderer)(route) {
+				match (renderer)(route, session) {
 					Some(SsrResponse::Render(item)) => {
 						let html = ssr::render_document(&item);
 						Ok(Response::builder()
@@ -341,7 +342,7 @@ pub struct Server {
 	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	clients: Clients,
 	sessions: Sessions,
-	ssr: Option<Arc<dyn Fn(RouteContext) -> Option<SsrResponse> + Send + Sync>>,
+	ssr: Option<Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>>,
 	http_handler: SharedHttpHandler,
 }
 
@@ -351,7 +352,7 @@ impl Server {
 		event_tx: mpsc::UnboundedSender<ClientMessage>,
 		clients: Clients,
 		sessions: Sessions,
-		ssr: Option<Arc<dyn Fn(RouteContext) -> Option<SsrResponse> + Send + Sync>>,
+		ssr: Option<Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>>,
 		http_handler: SharedHttpHandler,
 	) -> Self {
 		let listener = TcpListener::bind(addr).await.unwrap();

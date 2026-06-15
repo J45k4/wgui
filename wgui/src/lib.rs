@@ -62,7 +62,7 @@ type ControllerFactory = Arc<dyn Fn() -> ControllerFuture + Send + Sync>;
 type PageControllerFuture = Pin<Box<dyn Future<Output = PageMount> + Send>>;
 type PageControllerFactory =
 	Arc<dyn Fn(RouteContext, Option<usize>, Option<String>) -> PageControllerFuture + Send + Sync>;
-type SsrRenderer = Arc<dyn Fn(RouteContext) -> Option<SsrResponse> + Send + Sync>;
+type SsrRenderer = Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>;
 type SsrComponentFactories = Arc<std::sync::RwLock<Vec<(String, ControllerFactory)>>>;
 type SsrPageFactories = Arc<std::sync::RwLock<Vec<(RoutePattern, PageControllerFactory)>>>;
 
@@ -407,45 +407,50 @@ impl Wgui<()> {
 			let ssr_components = ssr_components.clone();
 			let ssr_pages = ssr_pages.clone();
 			let http_handler = http_handler.clone();
-			let ssr: Option<SsrRenderer> = Some(Arc::new(move |route: RouteContext| {
-				if let Some((factory, route)) = {
-					let pages = ssr_pages.read().unwrap();
-					let index = best_route_index(&pages, &route.path, |(pattern, _)| pattern)?;
-					let pattern = &pages[index].0;
-					let route = page_route_context(pattern, &route.path, &route.query)?;
-					Some((pages[index].1.clone(), route))
-				} {
-					let mount = tokio::task::block_in_place(|| {
-						tokio::runtime::Handle::current().block_on((factory)(
-							route.clone(),
-							None,
-							None,
-						))
-					});
-					return match mount {
-						PageMount::Ready(mut controller) => {
-							controller.set_route_context(Some(route.clone()));
-							Some(SsrResponse::Render(controller.render_with_route(&route)))
-						}
-						PageMount::Redirect(url) => Some(SsrResponse::Redirect(url)),
-					};
-				}
+			let ssr: Option<SsrRenderer> = Some(Arc::new(
+				move |route: RouteContext, session: Option<String>| {
+					if let Some((factory, route)) = {
+						let pages = ssr_pages.read().unwrap();
+						let index = best_route_index(&pages, &route.path, |(pattern, _)| pattern)?;
+						let pattern = &pages[index].0;
+						let route = page_route_context(pattern, &route.path, &route.query)?;
+						Some((pages[index].1.clone(), route))
+					} {
+						let mount = tokio::task::block_in_place(|| {
+							tokio::runtime::Handle::current().block_on((factory)(
+								route.clone(),
+								None,
+								session.clone(),
+							))
+						});
+						return match mount {
+							PageMount::Ready(mut controller) => {
+								controller.set_runtime_context(None, session.clone());
+								controller.set_route_context(Some(route.clone()));
+								Some(SsrResponse::Render(controller.render_with_route(&route)))
+							}
+							PageMount::Redirect(url) => Some(SsrResponse::Redirect(url)),
+						};
+					}
 
-				let factory = {
-					let factories = ssr_components.read().unwrap();
-					let index =
-						best_component_route_index(&factories, &route.path, |(route_path, _)| {
-							route_path.as_str()
-						})?;
-					factories[index].1.clone()
-				};
-				let route = component_route_context(&route.path, &route.query);
-				let mut controller = tokio::task::block_in_place(|| {
-					tokio::runtime::Handle::current().block_on((factory)())
-				});
-				controller.set_route_context(Some(route.clone()));
-				Some(SsrResponse::Render(controller.render_with_route(&route)))
-			}));
+					let factory = {
+						let factories = ssr_components.read().unwrap();
+						let index = best_component_route_index(
+							&factories,
+							&route.path,
+							|(route_path, _)| route_path.as_str(),
+						)?;
+						factories[index].1.clone()
+					};
+					let route = component_route_context(&route.path, &route.query);
+					let mut controller = tokio::task::block_in_place(|| {
+						tokio::runtime::Handle::current().block_on((factory)())
+					});
+					controller.set_runtime_context(None, session);
+					controller.set_route_context(Some(route.clone()));
+					Some(SsrResponse::Render(controller.render_with_route(&route)))
+				},
+			));
 			tokio::spawn(async move {
 				Server::new(addr, event_tx, clients, sessions, ssr, http_handler)
 					.await
@@ -484,9 +489,11 @@ impl Wgui<()> {
 			let event_tx = events_tx.clone();
 			let sessions = sessions.clone();
 			let http_handler = http_handler.clone();
-			let ssr: Option<SsrRenderer> = Some(Arc::new(move |_route: RouteContext| {
-				Some(SsrResponse::Render((renderer)()))
-			}));
+			let ssr: Option<SsrRenderer> = Some(Arc::new(
+				move |_route: RouteContext, _session: Option<String>| {
+					Some(SsrResponse::Render((renderer)()))
+				},
+			));
 			tokio::spawn(async move {
 				Server::new(addr, event_tx, clients, sessions, ssr, http_handler)
 					.await
