@@ -117,6 +117,26 @@ const clearModalOverlays = (root: HTMLElement) => {
     }
 }
 
+const bodyAppRoot = (body: HTMLBodyElement): Element | undefined =>
+    body.firstElementChild ?? undefined
+
+const bodyPathItem = (body: HTMLBodyElement, path: number[]): Element | undefined => {
+    const root = bodyAppRoot(body)
+    if (!root) {
+        return undefined
+    }
+    return getPathItem(path, root)
+}
+
+const renderBodyRoot = (body: HTMLBodyElement, item: Item, ctx: Context) => {
+    const current = bodyAppRoot(body)
+    const rendered = renderItem(item, ctx, current)
+
+    if (!current && rendered) {
+        body.appendChild(rendered)
+    }
+}
+
 window.onload = () => {
     const res = document.querySelector("body")
 
@@ -129,32 +149,6 @@ window.onload = () => {
     res.style.height = "100vh"
     res.style.margin = "0"
     res.style.width = "100%"
-
-    let root = res.querySelector("#wgui-root") as HTMLDivElement | null
-
-    if (!root) {
-        res.innerHTML = ""
-        root = document.createElement("div")
-        root.id = "wgui-root"
-        res.appendChild(root)
-    }
-    root.style.display = "flex"
-    root.style.flexDirection = "column"
-    root.style.flexGrow = "1"
-    root.style.minHeight = "100vh"
-    root.style.width = "100%"
-
-    let appRoot = root.querySelector("#wgui-app") as HTMLDivElement | null
-
-    if (!appRoot) {
-        root.innerHTML = ""
-        appRoot = document.createElement("div")
-        appRoot.id = "wgui-app"
-        root.appendChild(appRoot)
-    }
-    appRoot.style.display = "flex"
-    appRoot.style.flexDirection = "column"
-    appRoot.style.width = "100%"
 
     const debouncer = new Deboncer()
     let rtc: WebRtcCoordinator | undefined
@@ -174,7 +168,7 @@ window.onload = () => {
             for (const message of msgs) {
                 if (message.type === "pushState") {
                     history.pushState({}, "", message.url)
-                    clearModalOverlays(root)
+                    clearModalOverlays(res)
 
                     sender.send({
                         type: "pathChanged",
@@ -220,7 +214,7 @@ window.onload = () => {
 				}
 
 				if (message.type === "threePatch") {
-					const target = getPathItem(message.path, appRoot)
+					const target = bodyPathItem(res, message.path)
 					if (target) {
 						applyThreePatch(target, message.ops)
 					}
@@ -242,7 +236,7 @@ window.onload = () => {
 				}
 
                 if (message.type === "setProp") {
-                    const target = getPathItem(message.path, appRoot)
+                    const target = bodyPathItem(res, message.path)
 
                     if (!target) {
                         continue
@@ -254,8 +248,13 @@ window.onload = () => {
 
                     continue
                 }
+
+                if (message.type === "replace" && message.path.length === 0) {
+                    renderBodyRoot(res, message.item, ctx)
+                    continue
+                }
     
-                const element = getPathItem(message.path, appRoot)
+                const element = bodyPathItem(res, message.path)
     
                 if (!element) {
                     continue
@@ -300,7 +299,7 @@ window.onload = () => {
                 }
 
 			}
-			rtc.syncElements(root)
+			rtc.syncElements(res)
         },
 		onOpen: (sender) => {
 			if (!rtc) {
@@ -319,12 +318,12 @@ window.onload = () => {
             })
 
             sender.sendNow()
-			rtc.syncElements(root)
+			rtc.syncElements(res)
         }
     })
 
     window.addEventListener("popstate", (evet) => {
-        clearModalOverlays(root)
+        clearModalOverlays(res)
         const params = new URLSearchParams(location.search)
         const query: { [key: string]: string } = {}
         params.forEach((value, key) => {

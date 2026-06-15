@@ -2613,6 +2613,21 @@ var clearModalOverlays = (root) => {
     }
   }
 };
+var bodyAppRoot = (body) => body.firstElementChild ?? undefined;
+var bodyPathItem = (body, path) => {
+  const root = bodyAppRoot(body);
+  if (!root) {
+    return;
+  }
+  return getPathItem(path, root);
+};
+var renderBodyRoot = (body, item, ctx) => {
+  const current = bodyAppRoot(body);
+  const rendered = renderItem(item, ctx, current);
+  if (!current && rendered) {
+    body.appendChild(rendered);
+  }
+};
 window.onload = () => {
   const res = document.querySelector("body");
   if (!res) {
@@ -2623,28 +2638,6 @@ window.onload = () => {
   res.style.height = "100vh";
   res.style.margin = "0";
   res.style.width = "100%";
-  let root = res.querySelector("#wgui-root");
-  if (!root) {
-    res.innerHTML = "";
-    root = document.createElement("div");
-    root.id = "wgui-root";
-    res.appendChild(root);
-  }
-  root.style.display = "flex";
-  root.style.flexDirection = "column";
-  root.style.flexGrow = "1";
-  root.style.minHeight = "100vh";
-  root.style.width = "100%";
-  let appRoot = root.querySelector("#wgui-app");
-  if (!appRoot) {
-    root.innerHTML = "";
-    appRoot = document.createElement("div");
-    appRoot.id = "wgui-app";
-    root.appendChild(appRoot);
-  }
-  appRoot.style.display = "flex";
-  appRoot.style.flexDirection = "column";
-  appRoot.style.width = "100%";
   const debouncer = new Deboncer;
   let rtc;
   const {
@@ -2661,7 +2654,7 @@ window.onload = () => {
       for (const message of msgs) {
         if (message.type === "pushState") {
           history.pushState({}, "", message.url);
-          clearModalOverlays(root);
+          clearModalOverlays(res);
           sender2.send({
             type: "pathChanged",
             path: location.pathname,
@@ -2698,7 +2691,7 @@ window.onload = () => {
           continue;
         }
         if (message.type === "threePatch") {
-          const target = getPathItem(message.path, appRoot);
+          const target = bodyPathItem(res, message.path);
           if (target) {
             applyThreePatch(target, message.ops);
           }
@@ -2717,7 +2710,7 @@ window.onload = () => {
           continue;
         }
         if (message.type === "setProp") {
-          const target = getPathItem(message.path, appRoot);
+          const target = bodyPathItem(res, message.path);
           if (!target) {
             continue;
           }
@@ -2726,7 +2719,11 @@ window.onload = () => {
           }
           continue;
         }
-        const element = getPathItem(message.path, appRoot);
+        if (message.type === "replace" && message.path.length === 0) {
+          renderBodyRoot(res, message.item, ctx);
+          continue;
+        }
+        const element = bodyPathItem(res, message.path);
         if (!element) {
           continue;
         }
@@ -2759,7 +2756,7 @@ window.onload = () => {
           element.children.item(message.inx)?.remove();
         }
       }
-      rtc.syncElements(root);
+      rtc.syncElements(res);
     },
     onOpen: (sender2) => {
       if (!rtc) {
@@ -2777,11 +2774,11 @@ window.onload = () => {
         query
       });
       sender2.sendNow();
-      rtc.syncElements(root);
+      rtc.syncElements(res);
     }
   });
   window.addEventListener("popstate", (evet) => {
-    clearModalOverlays(root);
+    clearModalOverlays(res);
     const params = new URLSearchParams(location.search);
     const query = {};
     params.forEach((value, key) => {
