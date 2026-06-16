@@ -451,13 +451,19 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			slider.value = payload.value.toString()
 		}
 		if (item.id) {
-			slider.oninput = (e: any) => {
+			const sendSliderChange = (value: number) => {
 				ctx.sender.send({
 					type: "onSliderChange",
 					id: item.id,
 					inx: item.inx,
-					value: parseInt(e.target.value)
+					value
 				})
+			}
+			slider.oninput = (e: any) => {
+				sendSliderChange(parseInt(e.target.value))
+			}
+			slider.onchange = (e: any) => {
+				sendSliderChange(parseInt(e.target.value))
 				ctx.sender.sendNow()
 			}
 		}

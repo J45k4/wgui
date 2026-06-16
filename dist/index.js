@@ -1467,13 +1467,19 @@ var renderPayload = (item, ctx, old) => {
       slider.value = payload.value.toString();
     }
     if (item.id) {
-      slider.oninput = (e) => {
+      const sendSliderChange = (value) => {
         ctx.sender.send({
           type: "onSliderChange",
           id: item.id,
           inx: item.inx,
-          value: parseInt(e.target.value)
+          value
         });
+      };
+      slider.oninput = (e) => {
+        sendSliderChange(parseInt(e.target.value));
+      };
+      slider.onchange = (e) => {
+        sendSliderChange(parseInt(e.target.value));
         ctx.sender.sendNow();
       };
     }
