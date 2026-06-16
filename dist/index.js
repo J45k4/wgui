@@ -1158,6 +1158,25 @@ var bindAutoClick = (element, item, ctx) => {
     delete element.dataset.wguiAutoClick;
   }
 };
+var bindSliderControlTracking = (slider) => {
+  if (slider.dataset.wguiSliderTracking === "1") {
+    return;
+  }
+  slider.dataset.wguiSliderTracking = "1";
+  const begin = () => {
+    slider.dataset.wguiSliderActive = "1";
+  };
+  const end = () => {
+    delete slider.dataset.wguiSliderActive;
+  };
+  slider.addEventListener("pointerdown", begin);
+  slider.addEventListener("pointerup", end);
+  slider.addEventListener("pointercancel", end);
+  slider.addEventListener("keydown", begin);
+  slider.addEventListener("keyup", end);
+  slider.addEventListener("blur", end);
+};
+var isSliderUserControlled = (slider) => slider.dataset.wguiSliderActive === "1" || document.activeElement === slider;
 var pathQuery = (search) => {
   const params = new URLSearchParams(search);
   const query = {};
@@ -1439,8 +1458,14 @@ var renderPayload = (item, ctx, old) => {
     slider.min = payload.min.toString();
     slider.max = payload.max.toString();
     slider.type = "range";
-    slider.value = payload.value.toString();
     slider.step = payload.step.toString();
+    bindSliderControlTracking(slider);
+    const sliderKey = `${item.id ?? ""}:${item.inx ?? ""}`;
+    const sameSlider = slider.dataset.wguiSliderKey === sliderKey;
+    slider.dataset.wguiSliderKey = sliderKey;
+    if (!sameSlider || !isSliderUserControlled(slider)) {
+      slider.value = payload.value.toString();
+    }
     if (item.id) {
       slider.oninput = (e) => {
         ctx.sender.send({
