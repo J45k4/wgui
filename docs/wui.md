@@ -1,7 +1,7 @@
 # WUI templates
 
 WUI is a small JSX-like template language that compiles (or renders) to the existing `wgui` item tree.
-It is designed to be deterministic and non-Turing complete: no functions, no loops outside `<For>`, and no arbitrary host calls.
+It is designed to be deterministic and non-Turing complete: no user-defined functions, no loops outside `<For>`, and no arbitrary host calls.
 
 ## File layout
 
@@ -27,7 +27,7 @@ Elements and attributes:
   - Bare literal: `spacing=4`, `checked=true`, `x=null`
   - Boolean shorthand: `disabled` is `disabled=true`
 
-Expressions are limited to literals, paths, unary/binary ops, ternary, and `??`.
+Expressions are limited to literals, paths, built-in calls, unary/binary ops, ternary, and `??`.
 
 ## Lexical rules
 
@@ -49,8 +49,9 @@ Supported expression forms:
 - Binary: `+ - * / %`, `== != < <= > >=`, `&& ||`
 - Ternary: `cond ? a : b`
 - Coalesce: `a ?? b`
+- Built-ins: `path_matches(pattern)`
 
-Builtins are reserved for future use and are not evaluated yet.
+`path_matches(pattern)` matches the current route path against the same route patterns used by WGUI routes, including exact paths, `:param`/`{param}`, and `*`.
 
 ## Structural tags
 
@@ -127,7 +128,6 @@ There are two ways to use WUI today:
 - Only one event handler per element.
 - `bind:*` is parsed and rendered but does not yet generate mutation actions.
 - Routing metadata is collected from `<Page>` but is not wired into a router yet.
-- Expression builtins are not executed yet.
 
 ## SSR snapshot
 

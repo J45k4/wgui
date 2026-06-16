@@ -184,10 +184,36 @@ impl<'a> ExprParser<'a> {
 			return Ok(Expr::Literal(lit, span));
 		}
 		if let Some(path) = self.parse_path()? {
+			self.skip_ws();
+			if self.consume_char('(') {
+				let span_start = start;
+				let Some(name) = single_path_name(&path) else {
+					return Err(Diagnostic::new("expected function name", self.span_here()));
+				};
+				let args = self.parse_call_args()?;
+				let span = Span::new(span_start, self.current_offset());
+				return Ok(Expr::Call { name, args, span });
+			}
 			let span = Span::new(start, self.current_offset());
 			return Ok(Expr::Path(path, span));
 		}
 		Err(Diagnostic::new("expected expression", self.span_here()))
+	}
+
+	fn parse_call_args(&mut self) -> Result<Vec<Expr>, Diagnostic> {
+		let mut args = Vec::new();
+		self.skip_ws();
+		if self.consume_char(')') {
+			return Ok(args);
+		}
+		loop {
+			args.push(self.parse_ternary()?);
+			self.skip_ws();
+			if self.consume_char(')') {
+				return Ok(args);
+			}
+			self.expect_char(',')?;
+		}
 	}
 
 	fn parse_string(&mut self) -> Result<Option<String>, Diagnostic> {
@@ -356,6 +382,14 @@ impl<'a> ExprParser<'a> {
 	}
 }
 
+fn single_path_name(path: &[String]) -> Option<String> {
+	if path.len() == 1 {
+		Some(path[0].clone())
+	} else {
+		None
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -366,6 +400,20 @@ mod tests {
 		match expr {
 			Expr::Binary { op, .. } => assert!(matches!(op, BinaryOp::Add)),
 			_ => panic!("expected binary"),
+		}
+	}
+
+	#[test]
+	fn parse_call_expression() {
+		let expr = ExprParser::new("path_matches(activeWhen ?? href)", 0)
+			.parse()
+			.unwrap();
+		match expr {
+			Expr::Call { name, args, .. } => {
+				assert_eq!(name, "path_matches");
+				assert_eq!(args.len(), 1);
+			}
+			_ => panic!("expected call"),
 		}
 	}
 }

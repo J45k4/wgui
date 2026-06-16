@@ -35,6 +35,11 @@ pub enum AttrValue {
 pub enum Expr {
 	Literal(Literal, Span),
 	Path(Vec<String>, Span),
+	Call {
+		name: String,
+		args: Vec<Expr>,
+		span: Span,
+	},
 	Unary {
 		op: UnaryOp,
 		expr: Box<Expr>,
@@ -95,6 +100,7 @@ impl Expr {
 		match self {
 			Expr::Literal(_, span)
 			| Expr::Path(_, span)
+			| Expr::Call { span, .. }
 			| Expr::Unary { span, .. }
 			| Expr::Binary { span, .. }
 			| Expr::Ternary { span, .. }

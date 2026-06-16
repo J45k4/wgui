@@ -563,6 +563,7 @@ fn emit_expr(expr: &Expr) -> String {
 			Literal::Null => "None".to_string(),
 		},
 		Expr::Path(parts, _) => parts.join("."),
+		Expr::Call { name, args, .. } => emit_call_expr(name, args),
 		Expr::Unary { op, expr, .. } => match op {
 			UnaryOp::Not => format!("!{}", emit_expr(expr)),
 			UnaryOp::Neg => format!("-{}", emit_expr(expr)),
@@ -605,6 +606,18 @@ fn emit_expr(expr: &Expr) -> String {
 				emit_expr(right)
 			)
 		}
+	}
+}
+
+fn emit_call_expr(name: &str, args: &[Expr]) -> String {
+	match (name, args) {
+		("path_matches", [pattern]) => {
+			format!(
+				"__wui_route_params({}, __path).is_some()",
+				emit_string_expr(pattern)
+			)
+		}
+		_ => "None".to_string(),
 	}
 }
 

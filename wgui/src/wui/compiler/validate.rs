@@ -397,6 +397,7 @@ fn expr_type(expr: &Expr) -> ExprType {
 			Literal::Bool(_) => ExprType::Bool,
 			Literal::Null => ExprType::Null,
 		},
+		Expr::Call { .. } => ExprType::Unknown,
 		_ => ExprType::Unknown,
 	}
 }

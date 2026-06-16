@@ -965,6 +965,7 @@ fn eval_expr(expr: &Expr, ctx: &EvalContext) -> WuiValue {
 			Literal::Null => WuiValue::Null,
 		},
 		Expr::Path(parts, _) => resolve_path(parts, ctx),
+		Expr::Call { name, args, .. } => eval_call(name, args, ctx),
 		Expr::Unary { op, expr, .. } => match op {
 			UnaryOp::Not => WuiValue::Bool(!value_as_bool(&eval_expr(expr, ctx))),
 			UnaryOp::Neg => WuiValue::Number(-value_as_number(&eval_expr(expr, ctx))),
@@ -1011,6 +1012,28 @@ fn eval_expr(expr: &Expr, ctx: &EvalContext) -> WuiValue {
 			}
 		}
 	}
+}
+
+fn eval_call(name: &str, args: &[Expr], ctx: &EvalContext) -> WuiValue {
+	match name {
+		"path_matches" => eval_path_matches(args, ctx),
+		_ => WuiValue::Null,
+	}
+}
+
+fn eval_path_matches(args: &[Expr], ctx: &EvalContext) -> WuiValue {
+	let Some(pattern) = args
+		.first()
+		.map(|arg| value_as_string(&eval_expr(arg, ctx)))
+	else {
+		return WuiValue::Bool(false);
+	};
+	let path = ctx
+		.vars
+		.get("path")
+		.map(value_as_string)
+		.unwrap_or_else(String::new);
+	WuiValue::Bool(route_params(&pattern, &path).is_some())
 }
 
 fn resolve_path(parts: &[String], ctx: &EvalContext) -> WuiValue {
@@ -1221,6 +1244,46 @@ mod tests {
 
 		assert!(rendered.fill);
 		assert_eq!(values, vec!["Peers".to_string(), "Body".to_string()]);
+	}
+
+	#[test]
+	fn path_matches_can_style_imported_component() {
+		let suffix = std::time::SystemTime::now()
+			.duration_since(std::time::UNIX_EPOCH)
+			.unwrap()
+			.as_nanos();
+		let dir = std::env::temp_dir().join(format!("wui_runtime_path_match_test_{}", suffix));
+		std::fs::create_dir_all(&dir).expect("create temp dir");
+		std::fs::write(
+			dir.join("nav_link.wui"),
+			r##"
+			<VStack
+				backgroundColor={path_matches(activeWhen ?? href) ? "#dbeafe" : "#ffffff"}
+				border={path_matches(activeWhen ?? href) ? "1px solid #60a5fa" : "1px solid #cbd5e1"}
+			>
+				<Link text={text} href={href} />
+			</VStack>
+			"##,
+		)
+		.expect("write nav link");
+		let template = Template::parse_with_dir(
+			r#"
+			<Import name="NavLink" from="nav_link" />
+			<NavLink text="Home" href="/" />
+			<NavLink text="Peers" href="/peers" activeWhen="/peers/*" />
+			"#,
+			"test",
+			Some(&dir),
+		)
+		.expect("parse template");
+		let rendered = template.render_with_path(&WuiValue::Null, "/peers/123");
+		let ItemPayload::Layout(layout) = rendered.payload else {
+			panic!("expected wrapper layout");
+		};
+
+		assert_eq!(layout.body[0].background_color, "#ffffff");
+		assert_eq!(layout.body[1].background_color, "#dbeafe");
+		assert_eq!(layout.body[1].border, "1px solid #60a5fa");
 	}
 
 	#[test]
