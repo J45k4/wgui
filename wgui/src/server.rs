@@ -32,6 +32,29 @@ pub type HttpHandler = Arc<
 	dyn Fn(HttpRequest) -> Pin<Box<dyn Future<Output = Option<HttpResponse>> + Send>> + Send + Sync,
 >;
 pub(crate) type SharedHttpHandler = Arc<RwLock<Option<HttpHandler>>>;
+pub(crate) type SharedStaticMounts = Arc<RwLock<Vec<StaticMount>>>;
+
+#[derive(Clone)]
+pub(crate) enum StaticMount {
+	File { route: String, file: PathBuf },
+	Dir { prefix: String, dir: PathBuf },
+}
+
+impl StaticMount {
+	pub(crate) fn file(route: String, file: PathBuf) -> Self {
+		Self::File {
+			route: normalize_mount_route(route),
+			file,
+		}
+	}
+
+	pub(crate) fn dir(prefix: String, dir: PathBuf) -> Self {
+		Self::Dir {
+			prefix: normalize_mount_route(prefix),
+			dir,
+		}
+	}
+}
 
 #[derive(Debug, Clone)]
 pub struct HttpRequest {
@@ -89,12 +112,41 @@ fn content_type_for(path: &Path) -> &'static str {
 		"css" => "text/css",
 		"js" => "text/javascript",
 		"html" => "text/html",
+		"ico" => "image/x-icon",
 		"stl" => "model/stl",
 		"jpg" | "jpeg" => "image/jpeg",
 		"png" => "image/png",
 		"svg" => "image/svg+xml",
 		_ => "application/octet-stream",
 	}
+}
+
+fn normalize_mount_route(route: String) -> String {
+	let trimmed = route.trim();
+	let with_slash = if trimmed.starts_with('/') {
+		trimmed.to_string()
+	} else {
+		format!("/{trimmed}")
+	};
+	if with_slash.len() > 1 {
+		with_slash.trim_end_matches('/').to_string()
+	} else {
+		with_slash
+	}
+}
+
+fn relative_static_path(base: &Path, relative: &str) -> Option<PathBuf> {
+	let mut out = base.to_path_buf();
+	if relative.is_empty() {
+		return Some(out);
+	}
+	for part in relative.split('/') {
+		if part.is_empty() || part == "." || part == ".." || part.contains('\\') {
+			return None;
+		}
+		out.push(part);
+	}
+	Some(out)
 }
 
 fn sanitize_asset_path(uri_path: &str) -> Option<PathBuf> {
@@ -133,12 +185,64 @@ fn sanitize_fs_path(uri_path: &str) -> Option<PathBuf> {
 	Some(out)
 }
 
+async fn read_static_file(path: &Path) -> Response<HttpBody> {
+	match tokio::fs::read(path).await {
+		Ok(bytes) => Response::builder()
+			.header("content-type", content_type_for(path))
+			.header("cache-control", "public, max-age=86400")
+			.body(full_body(bytes))
+			.unwrap(),
+		Err(_) => Response::builder()
+			.status(404)
+			.body(full_body("file not found"))
+			.unwrap(),
+	}
+}
+
+async fn static_mount_response(
+	uri_path: &str,
+	mounts: &SharedStaticMounts,
+) -> Option<Response<HttpBody>> {
+	let mounts = mounts.read().unwrap().clone();
+	for mount in mounts {
+		match mount {
+			StaticMount::File { route, file } => {
+				if uri_path == route {
+					return Some(read_static_file(&file).await);
+				}
+			}
+			StaticMount::Dir { prefix, dir } => {
+				let relative = if prefix == "/" {
+					uri_path.trim_start_matches('/')
+				} else if uri_path == prefix {
+					""
+				} else if let Some(relative) = uri_path.strip_prefix(&format!("{prefix}/")) {
+					relative
+				} else {
+					continue;
+				};
+				let Some(file) = relative_static_path(&dir, relative) else {
+					return Some(
+						Response::builder()
+							.status(400)
+							.body(full_body("bad static path"))
+							.unwrap(),
+					);
+				};
+				return Some(read_static_file(&file).await);
+			}
+		}
+	}
+	None
+}
+
 struct Ctx {
 	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	clients: Clients,
 	sessions: Sessions,
 	ssr: Option<Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>>,
 	http_handler: SharedHttpHandler,
+	static_mounts: SharedStaticMounts,
 }
 
 fn query_map(req: &Request<hyper::body::Incoming>) -> HashMap<String, String> {
@@ -278,6 +382,10 @@ async fn handle_req(
 		return Ok(response);
 	}
 
+	if let Some(response) = static_mount_response(req.uri().path(), &ctx.static_mounts).await {
+		return Ok(response);
+	}
+
 	match req.uri().path() {
 		"/favicon.ico" => Ok(Response::builder()
 			.status(204)
@@ -377,6 +485,7 @@ pub struct Server {
 	sessions: Sessions,
 	ssr: Option<Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>>,
 	http_handler: SharedHttpHandler,
+	static_mounts: SharedStaticMounts,
 }
 
 impl Server {
@@ -387,6 +496,7 @@ impl Server {
 		sessions: Sessions,
 		ssr: Option<Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>>,
 		http_handler: SharedHttpHandler,
+		static_mounts: SharedStaticMounts,
 	) -> Self {
 		let listener = TcpListener::bind(addr).await.unwrap();
 		log::info!("listening on http://localhost:{}", addr.port());
@@ -398,6 +508,7 @@ impl Server {
 			sessions,
 			ssr,
 			http_handler,
+			static_mounts,
 		}
 	}
 
@@ -414,6 +525,7 @@ impl Server {
 								let sessions = self.sessions.clone();
 								let ssr = self.ssr.clone();
 								let http_handler = self.http_handler.clone();
+								let static_mounts = self.static_mounts.clone();
 								tokio::spawn(async move {
 									let service = service_fn(move |req| {
 										handle_req(req, Ctx {
@@ -422,6 +534,7 @@ impl Server {
 											sessions: sessions.clone(),
 											ssr: ssr.clone(),
 											http_handler: http_handler.clone(),
+											static_mounts: static_mounts.clone(),
 										})
 									});
 

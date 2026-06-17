@@ -5,6 +5,8 @@ use std::collections::{BTreeSet, HashMap};
 use std::future::Future;
 #[cfg(feature = "hyper")]
 use std::net::SocketAddr;
+#[cfg(feature = "hyper")]
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -388,6 +390,8 @@ pub struct Wgui<DB = ()> {
 	contexts: HashMap<TypeId, Arc<dyn Any + Send + Sync>>,
 	#[cfg(feature = "hyper")]
 	http_handler: server::SharedHttpHandler,
+	#[cfg(feature = "hyper")]
+	static_mounts: server::SharedStaticMounts,
 }
 
 impl Wgui<()> {
@@ -399,6 +403,7 @@ impl Wgui<()> {
 		let ssr_components: SsrComponentFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let ssr_pages: SsrPageFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let http_handler = Arc::new(std::sync::RwLock::new(None));
+		let static_mounts = Arc::new(std::sync::RwLock::new(Vec::new()));
 
 		{
 			let clients = clients.clone();
@@ -407,6 +412,7 @@ impl Wgui<()> {
 			let ssr_components = ssr_components.clone();
 			let ssr_pages = ssr_pages.clone();
 			let http_handler = http_handler.clone();
+			let static_mounts = static_mounts.clone();
 			let ssr: Option<SsrRenderer> = Some(Arc::new(
 				move |route: RouteContext, session: Option<String>| {
 					if let Some((factory, route)) = {
@@ -452,10 +458,18 @@ impl Wgui<()> {
 				},
 			));
 			tokio::spawn(async move {
-				Server::new(addr, event_tx, clients, sessions, ssr, http_handler)
-					.await
-					.run()
-					.await;
+				Server::new(
+					addr,
+					event_tx,
+					clients,
+					sessions,
+					ssr,
+					http_handler,
+					static_mounts,
+				)
+				.await
+				.run()
+				.await;
 			});
 		}
 
@@ -469,6 +483,7 @@ impl Wgui<()> {
 			db: Arc::new(()),
 			contexts: HashMap::new(),
 			http_handler,
+			static_mounts,
 		}
 	}
 
@@ -483,22 +498,32 @@ impl Wgui<()> {
 		let ssr_components: SsrComponentFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let ssr_pages: SsrPageFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let http_handler = Arc::new(std::sync::RwLock::new(None));
+		let static_mounts = Arc::new(std::sync::RwLock::new(Vec::new()));
 
 		{
 			let clients = clients.clone();
 			let event_tx = events_tx.clone();
 			let sessions = sessions.clone();
 			let http_handler = http_handler.clone();
+			let static_mounts = static_mounts.clone();
 			let ssr: Option<SsrRenderer> = Some(Arc::new(
 				move |_route: RouteContext, _session: Option<String>| {
 					Some(SsrResponse::Render((renderer)()))
 				},
 			));
 			tokio::spawn(async move {
-				Server::new(addr, event_tx, clients, sessions, ssr, http_handler)
-					.await
-					.run()
-					.await;
+				Server::new(
+					addr,
+					event_tx,
+					clients,
+					sessions,
+					ssr,
+					http_handler,
+					static_mounts,
+				)
+				.await
+				.run()
+				.await;
 			});
 		}
 
@@ -512,6 +537,7 @@ impl Wgui<()> {
 			db: Arc::new(()),
 			contexts: HashMap::new(),
 			http_handler,
+			static_mounts,
 		}
 	}
 
@@ -523,6 +549,8 @@ impl Wgui<()> {
 		let ssr_pages: SsrPageFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		#[cfg(feature = "hyper")]
 		let http_handler = Arc::new(std::sync::RwLock::new(None));
+		#[cfg(feature = "hyper")]
+		let static_mounts = Arc::new(std::sync::RwLock::new(Vec::new()));
 
 		Self {
 			events_rx,
@@ -535,6 +563,8 @@ impl Wgui<()> {
 			contexts: HashMap::new(),
 			#[cfg(feature = "hyper")]
 			http_handler,
+			#[cfg(feature = "hyper")]
+			static_mounts,
 		}
 	}
 }
@@ -558,6 +588,8 @@ where
 			contexts: HashMap::new(),
 			#[cfg(feature = "hyper")]
 			http_handler: self.http_handler,
+			#[cfg(feature = "hyper")]
+			static_mounts: self.static_mounts,
 		}
 	}
 
@@ -569,6 +601,22 @@ where
 	{
 		let handler: HttpHandler = Arc::new(move |request| Box::pin(handler(request)));
 		*self.http_handler.write().unwrap() = Some(handler);
+	}
+
+	#[cfg(feature = "hyper")]
+	pub fn mount_static_file(&self, route: impl Into<String>, file: impl Into<PathBuf>) {
+		self.static_mounts
+			.write()
+			.unwrap()
+			.push(server::StaticMount::file(route.into(), file.into()));
+	}
+
+	#[cfg(feature = "hyper")]
+	pub fn mount_static_dir(&self, route_prefix: impl Into<String>, dir: impl Into<PathBuf>) {
+		self.static_mounts
+			.write()
+			.unwrap()
+			.push(server::StaticMount::dir(route_prefix.into(), dir.into()));
 	}
 
 	pub fn handle(&self) -> WguiHandle {
