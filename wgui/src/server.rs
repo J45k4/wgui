@@ -1,13 +1,15 @@
 #![cfg(feature = "hyper")]
 
-use http_body_util::{BodyExt, Full};
-use hyper::body::Bytes;
+use futures_util::{Stream, StreamExt};
+use http_body_util::{combinators::UnsyncBoxBody, BodyExt, Full, StreamBody};
+use hyper::body::{Bytes, Frame};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::Request;
 use hyper::Response;
 use hyper_util::rt::TokioIo;
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -40,12 +42,15 @@ pub struct HttpRequest {
 	pub body: Vec<u8>,
 }
 
-#[derive(Debug, Clone)]
 pub struct HttpResponse {
 	pub status: u16,
 	pub headers: Vec<(String, String)>,
 	pub body: Vec<u8>,
+	stream: Option<HttpResponseStream>,
 }
+
+type HttpBody = UnsyncBoxBody<Bytes, Infallible>;
+type HttpResponseStream = Pin<Box<dyn Stream<Item = Result<Vec<u8>, Infallible>> + Send>>;
 
 impl HttpResponse {
 	pub fn new(status: u16, body: impl Into<Vec<u8>>) -> Self {
@@ -53,6 +58,19 @@ impl HttpResponse {
 			status,
 			headers: Vec::new(),
 			body: body.into(),
+			stream: None,
+		}
+	}
+
+	pub fn stream<S>(status: u16, stream: S) -> Self
+	where
+		S: Stream<Item = Result<Vec<u8>, Infallible>> + Send + 'static,
+	{
+		Self {
+			status,
+			headers: Vec::new(),
+			body: Vec::new(),
+			stream: Some(Box::pin(stream)),
 		}
 	}
 
@@ -182,18 +200,33 @@ fn session_from_request(req: &Request<hyper::body::Incoming>) -> Option<String> 
 	cookie_value(req, "sid").or_else(|| session_from_query(req))
 }
 
-fn http_response(response: HttpResponse) -> Response<Full<Bytes>> {
+fn full_body(body: impl Into<Bytes>) -> HttpBody {
+	Full::new(body.into())
+		.map_err(|never| match never {})
+		.boxed_unsync()
+}
+
+fn response_body(response: HttpResponse) -> HttpBody {
+	if let Some(stream) = response.stream {
+		return BodyExt::boxed_unsync(StreamBody::new(
+			stream.map(|chunk| chunk.map(|bytes| Frame::data(Bytes::from(bytes)))),
+		));
+	}
+	full_body(response.body)
+}
+
+fn http_response(response: HttpResponse) -> Response<HttpBody> {
 	let mut builder = Response::builder().status(response.status);
-	for (name, value) in response.headers {
+	for (name, value) in &response.headers {
 		builder = builder.header(name.as_str(), value.as_str());
 	}
-	builder.body(Full::new(Bytes::from(response.body))).unwrap()
+	builder.body(response_body(response)).unwrap()
 }
 
 async fn custom_http_response(
 	req: &mut Request<hyper::body::Incoming>,
 	handler: &SharedHttpHandler,
-) -> Result<Option<Response<Full<Bytes>>>, hyper::Error> {
+) -> Result<Option<Response<HttpBody>>, hyper::Error> {
 	let Some(handler) = handler.read().unwrap().clone() else {
 		return Ok(None);
 	};
@@ -215,7 +248,7 @@ async fn custom_http_response(
 async fn handle_req(
 	mut req: Request<hyper::body::Incoming>,
 	ctx: Ctx,
-) -> Result<Response<Full<Bytes>>, hyper::Error> {
+) -> Result<Response<HttpBody>, hyper::Error> {
 	log::info!("{} {}", req.method(), req.uri().path());
 
 	if req.uri().path() == "/ws" && hyper_tungstenite::is_upgrade_request(&req) {
@@ -238,7 +271,7 @@ async fn handle_req(
 				}
 			}
 		});
-		return Ok(response);
+		return Ok(response.map(|body| body.map_err(|never| match never {}).boxed_unsync()));
 	}
 
 	if let Some(response) = custom_http_response(&mut req, &ctx.http_handler).await? {
@@ -249,33 +282,33 @@ async fn handle_req(
 		"/favicon.ico" => Ok(Response::builder()
 			.status(204)
 			.header("cache-control", "public, max-age=86400")
-			.body(Full::new(Bytes::new()))
+			.body(full_body(Bytes::new()))
 			.unwrap()),
 		"/index.js" => Ok(Response::builder()
 			.header("content-type", "text/javascript")
 			.header("cache-control", "no-store")
-			.body(Full::new(Bytes::from(INDEX_JS_BYTES)))
+			.body(full_body(INDEX_JS_BYTES))
 			.unwrap()),
 		"/index.css" => Ok(Response::builder()
 			.header("content-type", "text/css")
 			.header("cache-control", "no-store")
-			.body(Full::new(Bytes::from(CSS_JS_BYTES)))
+			.body(full_body(CSS_JS_BYTES))
 			.unwrap()),
 		path if path.starts_with("/assets/") => {
 			let Some(asset_path) = sanitize_asset_path(path) else {
 				return Ok(Response::builder()
 					.status(400)
-					.body(Full::new(Bytes::from("bad asset path")))
+					.body(full_body("bad asset path"))
 					.unwrap());
 			};
 			match tokio::fs::read(&asset_path).await {
 				Ok(bytes) => Ok(Response::builder()
 					.header("content-type", content_type_for(&asset_path))
-					.body(Full::new(Bytes::from(bytes)))
+					.body(full_body(bytes))
 					.unwrap()),
 				Err(_) => Ok(Response::builder()
 					.status(404)
-					.body(Full::new(Bytes::from("asset not found")))
+					.body(full_body("asset not found"))
 					.unwrap()),
 			}
 		}
@@ -283,17 +316,17 @@ async fn handle_req(
 			let Some(file_path) = sanitize_fs_path(path) else {
 				return Ok(Response::builder()
 					.status(400)
-					.body(Full::new(Bytes::from("bad file path")))
+					.body(full_body("bad file path"))
 					.unwrap());
 			};
 			match tokio::fs::read(&file_path).await {
 				Ok(bytes) => Ok(Response::builder()
 					.header("content-type", content_type_for(&file_path))
-					.body(Full::new(Bytes::from(bytes)))
+					.body(full_body(bytes))
 					.unwrap()),
 				Err(_) => Ok(Response::builder()
 					.status(404)
-					.body(Full::new(Bytes::from("file not found")))
+					.body(full_body("file not found"))
 					.unwrap()),
 			}
 		}
@@ -311,26 +344,26 @@ async fn handle_req(
 						Ok(Response::builder()
 							.header("content-type", "text/html")
 							.header("cache-control", "no-store")
-							.body(Full::new(Bytes::from(html)))
+							.body(full_body(html))
 							.unwrap())
 					}
 					Some(SsrResponse::Redirect(url)) => Ok(Response::builder()
 						.status(303)
 						.header("location", url)
 						.header("cache-control", "no-store")
-						.body(Full::new(Bytes::new()))
+						.body(full_body(Bytes::new()))
 						.unwrap()),
 					None => Ok(Response::builder()
 						.header("content-type", "text/html")
 						.header("cache-control", "no-store")
-						.body(Full::new(Bytes::from(INDEX_HTML_BYTES)))
+						.body(full_body(INDEX_HTML_BYTES))
 						.unwrap()),
 				}
 			} else {
 				Ok(Response::builder()
 					.header("content-type", "text/html")
 					.header("cache-control", "no-store")
-					.body(Full::new(Bytes::from(INDEX_HTML_BYTES)))
+					.body(full_body(INDEX_HTML_BYTES))
 					.unwrap())
 			}
 		}
