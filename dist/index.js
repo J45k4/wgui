@@ -2709,7 +2709,12 @@ window.onload = () => {
       };
       for (const message of msgs) {
         if (message.type === "pushState") {
-          history.pushState({}, "", message.url);
+          const next = new URL(message.url, window.location.href);
+          const current = `${location.pathname}${location.search}${location.hash}`;
+          const nextPath = `${next.pathname}${next.search}${next.hash}`;
+          if (nextPath !== current) {
+            history.pushState({}, "", message.url);
+          }
           clearModalOverlays(res);
           sender2.send({
             type: "pathChanged",

@@ -125,10 +125,15 @@ where
 	pub fn push_state(&self, url: impl Into<String>) {
 		let url = url.into();
 		if let Some(client_id) = *self.current_client.lock().unwrap() {
-			let _ = self
-				.command_tx
-				.send(RuntimeCommand::PushState { client_id, url });
+			self.push_state_for_client(client_id, url);
 		}
+	}
+
+	pub fn push_state_for_client(&self, client_id: usize, url: impl Into<String>) {
+		let url = url.into();
+		let _ = self
+			.command_tx
+			.send(RuntimeCommand::PushState { client_id, url });
 	}
 
 	pub fn navigate(&self, url: impl Into<String>) {
