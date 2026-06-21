@@ -41,6 +41,7 @@ async fn main() {
 ## Examples
 
 - Todo list app (interactive text input + checkbox): `cargo run -p todo`
+- SwiftUI todo sketch for native-owned UI + wgui store bridge: `examples/todo_swift`
 - Component showcase (text input, date picker, select, slider, modal, table): `cargo run -p allcomponents`
 - Three.js scene demo (procedural + STL geometry): `cargo run -p three_demo`
 - URDF viewer (STL meshes + joint sliders): `cargo run -p urdf -- assets/puppyarm/puppyarm.urdf`
