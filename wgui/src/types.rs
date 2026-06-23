@@ -50,6 +50,15 @@ pub struct OnSelect {
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct OnCustom {
+	pub id: u32,
+	pub inx: Option<u32>,
+	pub name: String,
+	pub payload: serde_json::Value,
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WebRtcJoin {
 	pub room: String,
 	pub audio: bool,
@@ -98,6 +107,7 @@ pub enum ClientEvent {
 	OnTextChanged(OnTextChanged),
 	OnSliderChange(OnSliderChange),
 	OnSelect(OnSelect),
+	OnCustom(OnCustom),
 	WebRtcJoin(WebRtcJoin),
 	WebRtcLeave(WebRtcLeave),
 	WebRtcSignal(WebRtcSignal),

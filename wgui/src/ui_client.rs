@@ -20,6 +20,7 @@ fn event_kind_name(event: &ClientEvent) -> &'static str {
 		ClientEvent::OnTextChanged(_) => "OnTextChanged",
 		ClientEvent::OnSliderChange(_) => "OnSliderChange",
 		ClientEvent::OnSelect(_) => "OnSelect",
+		ClientEvent::OnCustom(_) => "OnCustom",
 		ClientEvent::WebRtcJoin(_) => "WebRtcJoin",
 		ClientEvent::WebRtcLeave(_) => "WebRtcLeave",
 		ClientEvent::WebRtcSignal(_) => "WebRtcSignal",

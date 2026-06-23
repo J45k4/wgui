@@ -227,6 +227,13 @@ export type ThreeView = {
 	root: ThreeNode
 }
 
+export type Custom = {
+	type: "custom"
+	name: string
+	entry: string
+	props: unknown
+}
+
 export type ItemPayload = Text |
   	TextInput |
 	DatePicker |
@@ -247,6 +254,7 @@ export type ItemPayload = Text |
 	Video |
 	Audio |
 	ThreeView |
+	Custom |
  	FolderPicker |
  	FloatingLayout |
  	Modal |
@@ -486,6 +494,14 @@ export type OnSelect = {
 	value: string
 }
 
+export type OnCustom = {
+	type: "onCustom"
+	id: number
+	inx?: number
+	name: string
+	payload: unknown
+}
+
 export type WebRtcJoin = {
 	type: "webRtcJoin"
 	room: string
@@ -517,6 +533,7 @@ export type MessageToSrv = OnClick |
 	PathChanged |
 	OnSliderChange |
 	OnSelect |
+	OnCustom |
 	WebRtcJoin |
 	WebRtcLeave |
 	SendWebRtcSignal |

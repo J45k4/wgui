@@ -1,4 +1,5 @@
 import { Context, Item, ItemPayload } from "./types.ts";
+import { disposeCustomComponentTree, mountCustomComponent } from "./custom_components.ts";
 import { applyThreeTree, disposeThreeHost } from "./three_host.ts";
 
 
@@ -20,7 +21,9 @@ const reconcileChildren = (element: HTMLElement, items: Item[], ctx: Context) =>
 		}
 	}
 	while (element.children.length > items.length) {
-		element.children.item(items.length)?.remove()
+		const child = element.children.item(items.length)
+		disposeCustomComponentTree(child)
+		child?.remove()
 	}
 }
 
@@ -799,11 +802,29 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		applyThreeTree(canvas, payload.root)
 		return canvas
 	}
+
+	if (payload.type === "custom") {
+		let element: HTMLDivElement
+		if (old instanceof HTMLDivElement && old.dataset.wguiCustom === "true") {
+			element = old
+		} else {
+			disposeCustomComponentTree(old)
+			element = document.createElement("div")
+			if (old) old.replaceWith(element)
+		}
+		element.dataset.wguiCustom = "true"
+		element.dataset.wguiCustomName = payload.name
+		mountCustomComponent(element, item, payload, ctx)
+		return element
+	}
 }
 
 export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 	if (old instanceof HTMLCanvasElement && item.payload.type !== "threeView") {
 		disposeThreeHost(old)
+	}
+	if (old instanceof HTMLElement && old.dataset.wguiCustom === "true" && item.payload.type !== "custom") {
+		disposeCustomComponentTree(old)
 	}
 	const element = renderPayload(item, ctx, old)
 

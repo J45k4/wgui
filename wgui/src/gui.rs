@@ -177,6 +177,11 @@ pub enum ItemPayload {
 	ThreeView {
 		root: ThreeNode,
 	},
+	Custom {
+		name: String,
+		entry: String,
+		props: serde_json::Value,
+	},
 	None,
 }
 
@@ -328,6 +333,21 @@ where
 pub fn three_view(root: ThreeNode) -> Item {
 	Item {
 		payload: ItemPayload::ThreeView { root },
+		..Default::default()
+	}
+}
+
+pub fn custom_component(
+	name: impl Into<String>,
+	entry: impl Into<String>,
+	props: serde_json::Value,
+) -> Item {
+	Item {
+		payload: ItemPayload::Custom {
+			name: name.into(),
+			entry: entry.into(),
+			props,
+		},
 		..Default::default()
 	}
 }

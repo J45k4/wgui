@@ -73,6 +73,7 @@ pub fn render_item(item: &Item) -> String {
 		} => render_floating_layout(item, *x, *y, *width, *height),
 		ItemPayload::Modal { body, open } => render_modal(item, body, *open),
 		ItemPayload::ThreeView { .. } => render_three_view(item),
+		ItemPayload::Custom { name, .. } => render_custom(item, name),
 		ItemPayload::None => String::new(),
 	}
 }
@@ -119,6 +120,16 @@ fn render_text(item: &Item, value: &str) -> String {
 	let classes = Vec::new();
 	let attrs = collect_item_attrs(item);
 	render_element("span", &classes, style, &attrs, &escape_text(value))
+}
+
+fn render_custom(item: &Item, name: &str) -> String {
+	let mut style = StyleBuilder::new();
+	apply_item_styles(item, &mut style);
+	let classes = Vec::new();
+	let mut attrs = collect_item_attrs(item);
+	attrs.push(("data-wgui-custom".to_string(), "true".to_string()));
+	attrs.push(("data-wgui-custom-name".to_string(), name.to_string()));
+	render_element("div", &classes, style, &attrs, "")
 }
 
 fn render_text_input(item: &Item, value: &str, placeholder: &str) -> String {

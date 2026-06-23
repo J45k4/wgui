@@ -34,6 +34,111 @@ class Deboncer {
   }
 }
 
+// ts/custom_components.ts
+var modules = new Map;
+var componentKey = (payload) => `${payload.name}
+${payload.entry}`;
+var loadModule = (entry) => {
+  if (!modules.has(entry)) {
+    modules.set(entry, import(entry));
+  }
+  return modules.get(entry);
+};
+var getState = (element) => element.__wguiCustomState;
+var setState = (element, state) => {
+  if (state) {
+    element.__wguiCustomState = state;
+  } else {
+    delete element.__wguiCustomState;
+  }
+};
+var controllerContext = (item, payload, ctx) => ({
+  id: item.id,
+  inx: item.inx,
+  name: payload.name,
+  emit: (name, eventPayload) => {
+    if (!item.id) {
+      return;
+    }
+    ctx.sender.send({
+      type: "onCustom",
+      id: item.id,
+      inx: item.inx,
+      name,
+      payload: eventPayload ?? null
+    });
+    ctx.sender.sendNow();
+  }
+});
+var disposeState = (state) => {
+  if (!state) {
+    return;
+  }
+  state.cancelled = true;
+  try {
+    state.controller?.dispose?.();
+  } catch (err) {
+    console.warn("wgui custom component dispose failed", err);
+  }
+};
+var disposeCustomComponent = (element) => {
+  if (!(element instanceof HTMLElement)) {
+    return;
+  }
+  disposeState(getState(element));
+  setState(element, undefined);
+};
+var disposeCustomComponentTree = (element) => {
+  if (!(element instanceof HTMLElement)) {
+    return;
+  }
+  disposeCustomComponent(element);
+  for (const child of Array.from(element.children)) {
+    disposeCustomComponentTree(child);
+  }
+};
+var mountCustomComponent = (element, item, payload, ctx) => {
+  const key = componentKey(payload);
+  const existing = getState(element);
+  if (existing?.key === key) {
+    existing.props = payload.props;
+    if (existing.controller?.setProps) {
+      Promise.resolve(existing.controller.setProps(payload.props)).catch((err) => {
+        console.warn("wgui custom component setProps failed", err);
+      });
+    }
+    return;
+  }
+  disposeState(existing);
+  const state = {
+    key,
+    props: payload.props,
+    cancelled: false
+  };
+  setState(element, state);
+  loadModule(payload.entry).then((module) => {
+    if (state.cancelled) {
+      return;
+    }
+    const Controller = module.default ?? module.Controller;
+    if (!Controller) {
+      throw new Error(`custom component ${payload.name} does not export a controller`);
+    }
+    const controller = new Controller(element, controllerContext(item, payload, ctx));
+    state.controller = controller;
+    return Promise.resolve(controller.mount?.(state.props)).then(() => {
+      if (!state.cancelled && !controller.mount && controller.setProps) {
+        return controller.setProps(state.props);
+      }
+    });
+  }).catch((err) => {
+    console.error(`wgui custom component ${payload.name} failed`, err);
+    if (!state.cancelled) {
+      element.textContent = `Failed to load component ${payload.name}`;
+    }
+  });
+};
+
 // ts/path.ts
 var getPathItem = (path, element) => {
   const p = path[0];
@@ -1061,7 +1166,9 @@ var reconcileChildren = (element, items, ctx) => {
     }
   }
   while (element.children.length > items.length) {
-    element.children.item(items.length)?.remove();
+    const child = element.children.item(items.length);
+    disposeCustomComponentTree(child);
+    child?.remove();
   }
 };
 var clearModalState = (element, item) => {
@@ -1811,10 +1918,28 @@ var renderPayload = (item, ctx, old) => {
     applyThreeTree(canvas, payload.root);
     return canvas;
   }
+  if (payload.type === "custom") {
+    let element;
+    if (old instanceof HTMLDivElement && old.dataset.wguiCustom === "true") {
+      element = old;
+    } else {
+      disposeCustomComponentTree(old);
+      element = document.createElement("div");
+      if (old)
+        old.replaceWith(element);
+    }
+    element.dataset.wguiCustom = "true";
+    element.dataset.wguiCustomName = payload.name;
+    mountCustomComponent(element, item, payload, ctx);
+    return element;
+  }
 };
 var renderItem = (item, ctx, old) => {
   if (old instanceof HTMLCanvasElement && item.payload.type !== "threeView") {
     disposeThreeHost(old);
+  }
+  if (old instanceof HTMLElement && old.dataset.wguiCustom === "true" && item.payload.type !== "custom") {
+    disposeCustomComponentTree(old);
   }
   const element = renderPayload(item, ctx, old);
   if (!element) {
@@ -2814,7 +2939,9 @@ window.onload = () => {
           }
         }
         if (message.type === "removeInx") {
-          element.children.item(message.inx)?.remove();
+          const child = element.children.item(message.inx);
+          disposeCustomComponentTree(child);
+          child?.remove();
         }
       }
       rtc.syncElements(res);

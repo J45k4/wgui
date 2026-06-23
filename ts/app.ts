@@ -1,4 +1,5 @@
 import { Deboncer } from "./debouncer.ts";
+import { disposeCustomComponentTree } from "./custom_components.ts";
 import { getPathItem } from "./path.ts";
 import { renderItem } from "./render.ts";
 import { applyThreePatch } from "./three_host.ts";
@@ -300,7 +301,9 @@ window.onload = () => {
                 }
     
                 if (message.type === "removeInx") {
-                    element.children.item(message.inx)?.remove()
+                    const child = element.children.item(message.inx)
+                    disposeCustomComponentTree(child)
+                    child?.remove()
                 }
 
 			}
