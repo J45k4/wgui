@@ -31,6 +31,7 @@ const CSS_JS_BYTES: &[u8] = include_bytes!("../../dist/index.css");
 pub type HttpHandler = Arc<
 	dyn Fn(HttpRequest) -> Pin<Box<dyn Future<Output = Option<HttpResponse>> + Send>> + Send + Sync,
 >;
+pub(crate) type SharedAppCss = Arc<RwLock<Option<String>>>;
 pub(crate) type SharedHttpHandler = Arc<RwLock<Option<HttpHandler>>>;
 pub(crate) type SharedStaticMounts = Arc<RwLock<Vec<StaticMount>>>;
 
@@ -236,12 +237,26 @@ async fn static_mount_response(
 	None
 }
 
+fn index_html_response(app_css: &SharedAppCss) -> Vec<u8> {
+	if app_css.read().unwrap().is_none() {
+		return INDEX_HTML_BYTES.to_vec();
+	}
+
+	let html = String::from_utf8_lossy(INDEX_HTML_BYTES);
+	html.replace(
+		"<link rel=\"stylesheet\" href=\"/index.css\"></link>",
+		"<link rel=\"stylesheet\" href=\"/index.css\"></link><link rel=\"stylesheet\" href=\"/app.css\"></link>",
+	)
+	.into_bytes()
+}
+
 struct Ctx {
 	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	clients: Clients,
 	sessions: Sessions,
 	ssr: Option<Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>>,
 	http_handler: SharedHttpHandler,
+	app_css: SharedAppCss,
 	static_mounts: SharedStaticMounts,
 }
 
@@ -402,6 +417,21 @@ async fn handle_req(
 			.header("cache-control", "no-store")
 			.body(full_body(CSS_JS_BYTES))
 			.unwrap()),
+		"/app.css" => {
+			let css = ctx.app_css.read().unwrap().clone();
+			match css {
+				Some(css) => Ok(Response::builder()
+					.header("content-type", "text/css")
+					.header("cache-control", "no-store")
+					.body(full_body(css))
+					.unwrap()),
+				None => Ok(Response::builder()
+					.status(404)
+					.header("cache-control", "no-store")
+					.body(full_body("app css not set"))
+					.unwrap()),
+			}
+		}
 		path if path.starts_with("/assets/") => {
 			let Some(asset_path) = sanitize_asset_path(path) else {
 				return Ok(Response::builder()
@@ -448,7 +478,10 @@ async fn handle_req(
 				};
 				match (renderer)(route, session) {
 					Some(SsrResponse::Render(item)) => {
-						let html = ssr::render_document(&item);
+						let html = ssr::render_document_with_app_css(
+							&item,
+							ctx.app_css.read().unwrap().is_some(),
+						);
 						Ok(Response::builder()
 							.header("content-type", "text/html")
 							.header("cache-control", "no-store")
@@ -464,14 +497,14 @@ async fn handle_req(
 					None => Ok(Response::builder()
 						.header("content-type", "text/html")
 						.header("cache-control", "no-store")
-						.body(full_body(INDEX_HTML_BYTES))
+						.body(full_body(index_html_response(&ctx.app_css)))
 						.unwrap()),
 				}
 			} else {
 				Ok(Response::builder()
 					.header("content-type", "text/html")
 					.header("cache-control", "no-store")
-					.body(full_body(INDEX_HTML_BYTES))
+					.body(full_body(index_html_response(&ctx.app_css)))
 					.unwrap())
 			}
 		}
@@ -485,6 +518,7 @@ pub struct Server {
 	sessions: Sessions,
 	ssr: Option<Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>>,
 	http_handler: SharedHttpHandler,
+	app_css: SharedAppCss,
 	static_mounts: SharedStaticMounts,
 }
 
@@ -496,6 +530,7 @@ impl Server {
 		sessions: Sessions,
 		ssr: Option<Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>>,
 		http_handler: SharedHttpHandler,
+		app_css: SharedAppCss,
 		static_mounts: SharedStaticMounts,
 	) -> Self {
 		let listener = TcpListener::bind(addr).await.unwrap();
@@ -508,6 +543,7 @@ impl Server {
 			sessions,
 			ssr,
 			http_handler,
+			app_css,
 			static_mounts,
 		}
 	}
@@ -525,6 +561,7 @@ impl Server {
 								let sessions = self.sessions.clone();
 								let ssr = self.ssr.clone();
 								let http_handler = self.http_handler.clone();
+								let app_css = self.app_css.clone();
 								let static_mounts = self.static_mounts.clone();
 								tokio::spawn(async move {
 									let service = service_fn(move |req| {
@@ -534,6 +571,7 @@ impl Server {
 											sessions: sessions.clone(),
 											ssr: ssr.clone(),
 											http_handler: http_handler.clone(),
+											app_css: app_css.clone(),
 											static_mounts: static_mounts.clone(),
 										})
 									});

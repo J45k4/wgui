@@ -391,6 +391,8 @@ pub struct Wgui<DB = ()> {
 	#[cfg(feature = "hyper")]
 	http_handler: server::SharedHttpHandler,
 	#[cfg(feature = "hyper")]
+	app_css: server::SharedAppCss,
+	#[cfg(feature = "hyper")]
 	static_mounts: server::SharedStaticMounts,
 }
 
@@ -403,6 +405,7 @@ impl Wgui<()> {
 		let ssr_components: SsrComponentFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let ssr_pages: SsrPageFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let http_handler = Arc::new(std::sync::RwLock::new(None));
+		let app_css = Arc::new(std::sync::RwLock::new(None));
 		let static_mounts = Arc::new(std::sync::RwLock::new(Vec::new()));
 
 		{
@@ -412,6 +415,7 @@ impl Wgui<()> {
 			let ssr_components = ssr_components.clone();
 			let ssr_pages = ssr_pages.clone();
 			let http_handler = http_handler.clone();
+			let app_css = app_css.clone();
 			let static_mounts = static_mounts.clone();
 			let ssr: Option<SsrRenderer> = Some(Arc::new(
 				move |route: RouteContext, session: Option<String>| {
@@ -465,6 +469,7 @@ impl Wgui<()> {
 					sessions,
 					ssr,
 					http_handler,
+					app_css,
 					static_mounts,
 				)
 				.await
@@ -483,6 +488,7 @@ impl Wgui<()> {
 			db: Arc::new(()),
 			contexts: HashMap::new(),
 			http_handler,
+			app_css,
 			static_mounts,
 		}
 	}
@@ -498,6 +504,7 @@ impl Wgui<()> {
 		let ssr_components: SsrComponentFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let ssr_pages: SsrPageFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let http_handler = Arc::new(std::sync::RwLock::new(None));
+		let app_css = Arc::new(std::sync::RwLock::new(None));
 		let static_mounts = Arc::new(std::sync::RwLock::new(Vec::new()));
 
 		{
@@ -505,6 +512,7 @@ impl Wgui<()> {
 			let event_tx = events_tx.clone();
 			let sessions = sessions.clone();
 			let http_handler = http_handler.clone();
+			let app_css = app_css.clone();
 			let static_mounts = static_mounts.clone();
 			let ssr: Option<SsrRenderer> = Some(Arc::new(
 				move |_route: RouteContext, _session: Option<String>| {
@@ -519,6 +527,7 @@ impl Wgui<()> {
 					sessions,
 					ssr,
 					http_handler,
+					app_css,
 					static_mounts,
 				)
 				.await
@@ -537,6 +546,7 @@ impl Wgui<()> {
 			db: Arc::new(()),
 			contexts: HashMap::new(),
 			http_handler,
+			app_css,
 			static_mounts,
 		}
 	}
@@ -549,6 +559,8 @@ impl Wgui<()> {
 		let ssr_pages: SsrPageFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		#[cfg(feature = "hyper")]
 		let http_handler = Arc::new(std::sync::RwLock::new(None));
+		#[cfg(feature = "hyper")]
+		let app_css = Arc::new(std::sync::RwLock::new(None));
 		#[cfg(feature = "hyper")]
 		let static_mounts = Arc::new(std::sync::RwLock::new(Vec::new()));
 
@@ -563,6 +575,8 @@ impl Wgui<()> {
 			contexts: HashMap::new(),
 			#[cfg(feature = "hyper")]
 			http_handler,
+			#[cfg(feature = "hyper")]
+			app_css,
 			#[cfg(feature = "hyper")]
 			static_mounts,
 		}
@@ -589,8 +603,15 @@ where
 			#[cfg(feature = "hyper")]
 			http_handler: self.http_handler,
 			#[cfg(feature = "hyper")]
+			app_css: self.app_css,
+			#[cfg(feature = "hyper")]
 			static_mounts: self.static_mounts,
 		}
+	}
+
+	#[cfg(feature = "hyper")]
+	pub fn set_css(&self, css: impl Into<String>) {
+		*self.app_css.write().unwrap() = Some(css.into());
 	}
 
 	#[cfg(feature = "hyper")]

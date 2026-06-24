@@ -1,6 +1,10 @@
 use crate::gui::{FlexDirection, Item, ItemPayload, Layout, SelectOption};
 
 pub fn render_document(item: &Item) -> String {
+	render_document_with_app_css(item, false)
+}
+
+pub fn render_document_with_app_css(item: &Item, app_css: bool) -> String {
 	let mut out = String::new();
 	out.push_str("<html><head>");
 	out.push_str("<title></title>");
@@ -8,6 +12,9 @@ pub fn render_document(item: &Item) -> String {
 		"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,maximum-scale=1\" />",
 	);
 	out.push_str("<link rel=\"stylesheet\" href=\"/index.css\"></link>");
+	if app_css {
+		out.push_str("<link rel=\"stylesheet\" href=\"/app.css\"></link>");
+	}
 	out.push_str("<script defer src=\"/index.js\"></script>");
 	out.push_str("</head>");
 	out.push_str(

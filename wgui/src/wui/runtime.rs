@@ -1021,8 +1021,7 @@ fn is_string_prop(name: &str) -> bool {
 			| "cursor"
 			| "overflow"
 			| "backgroundColor"
-			| "color"
-			| "border"
+			| "color" | "border"
 			| "objectFit"
 			| "room"
 	)

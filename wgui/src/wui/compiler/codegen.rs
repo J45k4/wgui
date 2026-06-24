@@ -650,8 +650,7 @@ fn is_string_prop(name: &str) -> bool {
 			| "overflow"
 			| "placeholder"
 			| "backgroundColor"
-			| "color"
-			| "border"
+			| "color" | "border"
 			| "objectFit"
 			| "room"
 	)
