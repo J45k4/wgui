@@ -958,6 +958,7 @@ fn apply_string_prop(item: Item, name: &str, value: &str) -> Item {
 		"cursor" => item.cursor(value),
 		"overflow" => item.overflow(value),
 		"backgroundColor" => item.background_color(value),
+		"color" => item.color(value),
 		"border" => item.border(value),
 		"objectFit" => item.object_fit(value),
 		"room" => item.room(value),
@@ -1020,6 +1021,7 @@ fn is_string_prop(name: &str) -> bool {
 			| "cursor"
 			| "overflow"
 			| "backgroundColor"
+			| "color"
 			| "border"
 			| "objectFit"
 			| "room"

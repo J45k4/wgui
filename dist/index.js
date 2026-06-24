@@ -1956,6 +1956,7 @@ var renderItem = (item, ctx, old) => {
   element.style.flexGrow = item.grow ? item.grow.toString() : "";
   element.classList.toggle("grow", !!item.grow);
   element.style.backgroundColor = item.backgroundColor || "";
+  element.style.color = item.color || "";
   if (item.breakWords) {
     element.style.overflowWrap = "anywhere";
     element.style.wordBreak = "break-word";
@@ -2714,6 +2715,9 @@ var applySetProp = (element, set) => {
   switch (set.key) {
     case "BackgroundColor":
       element.style.backgroundColor = value;
+      break;
+    case "Color":
+      element.style.color = value;
       break;
     case "Border":
       element.style.border = value;

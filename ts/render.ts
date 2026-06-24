@@ -844,6 +844,7 @@ export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 	element.style.flexGrow = item.grow ? item.grow.toString() : ""
 	element.classList.toggle("grow", !!item.grow)
 	element.style.backgroundColor = item.backgroundColor || ""
+	element.style.color = item.color || ""
 	if (item.breakWords) {
 		element.style.overflowWrap = "anywhere"
 		element.style.wordBreak = "break-word"

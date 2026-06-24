@@ -539,6 +539,7 @@ fn prop_method(name: &str) -> String {
 		"marginTop" => "margin_top".to_string(),
 		"marginBottom" => "margin_bottom".to_string(),
 		"backgroundColor" => "background_color".to_string(),
+		"color" => "color".to_string(),
 		"border" => "border".to_string(),
 		"width" => "width".to_string(),
 		"height" => "height".to_string(),
@@ -649,6 +650,7 @@ fn is_string_prop(name: &str) -> bool {
 			| "overflow"
 			| "placeholder"
 			| "backgroundColor"
+			| "color"
 			| "border"
 			| "objectFit"
 			| "room"

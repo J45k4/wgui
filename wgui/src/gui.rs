@@ -199,6 +199,7 @@ pub struct Item {
 	pub payload: ItemPayload,
 	pub border: String,
 	pub background_color: String,
+	pub color: String,
 	pub cursor: String,
 	pub break_words: bool,
 	pub fill: bool,
@@ -792,6 +793,11 @@ impl Item {
 
 	pub fn background_color(mut self, c: &str) -> Self {
 		self.background_color = c.to_string();
+		self
+	}
+
+	pub fn color(mut self, c: &str) -> Self {
+		self.color = c.to_string();
 		self
 	}
 

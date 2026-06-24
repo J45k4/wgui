@@ -40,6 +40,7 @@ export type Layout = {
 	spacing?: number
 	border?: string
 	backgroundColor?: string
+	color?: string
 	breakWords?: boolean
 	cursor?: string
 	fill?: boolean
@@ -272,6 +273,7 @@ export type Item = {
 	maxWidth: number
 	grow?: number
 	backgroundColor?: string
+	color?: string
 	breakWords?: boolean
 	fill?: boolean
 	textAlign?: string
@@ -334,6 +336,7 @@ export type PropKey =
 	| "ID"
 	| "Border"
 	| "BackgroundColor"
+	| "Color"
 	| "Spacing"
 	| "FlexDirection"
 	| "Grow"

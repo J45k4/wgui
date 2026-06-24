@@ -202,6 +202,12 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 			value: Value::String(new.background_color.clone()),
 		});
 	}
+	if old.color != new.color {
+		sets.push(SetProp {
+			key: PropKey::Color,
+			value: Value::String(new.color.clone()),
+		});
+	}
 	if old.break_words != new.break_words {
 		sets.push(SetProp {
 			key: PropKey::BreakWords,

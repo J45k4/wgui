@@ -35,6 +35,9 @@ const applySetProp = (element: Element, set: SetPropSet) => {
         case "BackgroundColor":
             element.style.backgroundColor = value
             break
+        case "Color":
+            element.style.color = value
+            break
         case "Border":
             element.style.border = value
             break

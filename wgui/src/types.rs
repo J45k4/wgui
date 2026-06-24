@@ -204,6 +204,7 @@ pub enum PropKey {
 	Overflow = 14,
 	BreakWords = 15,
 	Fill = 16,
+	Color = 17,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]

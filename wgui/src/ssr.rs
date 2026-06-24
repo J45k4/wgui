@@ -487,6 +487,9 @@ fn apply_item_styles(item: &Item, style: &mut StyleBuilder) {
 	if !item.background_color.is_empty() {
 		style.push("background-color", &item.background_color);
 	}
+	if !item.color.is_empty() {
+		style.push("color", &item.color);
+	}
 	if item.break_words {
 		style.push("overflow-wrap", "anywhere");
 		style.push("word-break", "break-word");
