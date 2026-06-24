@@ -5,6 +5,7 @@ pub enum ValueType {
 	String,
 	Number,
 	Bool,
+	Any,
 }
 
 #[derive(Debug, Clone)]
@@ -200,6 +201,67 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 				PropSchema {
 					name: "onSliderChange",
 					kind: PropKind::Event(EventKind::SliderChange),
+				},
+				PropSchema {
+					name: "arg",
+					kind: PropKind::Value(ValueType::Number),
+				},
+			],
+		}),
+		"Custom" | "CustomComponent" => Some(TagSchema {
+			name: "CustomComponent",
+			props: &[
+				PropSchema {
+					name: "name",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "entry",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "props",
+					kind: PropKind::Value(ValueType::Any),
+				},
+				PropSchema {
+					name: "width",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "height",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "minWidth",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "maxWidth",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "minHeight",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "maxHeight",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "grow",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "fill",
+					kind: PropKind::Value(ValueType::Bool),
+				},
+				PropSchema {
+					name: "backgroundColor",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "border",
+					kind: PropKind::Value(ValueType::String),
 				},
 			],
 		}),

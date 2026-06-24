@@ -162,6 +162,7 @@ enum HandlerArg {
 	None,
 	U32,
 	I32,
+	U32I32,
 	String,
 }
 
@@ -282,6 +283,7 @@ fn expand_wgui_controller(
 				let arg = match input_count {
 					0 => Some(HandlerArg::None),
 					1 => arg_type.and_then(handler_arg_from_type),
+					2 => handler_two_args_from_method(method),
 					_ => None,
 				};
 				if let Some(arg) = arg {
@@ -329,6 +331,7 @@ fn expand_wgui_controller(
 			))
 		}
 	};
+	let direct_item_render = model_method_ident == "render" && model_type_ident == "Item";
 
 	let module_name = {
 		let mut name = to_snake_case(&model_type_ident);
@@ -395,6 +398,18 @@ fn expand_wgui_controller(
 				quote! { #name => { self.#ident(value); true } }
 			}
 		});
+	let u32_i32_arms = handlers
+		.iter()
+		.filter(|handler| matches!(handler.arg, HandlerArg::U32I32))
+		.map(|handler| {
+			let ident = &handler.ident;
+			let name = ident.to_string();
+			if handler.is_async {
+				quote! { #name => { self.#ident(arg, value).await; true } }
+			} else {
+				quote! { #name => { self.#ident(arg, value); true } }
+			}
+		});
 	let string_arms = handlers
 		.iter()
 		.filter(|handler| matches!(handler.arg, HandlerArg::String))
@@ -425,6 +440,27 @@ fn expand_wgui_controller(
 			return false;
 		}
 	};
+
+	if direct_item_render {
+		let output = quote! {
+			#impl_block
+
+			#[::wgui::wui::runtime::async_trait]
+			impl ::wgui::wui::runtime::WuiController for #controller_ident {
+				fn render(&self) -> ::wgui::Item {
+					self.#model_method_ident()
+				}
+
+				#title_impl
+
+				async fn handle(&mut self, event: &::wgui::ClientEvent) -> bool {
+					#fallback_decode
+				}
+			}
+		};
+
+		return Ok(output.into());
+	}
 
 	let output = quote! {
 		#impl_block
@@ -584,11 +620,18 @@ fn expand_wgui_controller(
 							_ => false,
 						}
 					}
-					::wgui::wui::runtime::RuntimeAction::SliderChange { ref name, value } => {
+					::wgui::wui::runtime::RuntimeAction::SliderChange { ref name, arg, value } => {
 						let action_name = #action_fn(name);
-						match action_name.as_str() {
-							#(#i32_arms,)*
-							_ => false,
+						if let Some(arg) = arg {
+							match action_name.as_str() {
+								#(#u32_i32_arms,)*
+								_ => false,
+							}
+						} else {
+							match action_name.as_str() {
+								#(#i32_arms,)*
+								_ => false,
+							}
 						}
 					}
 					::wgui::wui::runtime::RuntimeAction::Select { ref name, value } => {
@@ -616,6 +659,22 @@ fn handler_arg_from_type(ty: &Type) -> Option<HandlerArg> {
 		"u32" => Some(HandlerArg::U32),
 		"i32" => Some(HandlerArg::I32),
 		_ => None,
+	}
+}
+
+fn handler_two_args_from_method(method: &syn::ImplItemFn) -> Option<HandlerArg> {
+	let mut types = method.sig.inputs.iter().filter_map(|arg| match arg {
+		FnArg::Typed(pat) => Some(&*pat.ty),
+		_ => None,
+	});
+	let first = types.next()?;
+	let second = types.next()?;
+	if matches!(handler_arg_from_type(first), Some(HandlerArg::U32))
+		&& matches!(handler_arg_from_type(second), Some(HandlerArg::I32))
+	{
+		Some(HandlerArg::U32I32)
+	} else {
+		None
 	}
 }
 

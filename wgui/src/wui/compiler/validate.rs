@@ -376,6 +376,7 @@ fn attr_value_matches(value: &AttrValue, expected: ValueType) -> bool {
 		ValueType::String => matches!(attr_value_type(value), ExprType::String | ExprType::Unknown),
 		ValueType::Number => matches!(attr_value_type(value), ExprType::Number | ExprType::Unknown),
 		ValueType::Bool => matches!(attr_value_type(value), ExprType::Bool | ExprType::Unknown),
+		ValueType::Any => !matches!(attr_value_type(value), ExprType::Null),
 	}
 }
 

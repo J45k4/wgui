@@ -279,7 +279,13 @@ fn lower_widget(
 				}
 			}
 			EventKind::TextChanged => ActionPayload::String,
-			EventKind::SliderChange => ActionPayload::I32,
+			EventKind::SliderChange => {
+				if arg.is_some() {
+					ActionPayload::U32I32
+				} else {
+					ActionPayload::I32
+				}
+			}
 			EventKind::Select => ActionPayload::String,
 		};
 		ctx.add_action(action.clone(), kind, payload, span, diags);

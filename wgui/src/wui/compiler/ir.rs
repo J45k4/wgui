@@ -117,6 +117,7 @@ pub enum ActionPayload {
 	U32,
 	String,
 	I32,
+	U32I32,
 }
 
 #[derive(Debug, Clone)]

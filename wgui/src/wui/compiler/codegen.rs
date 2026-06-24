@@ -150,6 +150,12 @@ pub fn generate_controller_stub(doc: &IrDocument, module_name: &str) -> Option<S
 					method
 				));
 			}
+			ActionPayload::U32I32 => {
+				out.push_str(&format!(
+					"\tpub(crate) fn {}(&mut self, _arg: u32, _value: i32) {{\n\t\t// TODO\n\t}}\n\n",
+					method
+				));
+			}
 		}
 	}
 	out.push_str("}\n");
@@ -162,6 +168,7 @@ fn action_payload(action: &ActionDef) -> String {
 		ActionPayload::U32 => " { arg: u32 }".to_string(),
 		ActionPayload::String => " { value: String }".to_string(),
 		ActionPayload::I32 => " { value: i32 }".to_string(),
+		ActionPayload::U32I32 => " { arg: u32, value: i32 }".to_string(),
 	}
 }
 
@@ -181,9 +188,15 @@ fn decode_arm(action: &ActionDef) -> String {
 		EventKind::TextChanged => format!(
 			"\t\twgui::ClientEvent::OnTextChanged(ev) if ev.id == {id} => Some(Action::{variant} {{ value: ev.value.clone() }}),\n"
 		),
-		EventKind::SliderChange => format!(
-			"\t\twgui::ClientEvent::OnSliderChange(ev) if ev.id == {id} => Some(Action::{variant} {{ value: ev.value }}),\n"
-		),
+		EventKind::SliderChange => match action.payload {
+			ActionPayload::I32 => format!(
+				"\t\twgui::ClientEvent::OnSliderChange(ev) if ev.id == {id} => Some(Action::{variant} {{ value: ev.value }}),\n"
+			),
+			ActionPayload::U32I32 => format!(
+				"\t\twgui::ClientEvent::OnSliderChange(ev) if ev.id == {id} => ev.inx.map(|arg| Action::{variant} {{ arg, value: ev.value }}),\n"
+			),
+			_ => String::new(),
+		},
 		EventKind::Select => format!(
 			"\t\twgui::ClientEvent::OnSelect(ev) if ev.id == {id} => Some(Action::{variant} {{ value: ev.value.clone() }}),\n"
 		),

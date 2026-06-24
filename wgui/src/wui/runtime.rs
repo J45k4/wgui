@@ -247,10 +247,23 @@ pub trait Component: Send + Sync + 'static {
 
 #[derive(Debug, Clone)]
 pub enum RuntimeAction {
-	Click { name: String, arg: Option<u32> },
-	TextChanged { name: String, value: String },
-	SliderChange { name: String, value: i32 },
-	Select { name: String, value: String },
+	Click {
+		name: String,
+		arg: Option<u32>,
+	},
+	TextChanged {
+		name: String,
+		value: String,
+	},
+	SliderChange {
+		name: String,
+		arg: Option<u32>,
+		value: i32,
+	},
+	Select {
+		name: String,
+		value: String,
+	},
 }
 
 #[derive(Debug, Clone)]
@@ -581,10 +594,19 @@ fn decode_action(action: &ActionDef, event: &crate::types::ClientEvent) -> Optio
 		},
 		EventKind::SliderChange => match event {
 			crate::types::ClientEvent::OnSliderChange(ev) if ev.id == action.id => {
-				Some(RuntimeAction::SliderChange {
-					name: action.name.clone(),
-					value: ev.value,
-				})
+				match action.payload {
+					ActionPayload::I32 => Some(RuntimeAction::SliderChange {
+						name: action.name.clone(),
+						arg: None,
+						value: ev.value,
+					}),
+					ActionPayload::U32I32 => ev.inx.map(|arg| RuntimeAction::SliderChange {
+						name: action.name.clone(),
+						arg: Some(arg),
+						value: ev.value,
+					}),
+					_ => None,
+				}
 			}
 			_ => None,
 		},
@@ -691,6 +713,7 @@ fn render_widget(widget: &IrWidget, ctx: &mut EvalContext) -> Item {
 		"DatePicker" => gui::date_picker(),
 		"Checkbox" => gui::checkbox(),
 		"Slider" => gui::slider(),
+		"Custom" | "CustomComponent" => render_custom(widget, ctx),
 		"Image" => {
 			let (src, alt) = image_values(widget, ctx);
 			gui::img(&src, &alt)
@@ -716,6 +739,48 @@ fn render_widget(widget: &IrWidget, ctx: &mut EvalContext) -> Item {
 	}
 
 	base
+}
+
+fn render_custom(widget: &IrWidget, ctx: &mut EvalContext) -> Item {
+	let name = textual_value(widget, ctx, "name");
+	let entry = textual_value(widget, ctx, "entry");
+	let props = widget
+		.props
+		.iter()
+		.find_map(|prop| match prop {
+			IrProp::Value { name, expr } if name == "props" => {
+				Some(wui_value_to_json(&eval_expr(expr, ctx)))
+			}
+			IrProp::Literal { name, value } if name == "props" => {
+				Some(serde_json::Value::String(value.clone()))
+			}
+			IrProp::Number { name, value } if name == "props" => Some(serde_json::json!(*value)),
+			IrProp::Bool { name, value } if name == "props" => Some(serde_json::json!(*value)),
+			_ => None,
+		})
+		.unwrap_or_else(|| serde_json::json!({}));
+
+	gui::custom_component(name, entry, props)
+}
+
+fn wui_value_to_json(value: &WuiValue) -> serde_json::Value {
+	match value {
+		WuiValue::String(value) => serde_json::Value::String(value.clone()),
+		WuiValue::Number(value) => serde_json::Number::from_f64(*value)
+			.map(serde_json::Value::Number)
+			.unwrap_or(serde_json::Value::Null),
+		WuiValue::Bool(value) => serde_json::Value::Bool(*value),
+		WuiValue::Null => serde_json::Value::Null,
+		WuiValue::List(values) => {
+			serde_json::Value::Array(values.iter().map(wui_value_to_json).collect())
+		}
+		WuiValue::Object(values) => serde_json::Value::Object(
+			values
+				.iter()
+				.map(|(key, value)| (key.clone(), wui_value_to_json(value)))
+				.collect(),
+		),
+	}
 }
 
 fn render_component(widget: &IrWidget, ctx: &mut EvalContext) -> Vec<Item> {
