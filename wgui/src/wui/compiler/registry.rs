@@ -85,6 +85,38 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 					name: "arg",
 					kind: PropKind::Value(ValueType::Number),
 				},
+				PropSchema {
+					name: "backgroundColor",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "border",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "color",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "width",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "height",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "padding",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "paddingLeft",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "paddingRight",
+					kind: PropKind::Value(ValueType::Number),
+				},
 			],
 		}),
 		"Link" => Some(TagSchema {
@@ -130,6 +162,26 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 				PropSchema {
 					name: "fill",
 					kind: PropKind::Value(ValueType::Bool),
+				},
+				PropSchema {
+					name: "backgroundColor",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "border",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "color",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "height",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "padding",
+					kind: PropKind::Value(ValueType::Number),
 				},
 			],
 		}),
