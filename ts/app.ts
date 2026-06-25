@@ -134,9 +134,16 @@ const bodyPathItem = (body: HTMLBodyElement, path: number[]): Element | undefine
 
 const renderBodyRoot = (body: HTMLBodyElement, item: Item, ctx: Context) => {
     const current = bodyAppRoot(body)
-    const rendered = renderItem(item, ctx, current)
+    const rendered = renderItem(item, ctx)
 
-    if (!current && rendered) {
+    if (!rendered) {
+        return
+    }
+
+    if (current) {
+        disposeCustomComponentTree(current)
+        current.replaceWith(rendered)
+    } else {
         body.appendChild(rendered)
     }
 }

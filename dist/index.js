@@ -2808,8 +2808,14 @@ var bodyPathItem = (body, path) => {
 };
 var renderBodyRoot = (body, item, ctx) => {
   const current = bodyAppRoot(body);
-  const rendered = renderItem(item, ctx, current);
-  if (!current && rendered) {
+  const rendered = renderItem(item, ctx);
+  if (!rendered) {
+    return;
+  }
+  if (current) {
+    disposeCustomComponentTree(current);
+    current.replaceWith(rendered);
+  } else {
     body.appendChild(rendered);
   }
 };
