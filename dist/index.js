@@ -1574,6 +1574,23 @@ var renderPayload = (item, ctx, old) => {
       slider.value = payload.value.toString();
     }
     if (item.id) {
+      let sliderFlushTimeout = 0;
+      const flushSliderChange = () => {
+        if (sliderFlushTimeout) {
+          return;
+        }
+        sliderFlushTimeout = setTimeout(() => {
+          sliderFlushTimeout = 0;
+          ctx.sender.sendNow();
+        }, 50);
+      };
+      const flushSliderChangeNow = () => {
+        if (sliderFlushTimeout) {
+          clearTimeout(sliderFlushTimeout);
+          sliderFlushTimeout = 0;
+        }
+        ctx.sender.sendNow();
+      };
       const sendSliderChange = (value) => {
         ctx.sender.send({
           type: "onSliderChange",
@@ -1584,10 +1601,11 @@ var renderPayload = (item, ctx, old) => {
       };
       slider.oninput = (e) => {
         sendSliderChange(parseInt(e.target.value));
+        flushSliderChange();
       };
       slider.onchange = (e) => {
         sendSliderChange(parseInt(e.target.value));
-        ctx.sender.sendNow();
+        flushSliderChangeNow();
       };
     }
     return slider;

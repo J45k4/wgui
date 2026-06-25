@@ -454,6 +454,23 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			slider.value = payload.value.toString()
 		}
 		if (item.id) {
+			let sliderFlushTimeout = 0
+			const flushSliderChange = () => {
+				if (sliderFlushTimeout) {
+					return
+				}
+				sliderFlushTimeout = setTimeout(() => {
+					sliderFlushTimeout = 0
+					ctx.sender.sendNow()
+				}, 50)
+			}
+			const flushSliderChangeNow = () => {
+				if (sliderFlushTimeout) {
+					clearTimeout(sliderFlushTimeout)
+					sliderFlushTimeout = 0
+				}
+				ctx.sender.sendNow()
+			}
 			const sendSliderChange = (value: number) => {
 				ctx.sender.send({
 					type: "onSliderChange",
@@ -464,10 +481,11 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			}
 			slider.oninput = (e: any) => {
 				sendSliderChange(parseInt(e.target.value))
+				flushSliderChange()
 			}
 			slider.onchange = (e: any) => {
 				sendSliderChange(parseInt(e.target.value))
-				ctx.sender.sendNow()
+				flushSliderChangeNow()
 			}
 		}
 		return slider
