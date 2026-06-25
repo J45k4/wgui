@@ -198,6 +198,19 @@ impl WguiHandle {
 		sender.send(Command::Render(item)).unwrap();
 	}
 
+	pub async fn replace_root(&self, client_id: usize, item: Item) {
+		log::debug!("replace root {:?}", item);
+		let clients = self.clients.read().await;
+		let sender = match clients.get(&client_id) {
+			Some(sender) => sender,
+			None => {
+				println!("client not found");
+				return;
+			}
+		};
+		sender.send(Command::ReplaceRoot(item)).unwrap();
+	}
+
 	pub async fn set_title(&self, client_id: usize, title: &str) {
 		let clients = self.clients.read().await;
 		let sender = match clients.get(&client_id) {
@@ -858,6 +871,7 @@ where
 	pub async fn run(&mut self) {
 		let handle = self.handle();
 		let mut routes: HashMap<usize, RouteContext> = HashMap::new();
+		let mut selected_pages: HashMap<usize, Option<usize>> = HashMap::new();
 		let mut rtc_rooms: HashMap<String, BTreeSet<usize>> = HashMap::new();
 		let mut rtc_client_rooms: HashMap<usize, BTreeSet<String>> = HashMap::new();
 		let mut rtc_room_names: HashMap<String, HashMap<usize, String>> = HashMap::new();
@@ -867,6 +881,8 @@ where
 			match &message.event {
 				ClientEvent::Connected { id: _ } => {}
 				ClientEvent::Disconnected { id: _ } => {
+					selected_pages.remove(&client_id);
+					routes.remove(&client_id);
 					if let Some(rooms) = rtc_client_rooms.remove(&client_id) {
 						for room in rooms {
 							let mut room_peers = Vec::new();
@@ -1071,6 +1087,9 @@ where
 					let session = handle.session_for_client(client_id).await;
 					let selected_page =
 						best_route_index(&self.pages, &change.path, |page| &page.pattern);
+					let selected_page_changed =
+						selected_pages.get(&client_id).copied().flatten() != selected_page;
+					selected_pages.insert(client_id, selected_page);
 					let active_route = if let Some(index) = selected_page {
 						page_route_context(&self.pages[index].pattern, &change.path, &change.query)
 							.unwrap_or_else(|| component_route_context(&change.path, &change.query))
@@ -1098,7 +1117,11 @@ where
 								if let Some(title) = title {
 									handle.set_title(client_id, &title).await;
 								}
-								handle.render(client_id, item).await;
+								if selected_page_changed {
+									handle.replace_root(client_id, item).await;
+								} else {
+									handle.render(client_id, item).await;
+								}
 								page.controllers.insert(client_id, controller);
 							}
 							PageMount::Redirect(url) => {

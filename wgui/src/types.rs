@@ -309,6 +309,7 @@ pub enum ServerEvent {
 #[derive(Debug, Clone)]
 pub enum Command {
 	Render(Item),
+	ReplaceRoot(Item),
 	SetTitle(String),
 	PushState(String),
 	Navigate(String),

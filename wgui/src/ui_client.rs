@@ -129,6 +129,15 @@ where
 				let str = serde_json::to_string(&changes).unwrap();
 				self.ws.send(WsMessage::Text(str)).await?;
 			}
+			Command::ReplaceRoot(root) => {
+				self.last_root = Some(root.clone());
+				let changes = vec![ClientAction::Replace(Replace {
+					path: vec![],
+					item: root,
+				})];
+				let str = serde_json::to_string(&changes).unwrap();
+				self.ws.send(WsMessage::Text(str)).await?;
+			}
 			Command::SetTitle(title) => {
 				let changes = vec![ClientAction::SetTitle { title }];
 				let str = serde_json::to_string(&changes).unwrap();

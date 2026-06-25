@@ -4,6 +4,7 @@ use crate::gui::Item;
 use crate::gui::ItemPayload;
 use crate::gui::ThreeNode;
 use crate::gui::ThreePropValue;
+use crate::types::AddBack;
 use crate::types::AddFront;
 use crate::types::ClientAction;
 use crate::types::InsertAt;
@@ -106,7 +107,10 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 					EditOperation::InsertBack(item) => {
 						log::trace!("{:?} insert back", path);
 
-						todo!();
+						changes.push(ClientAction::AddBack(AddBack {
+							path: path.clone(),
+							item,
+						}));
 					}
 				}
 			}
