@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Command as ProcessCommand, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -16,6 +17,7 @@ use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 use wgui::wui::compiler::ir::{ActionPayload, EventKind};
 use wgui::{schema_diff::diff_schemas, wdb};
+use wgui::{ClientAction, Item, ItemPayload, PropKey, SetProp, Value};
 
 #[cfg(feature = "sqlite")]
 use wgui::{schema_diff_sql_from_schema_file, write_schema_migration_from_schema_file};
@@ -72,6 +74,7 @@ enum ControllersCommand {
 enum SessionCommand {
 	Start(SessionStartArgs),
 	Call(SessionCallArgs),
+	Inspect(SessionInspectArgs),
 	Stop(SessionStopArgs),
 	List,
 	#[command(hide = true)]
@@ -202,6 +205,13 @@ struct SessionCallArgs {
 }
 
 #[derive(Args, Debug)]
+struct SessionInspectArgs {
+	name: String,
+	#[arg(long)]
+	json: bool,
+}
+
+#[derive(Args, Debug)]
 struct SessionStopArgs {
 	name: String,
 }
@@ -273,6 +283,7 @@ fn run_session(command: SessionCommand) -> Result<(), String> {
 	match command {
 		SessionCommand::Start(args) => start_session(args),
 		SessionCommand::Call(args) => call_session(args),
+		SessionCommand::Inspect(args) => inspect_session(args),
 		SessionCommand::Stop(args) => stop_session(args),
 		SessionCommand::List => list_sessions(),
 		SessionCommand::Daemon(args) => run_session_daemon(args),
@@ -443,6 +454,7 @@ struct SessionRecord {
 #[serde(tag = "type", rename_all = "camelCase")]
 enum SessionDaemonRequest {
 	Status,
+	Inspect,
 	Call {
 		action: String,
 		route: Option<String>,
@@ -457,6 +469,17 @@ enum SessionDaemonRequest {
 struct SessionDaemonResponse {
 	ok: bool,
 	message: String,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+struct SessionSnapshot {
+	root: Option<Item>,
+	title: Option<String>,
+	url: Option<String>,
+	messages_received: u64,
+	last_actions: Vec<ClientAction>,
 }
 
 fn start_session(args: SessionStartArgs) -> Result<(), String> {
@@ -562,6 +585,30 @@ fn call_session(args: SessionCallArgs) -> Result<(), String> {
 	}
 }
 
+fn inspect_session(args: SessionInspectArgs) -> Result<(), String> {
+	let response = session_request(&args.name, &SessionDaemonRequest::Inspect)?;
+	if !response.ok {
+		return Err(response.message);
+	}
+	let data = response
+		.data
+		.ok_or_else(|| "session did not return inspect data".to_string())?;
+	if args.json {
+		println!(
+			"{}",
+			serde_json::to_string(&data)
+				.map_err(|e| format!("failed serializing inspect data: {e}"))?
+		);
+	} else {
+		println!(
+			"{}",
+			serde_json::to_string_pretty(&data)
+				.map_err(|e| format!("failed serializing inspect data: {e}"))?
+		);
+	}
+	Ok(())
+}
+
 fn stop_session(args: SessionStopArgs) -> Result<(), String> {
 	let response = session_request(&args.name, &SessionDaemonRequest::Stop)?;
 	if response.ok {
@@ -631,7 +678,20 @@ async fn run_session_daemon_async(args: SessionDaemonArgs) -> Result<(), String>
 		.await
 		.map_err(|e| format!("failed connecting to {ws_url}: {e}"))?;
 	let (mut ws_write, mut ws_read) = ws.split();
-	tokio::spawn(async move { while ws_read.next().await.is_some() {} });
+	let snapshot = Arc::new(Mutex::new(SessionSnapshot::default()));
+	let reader_snapshot = snapshot.clone();
+	tokio::spawn(async move {
+		while let Some(message) = ws_read.next().await {
+			let Ok(message) = message else {
+				continue;
+			};
+			if let Message::Text(text) = message {
+				if let Ok(actions) = serde_json::from_str::<Vec<ClientAction>>(&text) {
+					update_session_snapshot(&reader_snapshot, actions);
+				}
+			}
+		}
+	});
 	ws_write
 		.send(Message::Text(websocket_messages_body(&args.route, None)?))
 		.await
@@ -676,6 +736,14 @@ async fn run_session_daemon_async(args: SessionDaemonArgs) -> Result<(), String>
 		match request {
 			SessionDaemonRequest::Status => {
 				write_daemon_response(&mut stream, true, "running").await?;
+			}
+			SessionDaemonRequest::Inspect => {
+				let data = {
+					let snapshot = snapshot.lock().unwrap().clone();
+					serde_json::to_value(snapshot)
+						.map_err(|e| format!("failed serializing session snapshot: {e}"))?
+				};
+				write_daemon_response_data(&mut stream, true, "ok", Some(data)).await?;
 			}
 			SessionDaemonRequest::Call {
 				action,
@@ -759,9 +827,19 @@ async fn write_daemon_response(
 	ok: bool,
 	message: &str,
 ) -> Result<(), String> {
+	write_daemon_response_data(stream, ok, message, None).await
+}
+
+async fn write_daemon_response_data(
+	stream: &mut tokio::net::UnixStream,
+	ok: bool,
+	message: &str,
+	data: Option<serde_json::Value>,
+) -> Result<(), String> {
 	let response = SessionDaemonResponse {
 		ok,
 		message: message.to_string(),
+		data,
 	};
 	let raw = serde_json::to_vec(&response)
 		.map_err(|e| format!("failed serializing daemon response: {e}"))?;
@@ -769,6 +847,170 @@ async fn write_daemon_response(
 		.write_all(&raw)
 		.await
 		.map_err(|e| format!("failed writing daemon response: {e}"))
+}
+
+fn update_session_snapshot(snapshot: &Arc<Mutex<SessionSnapshot>>, actions: Vec<ClientAction>) {
+	let mut snapshot = snapshot.lock().unwrap();
+	snapshot.messages_received += 1;
+	snapshot.last_actions = actions.clone();
+	for action in actions {
+		apply_client_action(&mut snapshot, action);
+	}
+}
+
+fn apply_client_action(snapshot: &mut SessionSnapshot, action: ClientAction) {
+	match action {
+		ClientAction::Replace(replace) => {
+			if replace.path.is_empty() {
+				snapshot.root = Some(replace.item);
+			} else if let Some(root) = snapshot.root.as_mut() {
+				if let Some(slot) = item_at_path_mut(root, &replace.path) {
+					*slot = replace.item;
+				}
+			}
+		}
+		ClientAction::AddBack(add) => {
+			if let Some(parent) = snapshot
+				.root
+				.as_mut()
+				.and_then(|root| item_at_path_mut(root, &add.path))
+				.and_then(item_children_mut)
+			{
+				parent.push(add.item);
+			}
+		}
+		ClientAction::AddFront(add) => {
+			if let Some(parent) = snapshot
+				.root
+				.as_mut()
+				.and_then(|root| item_at_path_mut(root, &add.path))
+				.and_then(item_children_mut)
+			{
+				parent.insert(0, add.item);
+			}
+		}
+		ClientAction::InsertAt(insert) => {
+			if let Some(parent) = snapshot
+				.root
+				.as_mut()
+				.and_then(|root| item_at_path_mut(root, &insert.path))
+				.and_then(item_children_mut)
+			{
+				let index = (insert.inx + 1).min(parent.len());
+				parent.insert(index, insert.item);
+			}
+		}
+		ClientAction::ReplaceAt(replace) => {
+			if let Some(parent) = snapshot
+				.root
+				.as_mut()
+				.and_then(|root| item_at_path_mut(root, &replace.path))
+				.and_then(item_children_mut)
+			{
+				if let Some(slot) = parent.get_mut(replace.inx) {
+					*slot = replace.item;
+				}
+			}
+		}
+		ClientAction::RemoveInx(remove) => {
+			if let Some(parent) = snapshot
+				.root
+				.as_mut()
+				.and_then(|root| item_at_path_mut(root, &remove.path))
+				.and_then(item_children_mut)
+			{
+				if remove.inx < parent.len() {
+					parent.remove(remove.inx);
+				}
+			}
+		}
+		ClientAction::SetProp { path, sets } => {
+			if let Some(item) = snapshot
+				.root
+				.as_mut()
+				.and_then(|root| item_at_path_mut(root, &path))
+			{
+				for set in sets {
+					apply_set_prop(item, set);
+				}
+			}
+		}
+		ClientAction::SetTitle { title } => {
+			snapshot.title = Some(title);
+		}
+		ClientAction::PushState(push) => {
+			snapshot.url = Some(push.url);
+		}
+		ClientAction::Navigate(navigate) => {
+			snapshot.url = Some(navigate.url);
+		}
+		ClientAction::ReplaceState(replace) => {
+			snapshot.url = Some(replace.url);
+		}
+		ClientAction::SetQuery(_)
+		| ClientAction::ThreePatch { .. }
+		| ClientAction::WebRtcRoomState { .. }
+		| ClientAction::WebRtcSignal { .. }
+		| ClientAction::WebPushEnable { .. }
+		| ClientAction::WebPushDisable { .. } => {}
+	}
+}
+
+fn item_at_path_mut<'a>(item: &'a mut Item, path: &[usize]) -> Option<&'a mut Item> {
+	if path.is_empty() {
+		return Some(item);
+	}
+	let (first, rest) = path.split_first()?;
+	let children = item_children_mut(item)?;
+	let child = children.get_mut(*first)?;
+	item_at_path_mut(child, rest)
+}
+
+fn item_children_mut(item: &mut Item) -> Option<&mut Vec<Item>> {
+	match &mut item.payload {
+		ItemPayload::Layout(layout) => Some(&mut layout.body),
+		ItemPayload::Table { items }
+		| ItemPayload::Thead { items }
+		| ItemPayload::Tbody { items }
+		| ItemPayload::Tr { items } => Some(items),
+		ItemPayload::Modal { body, .. } => Some(body),
+		_ => None,
+	}
+}
+
+fn apply_set_prop(item: &mut Item, set: SetProp) {
+	match (set.key, set.value) {
+		(PropKey::ID, Value::Number(value)) => item.id = value,
+		(PropKey::Border, Value::String(value)) => item.border = value,
+		(PropKey::BackgroundColor, Value::String(value)) => item.background_color = value,
+		(PropKey::Color, Value::String(value)) => item.color = value,
+		(PropKey::Spacing, Value::Number(value)) => {
+			if let ItemPayload::Layout(layout) = &mut item.payload {
+				layout.spacing = value;
+			}
+		}
+		(PropKey::FlexDirection, Value::String(value)) => {
+			if let ItemPayload::Layout(layout) = &mut item.payload {
+				layout.flex = if value == "row" {
+					wgui::FlexDirection::Row
+				} else {
+					wgui::FlexDirection::Column
+				};
+			}
+		}
+		(PropKey::Grow, Value::Number(value)) => item.grow = value,
+		(PropKey::Width, Value::Number(value)) => item.width = value,
+		(PropKey::Height, Value::Number(value)) => item.height = value,
+		(PropKey::MinWidth, Value::Number(value)) => item.min_width = value,
+		(PropKey::MaxWidth, Value::Number(value)) => item.max_width = value,
+		(PropKey::MinHeight, Value::Number(value)) => item.min_height = value,
+		(PropKey::MaxHeight, Value::Number(value)) => item.max_height = value,
+		(PropKey::Padding, Value::Number(value)) => item.padding = value as u16,
+		(PropKey::Overflow, Value::String(value)) => item.overflow = value,
+		(PropKey::BreakWords, Value::Number(value)) => item.break_words = value != 0,
+		(PropKey::Fill, Value::Number(value)) => item.fill = value != 0,
+		_ => {}
+	}
 }
 
 fn session_request(
