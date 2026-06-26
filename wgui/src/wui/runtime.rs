@@ -9,6 +9,7 @@ pub use async_trait::async_trait;
 use std::collections::HashMap;
 use std::fs;
 use std::future::Future;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -427,6 +428,50 @@ impl Template {
 		base_dir: Option<&Path>,
 	) -> Result<Self, Vec<Diagnostic>> {
 		let resolved = imports::resolve(source, module_name, base_dir)?;
+		Self::from_resolved(resolved, module_name)
+	}
+
+	pub fn parse_with_loader<F>(
+		source: &str,
+		module_name: &str,
+		base_dir: Option<&Path>,
+		loader: F,
+	) -> Result<Self, Vec<Diagnostic>>
+	where
+		F: FnMut(&Path) -> io::Result<String>,
+	{
+		let resolved = imports::resolve_with_loader(source, module_name, base_dir, loader)?;
+		Self::from_resolved(resolved, module_name)
+	}
+
+	pub fn parse_with_sources(
+		source: &str,
+		module_name: &str,
+		base_dir: Option<&Path>,
+		sources: &[(&str, &str)],
+	) -> Result<Self, Vec<Diagnostic>> {
+		let sources = sources
+			.iter()
+			.map(|(path, source)| (normalize_embedded_path(Path::new(path)), *source))
+			.collect::<HashMap<_, _>>();
+		Self::parse_with_loader(source, module_name, base_dir, move |path| {
+			let path = normalize_embedded_path(path);
+			sources
+				.get(&path)
+				.map(|source| (*source).to_string())
+				.ok_or_else(|| {
+					io::Error::new(
+						io::ErrorKind::NotFound,
+						format!("embedded WUI source {} not found", path.display()),
+					)
+				})
+		})
+	}
+
+	fn from_resolved(
+		resolved: crate::wui::imports::ImportResult,
+		module_name: &str,
+	) -> Result<Self, Vec<Diagnostic>> {
 		let mut diags = Vec::new();
 		let validated = crate::wui::compiler::validate::validate(
 			&resolved.nodes,
@@ -512,6 +557,20 @@ fn file_mtime(path: &Path) -> SystemTime {
 	fs::metadata(path)
 		.and_then(|meta| meta.modified())
 		.unwrap_or(SystemTime::UNIX_EPOCH)
+}
+
+fn normalize_embedded_path(path: &Path) -> PathBuf {
+	let mut out = PathBuf::new();
+	for component in path.components() {
+		match component {
+			std::path::Component::CurDir => {}
+			std::path::Component::ParentDir => {
+				out.pop();
+			}
+			_ => out.push(component.as_os_str()),
+		}
+	}
+	out
 }
 
 impl WuiValue {
@@ -1315,6 +1374,41 @@ mod tests {
 
 		assert!(rendered.fill);
 		assert_eq!(values, vec!["Peers".to_string(), "Body".to_string()]);
+	}
+
+	#[test]
+	fn embedded_sources_resolve_imports_without_filesystem_templates() {
+		let root = "/embedded/pages/home.wui";
+		let root_source = r#"
+			<Import name="AppLayout" from="../layouts/app" />
+			<AppLayout title="Home">
+				<Text value="Body" />
+			</AppLayout>
+			"#;
+		let template = Template::parse_with_sources(
+			root_source,
+			"pages/home",
+			Path::new(root).parent(),
+			&[
+				(root, root_source),
+				(
+					"/embedded/layouts/app.wui",
+					r#"
+					<VStack fill=true>
+						<Text value={title} />
+						<Children />
+					</VStack>
+					"#,
+				),
+			],
+		)
+		.expect("parse embedded template");
+		let rendered = template.render(&WuiValue::Null);
+		let mut values = Vec::new();
+		text_values(&rendered, &mut values);
+
+		assert!(rendered.fill);
+		assert_eq!(values, vec!["Home".to_string(), "Body".to_string()]);
 	}
 
 	#[test]

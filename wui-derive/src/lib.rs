@@ -1,5 +1,6 @@
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
+use std::path::{Path, PathBuf};
 use syn::{
 	parse::{Parse, ParseStream},
 	parse_macro_input, Data, DeriveInput, Fields, FnArg, ImplItem, ItemImpl, LitStr, ReturnType,
@@ -132,6 +133,15 @@ pub fn wgui_controller(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[derive(Default)]
 struct WguiControllerArgs {
 	template: Option<String>,
+	mode: TemplateMode,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum TemplateMode {
+	#[default]
+	Auto,
+	Runtime,
+	Compiled,
 }
 
 impl Parse for WguiControllerArgs {
@@ -143,6 +153,19 @@ impl Parse for WguiControllerArgs {
 			if ident == "template" {
 				let value: LitStr = input.parse()?;
 				args.template = Some(value.value());
+			} else if ident == "mode" {
+				let value: LitStr = input.parse()?;
+				args.mode = match value.value().as_str() {
+					"runtime" => TemplateMode::Runtime,
+					"compiled" => TemplateMode::Compiled,
+					"auto" => TemplateMode::Auto,
+					other => {
+						return Err(syn::Error::new_spanned(
+							value,
+							format!("unsupported wgui_controller mode {other:?}"),
+						))
+					}
+				};
 			} else {
 				return Err(syn::Error::new_spanned(
 					ident,
@@ -341,7 +364,7 @@ fn expand_wgui_controller(
 		name
 	};
 
-	let explicit_template = if let Some(template) = args.template {
+	let explicit_template = if let Some(template) = args.template.as_ref() {
 		quote! { ::std::option::Option::Some(#template.to_string()) }
 	} else {
 		quote! { ::std::option::Option::None }
@@ -349,6 +372,13 @@ fn expand_wgui_controller(
 	let template_fn = format_ident!("__wgui_template_for_{}", controller_ident);
 	let action_fn = format_ident!("__wgui_action_name_for_{}", controller_ident);
 	let module_name_fn = format_ident!("__wgui_module_name_for_{}", controller_ident);
+	let template_impl = template_impl_tokens(
+		&args,
+		&controller_ident.to_string(),
+		&module_name,
+		&module_name_fn,
+		&template_fn,
+	)?;
 	let title_impl = title_method.map(|(ident, return_type)| match return_type {
 		TitleReturn::String => quote! {
 			fn title(&self) -> ::std::option::Option<::std::string::String> {
@@ -527,28 +557,7 @@ fn expand_wgui_controller(
 			unique
 		}
 
-	#[allow(non_snake_case)]
-	fn #template_fn() -> &'static ::wgui::wui::runtime::Template {
-		static TEMPLATE: ::std::sync::OnceLock<::wgui::wui::runtime::Template> = ::std::sync::OnceLock::new();
-		TEMPLATE.get_or_init(|| {
-			let base_dir = ::std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/wui"));
-			let candidates = #module_name_fn();
-			let mut read_errors = ::std::vec::Vec::new();
-			for module_name in candidates {
-				let source_path = base_dir.join(format!("{}.wui", module_name));
-				let source = match ::std::fs::read_to_string(&source_path) {
-					::std::result::Result::Ok(source) => source,
-					::std::result::Result::Err(err) => {
-						read_errors.push(format!("{}: {}", source_path.display(), err));
-						continue;
-					}
-				};
-				return ::wgui::wui::runtime::Template::parse_with_dir(&source, &module_name, source_path.parent())
-					.unwrap_or_else(|diags| panic!("failed to parse wui template {}: {:?}", module_name, diags));
-			}
-			panic!("failed to read wui template; tried {}", read_errors.join(", "))
-		})
-	}
+	#template_impl
 
 	#[allow(non_snake_case)]
 	fn #action_fn(name: &str) -> ::std::string::String {
@@ -647,6 +656,297 @@ fn expand_wgui_controller(
 	};
 
 	Ok(output.into())
+}
+
+fn template_impl_tokens(
+	args: &WguiControllerArgs,
+	controller_name: &str,
+	fallback_module_name: &str,
+	module_name_fn: &proc_macro2::Ident,
+	template_fn: &proc_macro2::Ident,
+) -> syn::Result<proc_macro2::TokenStream> {
+	let runtime_impl = runtime_template_impl(module_name_fn, template_fn, None);
+	match args.mode {
+		TemplateMode::Runtime => Ok(runtime_impl),
+		TemplateMode::Compiled => compiled_template_impl(
+			args,
+			controller_name,
+			fallback_module_name,
+			template_fn,
+			None,
+		),
+		TemplateMode::Auto => {
+			let runtime_impl = runtime_template_impl(
+				module_name_fn,
+				template_fn,
+				Some(quote! { #[cfg(debug_assertions)] }),
+			);
+			let compiled_impl = compiled_template_impl(
+				args,
+				controller_name,
+				fallback_module_name,
+				template_fn,
+				Some(quote! { #[cfg(not(debug_assertions))] }),
+			)?;
+			Ok(quote! {
+				#runtime_impl
+				#compiled_impl
+			})
+		}
+	}
+}
+
+fn runtime_template_impl(
+	module_name_fn: &proc_macro2::Ident,
+	template_fn: &proc_macro2::Ident,
+	cfg_attr: Option<proc_macro2::TokenStream>,
+) -> proc_macro2::TokenStream {
+	let cfg_attr = cfg_attr.unwrap_or_default();
+	quote! {
+		#cfg_attr
+		#[allow(non_snake_case)]
+		fn #template_fn() -> &'static ::wgui::wui::runtime::Template {
+			static TEMPLATE: ::std::sync::OnceLock<::wgui::wui::runtime::Template> = ::std::sync::OnceLock::new();
+			TEMPLATE.get_or_init(|| {
+				let base_dir = ::std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/wui"));
+				let candidates = #module_name_fn();
+				let mut read_errors = ::std::vec::Vec::new();
+				for module_name in candidates {
+					let source_path = base_dir.join(format!("{}.wui", module_name));
+					let source = match ::std::fs::read_to_string(&source_path) {
+						::std::result::Result::Ok(source) => source,
+						::std::result::Result::Err(err) => {
+							read_errors.push(format!("{}: {}", source_path.display(), err));
+							continue;
+						}
+					};
+					return ::wgui::wui::runtime::Template::parse_with_dir(&source, &module_name, source_path.parent())
+						.unwrap_or_else(|diags| panic!("failed to parse wui template {}: {:?}", module_name, diags));
+				}
+				panic!("failed to read wui template; tried {}", read_errors.join(", "))
+			})
+		}
+	}
+}
+
+fn compiled_template_impl(
+	args: &WguiControllerArgs,
+	controller_name: &str,
+	fallback_module_name: &str,
+	template_fn: &proc_macro2::Ident,
+	cfg_attr: Option<proc_macro2::TokenStream>,
+) -> syn::Result<proc_macro2::TokenStream> {
+	let compiled = read_compiled_template(args, controller_name, fallback_module_name)?;
+	let cfg_attr = cfg_attr.unwrap_or_default();
+	let module_name = compiled.module_name;
+	let root_path = compiled.root_path;
+	let root_source = compiled.root_source;
+	let sources = compiled.sources.iter().map(|(path, source)| {
+		quote! { (#path, #source) }
+	});
+	Ok(quote! {
+		#cfg_attr
+		#[allow(non_snake_case)]
+		fn #template_fn() -> &'static ::wgui::wui::runtime::Template {
+			static TEMPLATE: ::std::sync::OnceLock<::wgui::wui::runtime::Template> = ::std::sync::OnceLock::new();
+			TEMPLATE.get_or_init(|| {
+				const SOURCES: &[(&str, &str)] = &[
+					#(#sources),*
+				];
+				let source_path = ::std::path::Path::new(#root_path);
+				::wgui::wui::runtime::Template::parse_with_sources(
+					#root_source,
+					#module_name,
+					source_path.parent(),
+					SOURCES,
+				)
+				.unwrap_or_else(|diags| panic!("failed to parse compiled wui template {}: {:?}", #module_name, diags))
+			})
+		}
+	})
+}
+
+struct CompiledTemplate {
+	module_name: String,
+	root_path: String,
+	root_source: String,
+	sources: Vec<(String, String)>,
+}
+
+fn read_compiled_template(
+	args: &WguiControllerArgs,
+	controller_name: &str,
+	fallback_module_name: &str,
+) -> syn::Result<CompiledTemplate> {
+	let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+		.map(PathBuf::from)
+		.map_err(|err| syn::Error::new(proc_macro2::Span::call_site(), err))?;
+	let base_dir = manifest_dir.join("wui");
+	let candidates = template_candidates(
+		args.template.as_deref(),
+		&base_dir,
+		controller_name,
+		fallback_module_name,
+	);
+	let mut read_errors = Vec::new();
+	for module_name in candidates {
+		let source_path = base_dir.join(format!("{module_name}.wui"));
+		let source = match std::fs::read_to_string(&source_path) {
+			Ok(source) => source,
+			Err(err) => {
+				read_errors.push(format!("{}: {}", source_path.display(), err));
+				continue;
+			}
+		};
+		let source_path = normalize_template_path(&source_path);
+		let generated =
+			wui_core::compiler::compile_with_dir(&source, &module_name, source_path.parent())
+				.map_err(|diags| template_diagnostics_error(&source_path, &diags))?;
+		let mut sources = vec![(source_path.display().to_string(), source.clone())];
+		for path in generated.source_files() {
+			let path = normalize_template_path(&path);
+			let import_source = std::fs::read_to_string(&path).map_err(|err| {
+				syn::Error::new(
+					proc_macro2::Span::call_site(),
+					format!("failed to read WUI import {}: {err}", path.display()),
+				)
+			})?;
+			sources.push((path.display().to_string(), import_source));
+		}
+		sources.sort_by(|a, b| a.0.cmp(&b.0));
+		sources.dedup_by(|a, b| a.0 == b.0);
+		return Ok(CompiledTemplate {
+			module_name,
+			root_path: source_path.display().to_string(),
+			root_source: source,
+			sources,
+		});
+	}
+	Err(syn::Error::new(
+		proc_macro2::Span::call_site(),
+		format!(
+			"failed to read wui template; tried {}",
+			read_errors.join(", ")
+		),
+	))
+}
+
+fn template_candidates(
+	explicit_template: Option<&str>,
+	base_dir: &Path,
+	controller_name: &str,
+	fallback_module_name: &str,
+) -> Vec<String> {
+	if let Some(template) = explicit_template {
+		return vec![template.to_string()];
+	}
+
+	let mut candidates = Vec::new();
+	let controller_derived = controller_template_name(controller_name);
+	if !controller_derived.is_empty() {
+		candidates.push(controller_derived.clone());
+		candidates.extend(wui_files_matching_stem(base_dir, &controller_derived));
+	}
+	candidates.push(fallback_module_name.to_string());
+	candidates.extend(wui_files_matching_stem(base_dir, fallback_module_name));
+
+	let mut unique = Vec::new();
+	for candidate in candidates {
+		if !unique.iter().any(|existing| existing == &candidate) {
+			unique.push(candidate);
+		}
+	}
+	unique
+}
+
+fn controller_template_name(controller_name: &str) -> String {
+	let stripped = controller_name
+		.strip_suffix("Controller")
+		.unwrap_or(controller_name);
+	to_snake_case(stripped)
+}
+
+fn wui_files_matching_stem(base_dir: &Path, stem: &str) -> Vec<String> {
+	let mut files = Vec::new();
+	collect_matching_wui_files(base_dir, base_dir, stem, &mut files);
+	files.sort();
+	files
+}
+
+fn collect_matching_wui_files(base_dir: &Path, dir: &Path, stem: &str, out: &mut Vec<String>) {
+	let Ok(entries) = std::fs::read_dir(dir) else {
+		return;
+	};
+	for entry in entries.flatten() {
+		let path = entry.path();
+		let Ok(file_type) = entry.file_type() else {
+			continue;
+		};
+		if file_type.is_dir() {
+			collect_matching_wui_files(base_dir, &path, stem, out);
+			continue;
+		}
+		if path.extension().and_then(|ext| ext.to_str()) != Some("wui") {
+			continue;
+		}
+		if path.file_stem().and_then(|value| value.to_str()) != Some(stem) {
+			continue;
+		}
+		if let Ok(relative) = path.strip_prefix(base_dir) {
+			let mut without_ext = relative.to_path_buf();
+			without_ext.set_extension("");
+			let candidate = without_ext
+				.components()
+				.filter_map(|component| match component {
+					std::path::Component::Normal(value) => value.to_str(),
+					_ => None,
+				})
+				.collect::<Vec<_>>()
+				.join("/");
+			if !candidate.is_empty() {
+				out.push(candidate);
+			}
+		}
+	}
+}
+
+fn normalize_template_path(path: &Path) -> PathBuf {
+	std::fs::canonicalize(path).unwrap_or_else(|_| {
+		let mut out = PathBuf::new();
+		for component in path.components() {
+			match component {
+				std::path::Component::CurDir => {}
+				std::path::Component::ParentDir => {
+					out.pop();
+				}
+				_ => out.push(component.as_os_str()),
+			}
+		}
+		out
+	})
+}
+
+fn template_diagnostics_error(
+	path: &Path,
+	diags: &[wui_core::diagnostic::Diagnostic],
+) -> syn::Error {
+	let details = diags
+		.iter()
+		.map(|diag| {
+			format!(
+				"{}:{}-{}: {}",
+				path.display(),
+				diag.span.start,
+				diag.span.end,
+				diag.message
+			)
+		})
+		.collect::<Vec<_>>()
+		.join("\n");
+	syn::Error::new(
+		proc_macro2::Span::call_site(),
+		format!("failed to compile WUI template:\n{details}"),
+	)
 }
 
 fn handler_arg_from_type(ty: &Type) -> Option<HandlerArg> {

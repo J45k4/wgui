@@ -110,16 +110,22 @@ For now, use explicit actions for edits:
 ```
 
 ## Rendering options
-## Rendering options
 
-There are two ways to use WUI today:
+There are three ways to use WUI today:
 
 1) Compile-time codegen
 - Use `wgui/src/bin/wui_gen.rs` or a build script that calls `wgui::wui::compiler::compile`.
 - Emits `*_gen.rs` modules with `render()` and `decode()` helpers.
 - Optionally generates a controller stub under `src/controllers/*_controller.rs` once (not overwritten).
 
-2) Runtime templates (hot reload)
+2) Controller macro
+- Use `#[wgui_controller]` on a controller impl that renders a WUI template.
+- `mode = "auto"` is the default: debug builds load `.wui` files from the app `wui/` directory, while release builds embed the validated WUI source graph into the binary and parse it from memory.
+- `mode = "runtime"` always reads templates from disk.
+- `mode = "compiled"` always embeds templates at macro expansion time.
+- `template = "path/inside/wui"` selects a specific template module without the `.wui` extension.
+
+3) Runtime templates (hot reload)
 - Use `wgui::wui::runtime::Template` to parse and render at runtime.
 
 ## Current limits

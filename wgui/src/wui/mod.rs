@@ -1,8 +1,2 @@
-pub mod ast;
-pub mod compiler;
-pub mod diagnostic;
-pub mod expr;
-pub mod imports;
-pub mod parser;
-pub mod routing;
+pub use wui_core::{ast, compiler, diagnostic, expr, imports, parser, routing};
 pub mod runtime;

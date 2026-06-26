@@ -1,11 +1,20 @@
-#[cfg(feature = "sqlite")]
 use std::collections::HashMap;
+use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::process::{Command as ProcessCommand, Stdio};
+use std::time::Duration;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use futures_util::{SinkExt, StreamExt};
 #[cfg(feature = "sqlite")]
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UnixListener;
+use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::Message;
+use wgui::wui::compiler::ir::{ActionPayload, EventKind};
 use wgui::{schema_diff::diff_schemas, wdb};
 
 #[cfg(feature = "sqlite")]
@@ -29,6 +38,14 @@ enum TopCommand {
 		#[command(subcommand)]
 		command: MigrateCommand,
 	},
+	Controllers {
+		#[command(subcommand)]
+		command: ControllersCommand,
+	},
+	Session {
+		#[command(subcommand)]
+		command: SessionCommand,
+	},
 	Generate(GenerateArgs),
 }
 
@@ -43,6 +60,22 @@ enum MigrationsCommand {
 #[derive(Subcommand, Debug)]
 enum MigrateCommand {
 	Dev(MigrateDevArgs),
+}
+
+#[derive(Subcommand, Debug)]
+enum ControllersCommand {
+	List(ControllersListArgs),
+	Call(ControllersCallArgs),
+}
+
+#[derive(Subcommand, Debug)]
+enum SessionCommand {
+	Start(SessionStartArgs),
+	Call(SessionCallArgs),
+	Stop(SessionStopArgs),
+	List,
+	#[command(hide = true)]
+	Daemon(SessionDaemonArgs),
 }
 
 #[derive(Args, Debug)]
@@ -105,6 +138,86 @@ struct GenerateArgs {
 	db_name: Option<String>,
 }
 
+#[derive(Args, Debug)]
+struct ControllersListArgs {
+	#[arg(default_value = ".")]
+	project_dir: PathBuf,
+	#[arg(long)]
+	json: bool,
+}
+
+#[derive(Args, Debug)]
+struct ControllersCallArgs {
+	action: String,
+	#[arg(default_value = ".")]
+	project_dir: PathBuf,
+	#[arg(long, default_value = "http://127.0.0.1:12345")]
+	url: String,
+	#[arg(long)]
+	route: Option<String>,
+	#[arg(long)]
+	session: Option<String>,
+	#[arg(long)]
+	kind: Option<ControllerEventKind>,
+	#[arg(long)]
+	arg: Option<u32>,
+	#[arg(long)]
+	value: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum ControllerEventKind {
+	Click,
+	TextChanged,
+	SliderChange,
+	Select,
+}
+
+#[derive(Args, Debug)]
+struct SessionStartArgs {
+	name: String,
+	#[arg(default_value = ".")]
+	project_dir: PathBuf,
+	#[arg(long, default_value = "http://127.0.0.1:12345")]
+	url: String,
+	#[arg(long, default_value = "/")]
+	route: String,
+	#[arg(long)]
+	session: Option<String>,
+}
+
+#[derive(Args, Debug)]
+struct SessionCallArgs {
+	name: String,
+	action: String,
+	#[arg(long)]
+	route: Option<String>,
+	#[arg(long)]
+	kind: Option<ControllerEventKind>,
+	#[arg(long)]
+	arg: Option<u32>,
+	#[arg(long)]
+	value: Option<String>,
+}
+
+#[derive(Args, Debug)]
+struct SessionStopArgs {
+	name: String,
+}
+
+#[derive(Args, Debug)]
+struct SessionDaemonArgs {
+	name: String,
+	project_dir: PathBuf,
+	#[arg(long)]
+	url: String,
+	#[arg(long)]
+	route: String,
+	#[arg(long)]
+	session: String,
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct WguiConfig {
 	schema: Option<PathBuf>,
@@ -128,6 +241,8 @@ fn run() -> Result<(), String> {
 	match cli.command {
 		TopCommand::Migrations { command } => run_migrations(command),
 		TopCommand::Migrate { command } => run_migrate(command),
+		TopCommand::Controllers { command } => run_controllers(command),
+		TopCommand::Session { command } => run_session(command),
 		TopCommand::Generate(args) => run_generate(args),
 	}
 }
@@ -144,6 +259,23 @@ fn run_migrations(command: MigrationsCommand) -> Result<(), String> {
 fn run_migrate(command: MigrateCommand) -> Result<(), String> {
 	match command {
 		MigrateCommand::Dev(args) => migrate_dev(args),
+	}
+}
+
+fn run_controllers(command: ControllersCommand) -> Result<(), String> {
+	match command {
+		ControllersCommand::List(args) => list_controllers(args),
+		ControllersCommand::Call(args) => call_controller(args),
+	}
+}
+
+fn run_session(command: SessionCommand) -> Result<(), String> {
+	match command {
+		SessionCommand::Start(args) => start_session(args),
+		SessionCommand::Call(args) => call_session(args),
+		SessionCommand::Stop(args) => stop_session(args),
+		SessionCommand::List => list_sessions(),
+		SessionCommand::Daemon(args) => run_session_daemon(args),
 	}
 }
 
@@ -182,6 +314,525 @@ fn run_generate(args: GenerateArgs) -> Result<(), String> {
 	Ok(())
 }
 
+#[derive(Debug, Clone)]
+struct ControllerAction {
+	module: String,
+	file: PathBuf,
+	name: String,
+	method: String,
+	kind: EventKind,
+	payload: ActionPayload,
+	id: u32,
+	routes: Vec<String>,
+}
+
+fn list_controllers(args: ControllersListArgs) -> Result<(), String> {
+	let project_dir = resolve_project_dir(&args.project_dir)?;
+	let actions = discover_controller_actions(&project_dir)?;
+	if args.json {
+		let values = actions
+			.iter()
+			.map(|action| {
+				json!({
+					"action": action.name,
+					"method": action.method,
+					"kind": event_kind_name(action.kind),
+					"payload": action_payload_name(&action.payload),
+					"id": action.id,
+					"module": action.module,
+					"file": action.file.display().to_string(),
+					"routes": action.routes,
+				})
+			})
+			.collect::<Vec<_>>();
+		println!(
+			"{}",
+			serde_json::to_string_pretty(&values)
+				.map_err(|e| format!("failed serializing controller actions: {e}"))?
+		);
+		return Ok(());
+	}
+
+	if actions.is_empty() {
+		println!("no WUI controller actions found");
+		return Ok(());
+	}
+
+	for action in actions {
+		let routes = if action.routes.is_empty() {
+			"-".to_string()
+		} else {
+			action.routes.join(",")
+		};
+		println!(
+			"{:<28} method={:<28} kind={:<12} payload={:<6} id={:<10} route={} module={}",
+			action.name,
+			action.method,
+			event_kind_name(action.kind),
+			action_payload_name(&action.payload),
+			action.id,
+			routes,
+			action.module
+		);
+	}
+	Ok(())
+}
+
+fn call_controller(args: ControllersCallArgs) -> Result<(), String> {
+	let project_dir = resolve_project_dir(&args.project_dir)?;
+	let actions = discover_controller_actions(&project_dir)?;
+	let discovered = find_controller_action(&actions, &args.action)?;
+	let action_name = discovered
+		.as_ref()
+		.map(|action| action.name.clone())
+		.unwrap_or_else(|| args.action.clone());
+	let event_kind = args
+		.kind
+		.or_else(|| discovered.as_ref().map(|action| action.kind.into()))
+		.ok_or_else(|| {
+			format!(
+				"could not infer event kind for {}; pass --kind or add a matching WUI action",
+				args.action
+			)
+		})?;
+	let payload = discovered.as_ref().map(|action| action.payload.clone());
+	let id = discovered
+		.as_ref()
+		.map(|action| action.id)
+		.unwrap_or_else(|| action_id(&action_name));
+	let route = args.route.unwrap_or_else(|| {
+		discovered
+			.as_ref()
+			.and_then(|action| action.routes.first().cloned())
+			.unwrap_or_else(|| "/".to_string())
+	});
+	let event = controller_event_json(id, event_kind, payload.as_ref(), args.arg, args.value)?;
+	let body = websocket_messages_body(&route, Some(event))?;
+	let session = args.session.unwrap_or_else(|| "wgui-cli".to_string());
+	let ws_url = websocket_url(&args.url, &session);
+	let rt = tokio::runtime::Runtime::new()
+		.map_err(|e| format!("failed creating tokio runtime: {e}"))?;
+	let ws_url_display = ws_url.clone();
+	rt.block_on(async move {
+		let (mut ws, _) = connect_async(&ws_url)
+			.await
+			.map_err(|e| format!("failed connecting to {ws_url}: {e}"))?;
+		ws.send(Message::Text(body))
+			.await
+			.map_err(|e| format!("failed sending controller event: {e}"))?;
+		tokio::time::sleep(Duration::from_millis(100)).await;
+		let _ = ws.close(None).await;
+		Ok::<(), String>(())
+	})?;
+	println!("sent {} to {}", action_name, ws_url_display);
+	Ok(())
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SessionRecord {
+	name: String,
+	pid: u32,
+	socket: PathBuf,
+	project_dir: PathBuf,
+	url: String,
+	route: String,
+	session: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum SessionDaemonRequest {
+	Status,
+	Call {
+		action: String,
+		route: Option<String>,
+		kind: Option<ControllerEventKind>,
+		arg: Option<u32>,
+		value: Option<String>,
+	},
+	Stop,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SessionDaemonResponse {
+	ok: bool,
+	message: String,
+}
+
+fn start_session(args: SessionStartArgs) -> Result<(), String> {
+	let project_dir = resolve_project_dir(&args.project_dir)?;
+	let session = args
+		.session
+		.unwrap_or_else(|| format!("wgui-cli-{}", sanitize_session_name(&args.name)));
+	let socket_path = session_socket_path(&args.name)?;
+	if socket_path.exists()
+		&& session_request(&args.name, &SessionDaemonRequest::Status)
+			.map(|response| response.ok)
+			.unwrap_or(false)
+	{
+		return Err(format!("session {} is already running", args.name));
+	}
+	let _ = std::fs::remove_file(&socket_path);
+	let _ = std::fs::remove_file(session_record_path(&args.name)?);
+
+	let exe = std::env::current_exe().map_err(|e| format!("failed locating wgui binary: {e}"))?;
+	spawn_session_daemon(
+		&exe,
+		&args.name,
+		&project_dir,
+		&args.url,
+		&args.route,
+		&session,
+	)?;
+
+	let started = std::time::Instant::now();
+	loop {
+		if started.elapsed() > Duration::from_secs(5) {
+			return Err(format!("session {} did not start within 5s", args.name));
+		}
+		if session_request(&args.name, &SessionDaemonRequest::Status)
+			.map(|response| response.ok)
+			.unwrap_or(false)
+		{
+			println!("started session {}", args.name);
+			return Ok(());
+		}
+		std::thread::sleep(Duration::from_millis(100));
+	}
+}
+
+fn spawn_session_daemon(
+	exe: &std::path::Path,
+	name: &str,
+	project_dir: &std::path::Path,
+	url: &str,
+	route: &str,
+	session: &str,
+) -> Result<(), String> {
+	let add_args = |command: &mut ProcessCommand| {
+		command
+			.arg("session")
+			.arg("daemon")
+			.arg(name)
+			.arg(project_dir)
+			.arg("--url")
+			.arg(url)
+			.arg("--route")
+			.arg(route)
+			.arg("--session")
+			.arg(session)
+			.stdin(Stdio::null())
+			.stdout(Stdio::null())
+			.stderr(Stdio::null());
+	};
+
+	let mut detached = ProcessCommand::new("setsid");
+	detached.arg(exe);
+	add_args(&mut detached);
+	match detached.spawn() {
+		Ok(_) => Ok(()),
+		Err(detached_err) => {
+			let mut direct = ProcessCommand::new(exe);
+			add_args(&mut direct);
+			direct.spawn().map(|_| ()).map_err(|direct_err| {
+				format!(
+					"failed starting session daemon: {direct_err}; setsid fallback failed first: {detached_err}"
+				)
+			})
+		}
+	}
+}
+
+fn call_session(args: SessionCallArgs) -> Result<(), String> {
+	let response = session_request(
+		&args.name,
+		&SessionDaemonRequest::Call {
+			action: args.action,
+			route: args.route,
+			kind: args.kind,
+			arg: args.arg,
+			value: args.value,
+		},
+	)?;
+	if response.ok {
+		println!("{}", response.message);
+		Ok(())
+	} else {
+		Err(response.message)
+	}
+}
+
+fn stop_session(args: SessionStopArgs) -> Result<(), String> {
+	let response = session_request(&args.name, &SessionDaemonRequest::Stop)?;
+	if response.ok {
+		println!("{}", response.message);
+		Ok(())
+	} else {
+		Err(response.message)
+	}
+}
+
+fn list_sessions() -> Result<(), String> {
+	let dir = session_dir()?;
+	if !dir.exists() {
+		println!("no sessions");
+		return Ok(());
+	}
+	let mut records = Vec::new();
+	for entry in std::fs::read_dir(&dir)
+		.map_err(|e| format!("failed reading session dir {}: {e}", dir.display()))?
+	{
+		let entry = entry.map_err(|e| format!("failed reading session entry: {e}"))?;
+		let path = entry.path();
+		if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+			continue;
+		}
+		let raw = std::fs::read_to_string(&path)
+			.map_err(|e| format!("failed reading session record {}: {e}", path.display()))?;
+		let record: SessionRecord = serde_json::from_str(&raw)
+			.map_err(|e| format!("failed parsing session record {}: {e}", path.display()))?;
+		records.push(record);
+	}
+	records.sort_by(|a, b| a.name.cmp(&b.name));
+	if records.is_empty() {
+		println!("no sessions");
+		return Ok(());
+	}
+	for record in records {
+		let status = session_request(&record.name, &SessionDaemonRequest::Status)
+			.map(|response| if response.ok { "running" } else { "unhealthy" })
+			.unwrap_or("stale");
+		println!(
+			"{:<20} {:<9} pid={} route={} url={}",
+			record.name, status, record.pid, record.route, record.url
+		);
+	}
+	Ok(())
+}
+
+fn run_session_daemon(args: SessionDaemonArgs) -> Result<(), String> {
+	let rt = tokio::runtime::Runtime::new()
+		.map_err(|e| format!("failed creating tokio runtime: {e}"))?;
+	rt.block_on(run_session_daemon_async(args))
+}
+
+async fn run_session_daemon_async(args: SessionDaemonArgs) -> Result<(), String> {
+	let project_dir = resolve_project_dir(&args.project_dir)?;
+	let socket_path = session_socket_path(&args.name)?;
+	let record_path = session_record_path(&args.name)?;
+	if let Some(parent) = socket_path.parent() {
+		std::fs::create_dir_all(parent)
+			.map_err(|e| format!("failed creating session dir {}: {e}", parent.display()))?;
+	}
+	let _ = std::fs::remove_file(&socket_path);
+
+	let ws_url = websocket_url(&args.url, &args.session);
+	let (ws, _) = connect_async(&ws_url)
+		.await
+		.map_err(|e| format!("failed connecting to {ws_url}: {e}"))?;
+	let (mut ws_write, mut ws_read) = ws.split();
+	tokio::spawn(async move { while ws_read.next().await.is_some() {} });
+	ws_write
+		.send(Message::Text(websocket_messages_body(&args.route, None)?))
+		.await
+		.map_err(|e| format!("failed mounting session route: {e}"))?;
+
+	let listener = UnixListener::bind(&socket_path).map_err(|e| {
+		format!(
+			"failed binding session socket {}: {e}",
+			socket_path.display()
+		)
+	})?;
+	let record = SessionRecord {
+		name: args.name.clone(),
+		pid: std::process::id(),
+		socket: socket_path.clone(),
+		project_dir: project_dir.clone(),
+		url: args.url.clone(),
+		route: args.route.clone(),
+		session: args.session.clone(),
+	};
+	write_session_record(&record_path, &record)?;
+
+	loop {
+		let (mut stream, _) = listener
+			.accept()
+			.await
+			.map_err(|e| format!("failed accepting session request: {e}"))?;
+		let mut raw = String::new();
+		stream
+			.read_to_string(&mut raw)
+			.await
+			.map_err(|e| format!("failed reading session request: {e}"))?;
+		let request: SessionDaemonRequest = match serde_json::from_str(&raw) {
+			Ok(request) => request,
+			Err(err) => {
+				write_daemon_response(&mut stream, false, &format!("invalid request: {err}"))
+					.await?;
+				continue;
+			}
+		};
+
+		match request {
+			SessionDaemonRequest::Status => {
+				write_daemon_response(&mut stream, true, "running").await?;
+			}
+			SessionDaemonRequest::Call {
+				action,
+				route,
+				kind,
+				arg,
+				value,
+			} => {
+				let result = session_daemon_call(
+					&project_dir,
+					&mut ws_write,
+					&args.route,
+					action,
+					route,
+					kind,
+					arg,
+					value,
+				)
+				.await;
+				match result {
+					Ok(message) => write_daemon_response(&mut stream, true, &message).await?,
+					Err(err) => write_daemon_response(&mut stream, false, &err).await?,
+				}
+			}
+			SessionDaemonRequest::Stop => {
+				write_daemon_response(&mut stream, true, &format!("stopped session {}", args.name))
+					.await?;
+				break;
+			}
+		}
+	}
+
+	let _ = std::fs::remove_file(&socket_path);
+	let _ = std::fs::remove_file(&record_path);
+	let _ = ws_write.close().await;
+	Ok(())
+}
+
+async fn session_daemon_call<S>(
+	project_dir: &std::path::Path,
+	ws_write: &mut S,
+	default_route: &str,
+	action: String,
+	route: Option<String>,
+	kind: Option<ControllerEventKind>,
+	arg: Option<u32>,
+	value: Option<String>,
+) -> Result<String, String>
+where
+	S: SinkExt<Message> + Unpin,
+	<S as futures_util::Sink<Message>>::Error: std::fmt::Display,
+{
+	let actions = discover_controller_actions(project_dir)?;
+	let discovered = find_controller_action(&actions, &action)?;
+	let action_name = discovered
+		.as_ref()
+		.map(|action| action.name.clone())
+		.unwrap_or(action);
+	let event_kind = kind
+		.or_else(|| discovered.as_ref().map(|action| action.kind.into()))
+		.ok_or_else(|| {
+			format!("could not infer event kind for {action_name}; pass --kind on session call")
+		})?;
+	let payload = discovered.as_ref().map(|action| action.payload.clone());
+	let id = discovered
+		.as_ref()
+		.map(|action| action.id)
+		.unwrap_or_else(|| action_id(&action_name));
+	let route = route.unwrap_or_else(|| default_route.to_string());
+	let event = controller_event_json(id, event_kind, payload.as_ref(), arg, value)?;
+	let body = websocket_messages_body(&route, Some(event))?;
+	ws_write
+		.send(Message::Text(body))
+		.await
+		.map_err(|e| format!("failed sending controller event: {e}"))?;
+	Ok(format!("sent {action_name}"))
+}
+
+async fn write_daemon_response(
+	stream: &mut tokio::net::UnixStream,
+	ok: bool,
+	message: &str,
+) -> Result<(), String> {
+	let response = SessionDaemonResponse {
+		ok,
+		message: message.to_string(),
+	};
+	let raw = serde_json::to_vec(&response)
+		.map_err(|e| format!("failed serializing daemon response: {e}"))?;
+	stream
+		.write_all(&raw)
+		.await
+		.map_err(|e| format!("failed writing daemon response: {e}"))
+}
+
+fn session_request(
+	name: &str,
+	request: &SessionDaemonRequest,
+) -> Result<SessionDaemonResponse, String> {
+	let socket_path = session_socket_path(name)?;
+	let mut stream = std::os::unix::net::UnixStream::connect(&socket_path)
+		.map_err(|e| format!("failed connecting to session {}: {e}", name))?;
+	let raw = serde_json::to_vec(request)
+		.map_err(|e| format!("failed serializing session request: {e}"))?;
+	stream
+		.write_all(&raw)
+		.map_err(|e| format!("failed writing session request: {e}"))?;
+	stream
+		.shutdown(std::net::Shutdown::Write)
+		.map_err(|e| format!("failed finishing session request: {e}"))?;
+	let mut response = String::new();
+	stream
+		.read_to_string(&mut response)
+		.map_err(|e| format!("failed reading session response: {e}"))?;
+	serde_json::from_str(&response)
+		.map_err(|e| format!("failed parsing session response: {e}: {response}"))
+}
+
+fn write_session_record(path: &std::path::Path, record: &SessionRecord) -> Result<(), String> {
+	let raw = serde_json::to_string_pretty(record)
+		.map_err(|e| format!("failed serializing session record: {e}"))?;
+	std::fs::write(path, raw)
+		.map_err(|e| format!("failed writing session record {}: {e}", path.display()))
+}
+
+fn session_dir() -> Result<PathBuf, String> {
+	let dir = std::env::temp_dir().join("wgui-sessions");
+	std::fs::create_dir_all(&dir)
+		.map_err(|e| format!("failed creating session dir {}: {e}", dir.display()))?;
+	Ok(dir)
+}
+
+fn session_socket_path(name: &str) -> Result<PathBuf, String> {
+	Ok(session_dir()?.join(format!("{}.sock", sanitize_session_name(name))))
+}
+
+fn session_record_path(name: &str) -> Result<PathBuf, String> {
+	Ok(session_dir()?.join(format!("{}.json", sanitize_session_name(name))))
+}
+
+fn sanitize_session_name(name: &str) -> String {
+	let mut out = String::new();
+	for ch in name.chars() {
+		if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+			out.push(ch);
+		} else if !out.ends_with('_') {
+			out.push('_');
+		}
+	}
+	let out = out.trim_matches('_');
+	if out.is_empty() {
+		"default".to_string()
+	} else {
+		out.to_string()
+	}
+}
+
 fn resolve_project_dir(project_dir: &std::path::Path) -> Result<PathBuf, String> {
 	std::fs::canonicalize(project_dir).map_err(|e| {
 		format!(
@@ -212,6 +863,340 @@ fn resolve_path_with_default(
 		raw
 	} else {
 		base.join(raw)
+	}
+}
+
+fn discover_controller_actions(
+	project_dir: &std::path::Path,
+) -> Result<Vec<ControllerAction>, String> {
+	let wui_dir = project_dir.join("wui");
+	if !wui_dir.exists() {
+		return Ok(Vec::new());
+	}
+
+	let mut files = Vec::new();
+	collect_wui_files(&wui_dir, &mut files)?;
+	files.sort();
+
+	let mut actions = Vec::new();
+	for file in files {
+		let module = module_name_for_wui_file(&wui_dir, &file)?;
+		let source = std::fs::read_to_string(&file)
+			.map_err(|e| format!("failed reading {}: {e}", file.display()))?;
+		let generated = wgui::wui::compiler::compile_with_dir(&source, &module, file.parent())
+			.map_err(|diags| format_wui_diagnostics(&file, &diags))?;
+		let routes = generated
+			.routes
+			.iter()
+			.map(|(_, route)| route.clone())
+			.collect::<Vec<_>>();
+		for action in generated.actions {
+			actions.push(ControllerAction {
+				module: module.clone(),
+				file: file.clone(),
+				method: action_method_name(&action.name),
+				name: action.name,
+				kind: action.kind,
+				payload: action.payload,
+				id: action.id,
+				routes: routes.clone(),
+			});
+		}
+	}
+
+	actions.sort_by(|a, b| {
+		a.module
+			.cmp(&b.module)
+			.then_with(|| a.name.cmp(&b.name))
+			.then_with(|| a.id.cmp(&b.id))
+	});
+	actions.dedup_by(|a, b| {
+		a.module == b.module
+			&& a.name == b.name
+			&& a.kind == b.kind
+			&& a.payload == b.payload
+			&& a.id == b.id
+	});
+	Ok(actions)
+}
+
+fn collect_wui_files(dir: &std::path::Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+	for entry in std::fs::read_dir(dir)
+		.map_err(|e| format!("failed reading directory {}: {e}", dir.display()))?
+	{
+		let entry = entry.map_err(|e| format!("failed reading directory entry: {e}"))?;
+		let path = entry.path();
+		let ty = entry
+			.file_type()
+			.map_err(|e| format!("failed reading file type {}: {e}", path.display()))?;
+		if ty.is_dir() {
+			collect_wui_files(&path, out)?;
+		} else if path.extension().and_then(|ext| ext.to_str()) == Some("wui") {
+			out.push(path);
+		}
+	}
+	Ok(())
+}
+
+fn module_name_for_wui_file(
+	base: &std::path::Path,
+	file: &std::path::Path,
+) -> Result<String, String> {
+	let rel = file
+		.strip_prefix(base)
+		.map_err(|e| format!("failed resolving module name for {}: {e}", file.display()))?;
+	let mut parts = rel
+		.components()
+		.filter_map(|component| match component {
+			std::path::Component::Normal(value) => value.to_str().map(|value| value.to_string()),
+			_ => None,
+		})
+		.collect::<Vec<_>>();
+	if let Some(last) = parts.last_mut() {
+		if let Some(stripped) = last.strip_suffix(".wui") {
+			*last = stripped.to_string();
+		}
+	}
+	Ok(parts.join("/"))
+}
+
+fn format_wui_diagnostics(
+	file: &std::path::Path,
+	diags: &[wgui::wui::diagnostic::Diagnostic],
+) -> String {
+	let details = diags
+		.iter()
+		.map(|diag| {
+			format!(
+				"{}:{}-{}: {}",
+				file.display(),
+				diag.span.start,
+				diag.span.end,
+				diag.message
+			)
+		})
+		.collect::<Vec<_>>()
+		.join("\n");
+	format!("failed compiling WUI template:\n{details}")
+}
+
+fn find_controller_action(
+	actions: &[ControllerAction],
+	query: &str,
+) -> Result<Option<ControllerAction>, String> {
+	let matches = actions
+		.iter()
+		.filter(|action| action.name == query || action.method == query)
+		.collect::<Vec<_>>();
+	if matches.is_empty() {
+		return Ok(None);
+	}
+	let first = matches[0];
+	let ambiguous = matches.iter().any(|action| {
+		action.name != first.name || action.kind != first.kind || action.payload != first.payload
+	});
+	if ambiguous {
+		let names = matches
+			.iter()
+			.map(|action| format!("{} ({})", action.name, action.module))
+			.collect::<Vec<_>>()
+			.join(", ");
+		return Err(format!("controller action {query} is ambiguous: {names}"));
+	}
+	Ok(Some(first.clone()))
+}
+
+fn controller_event_json(
+	id: u32,
+	kind: ControllerEventKind,
+	payload: Option<&ActionPayload>,
+	arg: Option<u32>,
+	value: Option<String>,
+) -> Result<serde_json::Value, String> {
+	if let Some(payload) = payload {
+		match payload {
+			ActionPayload::None if arg.is_some() || value.is_some() => {
+				return Err("this action does not accept --arg or --value".to_string());
+			}
+			ActionPayload::U32 if arg.is_none() => {
+				return Err("this action requires --arg <u32>".to_string());
+			}
+			ActionPayload::String if value.is_none() => {
+				return Err("this action requires --value <text>".to_string());
+			}
+			ActionPayload::I32 if value.is_none() => {
+				return Err("this action requires --value <i32>".to_string());
+			}
+			ActionPayload::U32I32 if arg.is_none() || value.is_none() => {
+				return Err("this action requires --arg <u32> and --value <i32>".to_string());
+			}
+			_ => {}
+		}
+	}
+
+	match kind {
+		ControllerEventKind::Click => {
+			let mut event = json!({ "type": "onClick", "id": id });
+			if let Some(arg) = arg {
+				event["inx"] = json!(arg);
+			}
+			Ok(event)
+		}
+		ControllerEventKind::TextChanged => Ok(json!({
+			"type": "onTextChanged",
+			"id": id,
+			"value": value.unwrap_or_default(),
+		})),
+		ControllerEventKind::SliderChange => {
+			let raw = value.unwrap_or_else(|| "0".to_string());
+			let parsed = raw
+				.parse::<i32>()
+				.map_err(|e| format!("--value must be an i32 for slider-change: {e}"))?;
+			let mut event = json!({ "type": "onSliderChange", "id": id, "value": parsed });
+			if let Some(arg) = arg {
+				event["inx"] = json!(arg);
+			}
+			Ok(event)
+		}
+		ControllerEventKind::Select => Ok(json!({
+			"type": "onSelect",
+			"id": id,
+			"value": value.unwrap_or_default(),
+		})),
+	}
+}
+
+impl From<EventKind> for ControllerEventKind {
+	fn from(value: EventKind) -> Self {
+		match value {
+			EventKind::Click => Self::Click,
+			EventKind::TextChanged => Self::TextChanged,
+			EventKind::SliderChange => Self::SliderChange,
+			EventKind::Select => Self::Select,
+		}
+	}
+}
+
+fn event_kind_name(kind: EventKind) -> &'static str {
+	match kind {
+		EventKind::Click => "click",
+		EventKind::TextChanged => "text-changed",
+		EventKind::SliderChange => "slider-change",
+		EventKind::Select => "select",
+	}
+}
+
+fn action_payload_name(payload: &ActionPayload) -> &'static str {
+	match payload {
+		ActionPayload::None => "none",
+		ActionPayload::U32 => "u32",
+		ActionPayload::String => "string",
+		ActionPayload::I32 => "i32",
+		ActionPayload::U32I32 => "u32,i32",
+	}
+}
+
+fn split_route(route: &str) -> (String, HashMap<String, String>) {
+	let Some((path, query)) = route.split_once('?') else {
+		return (route.to_string(), HashMap::new());
+	};
+	let query = query
+		.split('&')
+		.filter_map(|entry| {
+			let (key, value) = entry.split_once('=')?;
+			Some((key.to_string(), value.to_string()))
+		})
+		.collect();
+	(path.to_string(), query)
+}
+
+fn websocket_messages_body(
+	route: &str,
+	event: Option<serde_json::Value>,
+) -> Result<String, String> {
+	let (path, query) = split_route(route);
+	let mut messages = vec![json!({
+		"type": "pathChanged",
+		"path": path,
+		"query": query,
+	})];
+	if let Some(event) = event {
+		messages.push(event);
+	}
+	serde_json::to_string(&messages)
+		.map_err(|e| format!("failed serializing websocket messages: {e}"))
+}
+
+fn websocket_url(base: &str, session: &str) -> String {
+	let trimmed = base.trim().trim_end_matches('/');
+	let mut url = if trimmed.starts_with("ws://") || trimmed.starts_with("wss://") {
+		trimmed.to_string()
+	} else if let Some(rest) = trimmed.strip_prefix("http://") {
+		format!("ws://{rest}")
+	} else if let Some(rest) = trimmed.strip_prefix("https://") {
+		format!("wss://{rest}")
+	} else {
+		format!("ws://{trimmed}")
+	};
+	if !url.contains("/ws") {
+		url.push_str("/ws");
+	}
+	let sep = if url.contains('?') { '&' } else { '?' };
+	format!("{url}{sep}sid={}", percent_encode_query_value(session))
+}
+
+fn percent_encode_query_value(value: &str) -> String {
+	let mut out = String::new();
+	for byte in value.bytes() {
+		if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+			out.push(byte as char);
+		} else {
+			out.push_str(&format!("%{byte:02X}"));
+		}
+	}
+	out
+}
+
+fn action_id(name: &str) -> u32 {
+	let mut hash = 0x811c9dc5u32;
+	for byte in name.as_bytes() {
+		hash ^= *byte as u32;
+		hash = hash.wrapping_mul(0x01000193);
+	}
+	if hash == 0 {
+		1
+	} else {
+		hash
+	}
+}
+
+fn action_method_name(name: &str) -> String {
+	let mut out = String::new();
+	let mut prev_underscore = false;
+	for (i, ch) in name.chars().enumerate() {
+		if ch.is_ascii_alphanumeric() {
+			if ch.is_ascii_uppercase() {
+				if i != 0 && !prev_underscore {
+					out.push('_');
+				}
+				out.push(ch.to_ascii_lowercase());
+				prev_underscore = false;
+			} else {
+				out.push(ch.to_ascii_lowercase());
+				prev_underscore = false;
+			}
+		} else if !prev_underscore {
+			out.push('_');
+			prev_underscore = true;
+		}
+	}
+	if out.ends_with('_') {
+		out.pop();
+	}
+	if out.is_empty() {
+		"action".to_string()
+	} else {
+		out
 	}
 }
 

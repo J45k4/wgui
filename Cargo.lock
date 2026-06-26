@@ -1699,7 +1699,9 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tokio-tungstenite",
  "toml",
+ "wui-core",
  "wui-derive",
 ]
 
@@ -2055,12 +2057,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "wui-core"
+version = "0.1.0"
+
+[[package]]
 name = "wui-derive"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+ "wui-core",
 ]
 
 [[package]]

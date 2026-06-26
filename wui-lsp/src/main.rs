@@ -341,10 +341,12 @@ fn prop_type_name(kind: &PropKind) -> &'static str {
 		PropKind::Value(ValueType::String) => "string",
 		PropKind::Value(ValueType::Number) => "number",
 		PropKind::Value(ValueType::Bool) => "bool",
+		PropKind::Value(ValueType::Any) => "expr",
 		PropKind::Event(_) => "action",
 		PropKind::Bind(ValueType::String) => "bind:string",
 		PropKind::Bind(ValueType::Number) => "bind:number",
 		PropKind::Bind(ValueType::Bool) => "bind:bool",
+		PropKind::Bind(ValueType::Any) => "bind:expr",
 	}
 }
 

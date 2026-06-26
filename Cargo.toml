@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "wui-core",
     "wgui",
     "wui-lsp",
     "wui-derive",

@@ -4,10 +4,11 @@ pub mod lower;
 pub mod registry;
 pub mod validate;
 
-use crate::wui::ast::Node;
-use crate::wui::compiler::ir::ActionDef;
-use crate::wui::diagnostic::Diagnostic;
+use crate::ast::Node;
+use crate::compiler::ir::ActionDef;
+use crate::diagnostic::Diagnostic;
 use std::collections::HashMap;
+use std::io;
 use std::path::Path;
 
 #[derive(Debug)]
@@ -15,6 +16,7 @@ pub struct GeneratedModule {
 	pub code: String,
 	pub actions: Vec<ActionDef>,
 	pub routes: Vec<(String, String)>,
+	pub source_files: Vec<std::path::PathBuf>,
 	pub controller_stub: Option<String>,
 }
 
@@ -27,25 +29,41 @@ pub fn compile_with_dir(
 	module_name: &str,
 	base_dir: Option<&Path>,
 ) -> Result<GeneratedModule, Vec<Diagnostic>> {
-	let resolved = crate::wui::imports::resolve(source, module_name, base_dir)?;
-	compile_nodes_with_components(&resolved.nodes, &resolved.components, module_name)
+	let resolved = crate::imports::resolve(source, module_name, base_dir)?;
+	compile_nodes_with_components(
+		&resolved.nodes,
+		&resolved.components,
+		resolved.source_files,
+		module_name,
+	)
 }
 
-pub(crate) fn compile_nodes(
-	nodes: &[Node],
+pub fn compile_with_loader<F>(
+	source: &str,
 	module_name: &str,
-) -> Result<GeneratedModule, Vec<Diagnostic>> {
-	let components = HashMap::new();
-	compile_nodes_with_components(nodes, &components, module_name)
+	base_dir: Option<&Path>,
+	loader: F,
+) -> Result<GeneratedModule, Vec<Diagnostic>>
+where
+	F: FnMut(&Path) -> io::Result<String>,
+{
+	let resolved = crate::imports::resolve_with_loader(source, module_name, base_dir, loader)?;
+	compile_nodes_with_components(
+		&resolved.nodes,
+		&resolved.components,
+		resolved.source_files,
+		module_name,
+	)
 }
 
 fn compile_nodes_with_components(
 	nodes: &[Node],
 	components: &HashMap<String, Vec<Node>>,
+	source_files: Vec<std::path::PathBuf>,
 	module_name: &str,
 ) -> Result<GeneratedModule, Vec<Diagnostic>> {
 	let mut diags = Vec::new();
-	let validated = validate::validate(nodes, &components, &mut diags);
+	let validated = validate::validate(nodes, components, &mut diags);
 	let Some(validated) = validated else {
 		return Err(diags);
 	};
@@ -65,8 +83,15 @@ fn compile_nodes_with_components(
 		code,
 		actions,
 		routes,
+		source_files,
 		controller_stub,
 	})
+}
+
+impl GeneratedModule {
+	pub fn source_files(&self) -> Vec<std::path::PathBuf> {
+		self.source_files.clone()
+	}
 }
 
 #[cfg(test)]

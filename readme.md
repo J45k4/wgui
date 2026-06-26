@@ -50,6 +50,8 @@ async fn main() {
 
 See `docs/wui.md` for the WUI template language, compiler/runtime usage, and hot reload notes.
 
+`#[wgui_controller]` uses `mode = "auto"` by default: debug builds load `.wui` files from the app `wui/` directory for hot reload, while release builds embed the validated WUI source graph into the binary so the templates do not need to exist on disk. Use `mode = "runtime"` to always read files or `mode = "compiled"` to always embed templates.
+
 ## LSP
 
 See `docs/lsp.md` for setting up the `wui-lsp` server in Zed or other editors.

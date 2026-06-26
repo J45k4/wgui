@@ -23,6 +23,8 @@ hyper = { version = "1", features = ["full"], optional = true }
 http-body-util = { version = "0.1", optional = true }
 hyper-util = { version = "0.1", features = ["full"], optional = true }
 hyper-tungstenite = { version = "0.13.0", optional = true }
+tokio-tungstenite = "0.21"
 wui-derive = { path = "../wui-derive" }
 rusqlite = { version = "0.32", features = ["bundled"], optional = true }
 toml = "0.8"
+wui-core = { path = "../wui-core" }
