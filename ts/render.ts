@@ -402,6 +402,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 					element.dataset.wguiResizedWidth = `${width}`
 					element.style.width = `${width}px`
 					element.style.flexBasis = `${width}px`
+					element.style.setProperty("flex", `0 0 ${width}px`, "important")
 				}
 				const onUp = () => {
 					document.removeEventListener("mousemove", onMove)
@@ -971,6 +972,7 @@ export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 	) {
 		element.style.width = `${element.dataset.wguiResizedWidth}px`
 		element.style.flexBasis = `${element.dataset.wguiResizedWidth}px`
+		element.style.setProperty("flex", `0 0 ${element.dataset.wguiResizedWidth}px`, "important")
 	}
 	element.style.boxSizing = item.fill ? "border-box" : ""
 	element.style.height = item.height ? item.height + "px" : ""
