@@ -370,10 +370,14 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			element.style.position = element.style.position || "relative"
 			element.style.resize = "none"
 			element.style.flexShrink = "0"
-			let handle = element.querySelector(".wgui-resize-handle") as HTMLDivElement | null
+			let handle = Array.prototype.find.call(
+				element.children,
+				(child: Element) => child instanceof HTMLDivElement && child.dataset.wguiResizeHandle === "true",
+			) as HTMLDivElement | undefined
 			if (!handle) {
 				handle = document.createElement("div")
 				handle.className = "wgui-resize-handle"
+				handle.dataset.wguiResizeHandle = "true"
 				element.appendChild(handle)
 			}
 			handle.style.position = "absolute"
@@ -395,6 +399,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 					let width = next
 					if (minWidth && width < minWidth) width = minWidth
 					if (maxWidth && width > maxWidth) width = maxWidth
+					element.dataset.wguiResizedWidth = `${width}`
 					element.style.width = `${width}px`
 				}
 				const onUp = () => {
@@ -957,6 +962,14 @@ export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 	clearModalState(element, item)
 
 	element.style.width = item.fill ? "100%" : item.width ? item.width + "px" : ""
+	if (
+		element instanceof HTMLElement &&
+		item.payload.type === "layout" &&
+		(item.payload.horizontalResize || item.payload.horizontal_resize || item.payload.hresize) &&
+		element.dataset.wguiResizedWidth
+	) {
+		element.style.width = `${element.dataset.wguiResizedWidth}px`
+	}
 	element.style.boxSizing = item.fill ? "border-box" : ""
 	element.style.height = item.height ? item.height + "px" : ""
 	element.style.minWidth = item.minWidth !== undefined ? item.minWidth + "px" : ""
