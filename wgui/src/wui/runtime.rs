@@ -5,6 +5,7 @@ use crate::wui::diagnostic::Diagnostic;
 use crate::wui::imports;
 use crate::wui::routing::route_params;
 
+pub use anyhow;
 pub use async_trait::async_trait;
 use std::collections::HashMap;
 use std::fs;
@@ -61,7 +62,42 @@ pub trait WuiController {
 	}
 	fn set_runtime_context(&mut self, _client_id: Option<usize>, _session: Option<String>) {}
 	fn set_route_context(&mut self, _route: Option<RouteContext>) {}
+	async fn process(_ctx: ControllerProcessCtx) -> anyhow::Result<()>
+	where
+		Self: Sized,
+	{
+		Ok(())
+	}
 	async fn handle(&mut self, event: &crate::types::ClientEvent) -> bool;
+}
+
+#[derive(Clone)]
+pub struct ControllerProcessCtx {
+	client_id: usize,
+	event_tx: mpsc::UnboundedSender<crate::types::ClientMessage>,
+}
+
+impl ControllerProcessCtx {
+	pub(crate) fn new(
+		client_id: usize,
+		event_tx: mpsc::UnboundedSender<crate::types::ClientMessage>,
+	) -> Self {
+		Self {
+			client_id,
+			event_tx,
+		}
+	}
+
+	pub fn client_id(&self) -> usize {
+		self.client_id
+	}
+
+	pub fn refresh(&self) {
+		let _ = self.event_tx.send(crate::types::ClientMessage {
+			client_id: self.client_id,
+			event: crate::types::ClientEvent::Refresh,
+		});
+	}
 }
 
 pub struct Ctx<T, DB = ()> {
@@ -121,6 +157,16 @@ where
 				.command_tx
 				.send(RuntimeCommand::SetTitle { client_id, title });
 		}
+	}
+
+	pub fn refresh(&self) {
+		if let Some(client_id) = *self.current_client.lock().unwrap() {
+			self.refresh_for_client(client_id);
+		}
+	}
+
+	pub fn refresh_for_client(&self, client_id: usize) {
+		let _ = self.command_tx.send(RuntimeCommand::Refresh { client_id });
 	}
 
 	pub fn push_state(&self, url: impl Into<String>) {
@@ -243,6 +289,15 @@ pub trait Component: Send + Sync + 'static {
 	where
 		Self: Sized;
 	fn render(&self, ctx: &Ctx<Self::Context, Self::Db>) -> Self::Model;
+	async fn process(
+		_ctx: Arc<Ctx<Self::Context, Self::Db>>,
+		_process_ctx: ControllerProcessCtx,
+	) -> anyhow::Result<()>
+	where
+		Self: Sized,
+	{
+		Ok(())
+	}
 	fn unmount(self, ctx: Arc<Ctx<Self::Context, Self::Db>>);
 }
 
@@ -269,6 +324,9 @@ pub enum RuntimeAction {
 
 #[derive(Debug, Clone)]
 pub enum RuntimeCommand {
+	Refresh {
+		client_id: usize,
+	},
 	SetTitle {
 		client_id: usize,
 		title: String,

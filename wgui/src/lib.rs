@@ -63,6 +63,9 @@ pub(crate) type Sessions = Arc<RwLock<HashMap<usize, Option<String>>>>;
 type BoxedController = Box<dyn crate::wui::runtime::WuiController + Send>;
 type ControllerFuture = Pin<Box<dyn Future<Output = BoxedController> + Send>>;
 type ControllerFactory = Arc<dyn Fn() -> ControllerFuture + Send + Sync>;
+type ControllerProcessFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
+type ControllerProcessFactory =
+	Arc<dyn Fn(crate::wui::runtime::ControllerProcessCtx) -> ControllerProcessFuture + Send + Sync>;
 type PageControllerFuture = Pin<Box<dyn Future<Output = PageMount> + Send>>;
 type PageControllerFactory =
 	Arc<dyn Fn(RouteContext, Option<usize>, Option<String>) -> PageControllerFuture + Send + Sync>;
@@ -369,6 +372,13 @@ impl WguiHandle {
 		id
 	}
 
+	pub fn refresh(&self, client_id: usize) {
+		let _ = self.event_tx.send(ClientMessage {
+			client_id,
+			event: ClientEvent::Refresh,
+		});
+	}
+
 	pub async fn render(&self, client_id: usize, item: Item) {
 		log::debug!("render {:?}", item);
 		let clients = self.clients.read().await;
@@ -494,15 +504,39 @@ impl WguiHandle {
 struct ComponentRegistration {
 	route_path: String,
 	factory: ControllerFactory,
+	process_factory: ControllerProcessFactory,
 	controllers: HashMap<usize, BoxedController>,
+	processes: HashMap<usize, JoinHandle<()>>,
 }
 
 impl ComponentRegistration {
-	fn new(route_path: String, factory: ControllerFactory) -> Self {
+	fn new(
+		route_path: String,
+		factory: ControllerFactory,
+		process_factory: ControllerProcessFactory,
+	) -> Self {
 		Self {
 			route_path,
 			factory,
+			process_factory,
 			controllers: HashMap::new(),
+			processes: HashMap::new(),
+		}
+	}
+
+	fn mount_process(&mut self, client_id: usize, event_tx: mpsc::UnboundedSender<ClientMessage>) {
+		if let Some(process) = self.processes.remove(&client_id) {
+			process.abort();
+		}
+		let ctx = crate::wui::runtime::ControllerProcessCtx::new(client_id, event_tx);
+		self.processes
+			.insert(client_id, tokio::spawn((self.process_factory)(ctx)));
+	}
+
+	fn unmount(&mut self, client_id: usize) {
+		self.controllers.remove(&client_id);
+		if let Some(process) = self.processes.remove(&client_id) {
+			process.abort();
 		}
 	}
 }
@@ -510,15 +544,39 @@ impl ComponentRegistration {
 struct PageRegistration {
 	pattern: RoutePattern,
 	factory: PageControllerFactory,
+	process_factory: ControllerProcessFactory,
 	controllers: HashMap<usize, BoxedController>,
+	processes: HashMap<usize, JoinHandle<()>>,
 }
 
 impl PageRegistration {
-	fn new(pattern: RoutePattern, factory: PageControllerFactory) -> Self {
+	fn new(
+		pattern: RoutePattern,
+		factory: PageControllerFactory,
+		process_factory: ControllerProcessFactory,
+	) -> Self {
 		Self {
 			pattern,
 			factory,
+			process_factory,
 			controllers: HashMap::new(),
+			processes: HashMap::new(),
+		}
+	}
+
+	fn mount_process(&mut self, client_id: usize, event_tx: mpsc::UnboundedSender<ClientMessage>) {
+		if let Some(process) = self.processes.remove(&client_id) {
+			process.abort();
+		}
+		let ctx = crate::wui::runtime::ControllerProcessCtx::new(client_id, event_tx);
+		self.processes
+			.insert(client_id, tokio::spawn((self.process_factory)(ctx)));
+	}
+
+	fn unmount(&mut self, client_id: usize) {
+		self.controllers.remove(&client_id);
+		if let Some(process) = self.processes.remove(&client_id) {
+			process.abort();
 		}
 	}
 }
@@ -1101,6 +1159,9 @@ where
 		tokio::spawn(async move {
 			while let Some(command) = command_rx.recv().await {
 				match command {
+					crate::wui::runtime::RuntimeCommand::Refresh { client_id } => {
+						handle.refresh(client_id);
+					}
 					crate::wui::runtime::RuntimeCommand::SetTitle { client_id, title } => {
 						handle.set_title(client_id, &title).await;
 					}
@@ -1160,8 +1221,18 @@ where
 			.write()
 			.unwrap()
 			.push((path.to_string(), factory.clone()));
-		self.components
-			.push(ComponentRegistration::new(path.to_string(), factory));
+		let process_factory: ControllerProcessFactory = Arc::new(|ctx| {
+			Box::pin(async move {
+				if let Err(err) = C::process(ctx).await {
+					log::warn!("controller process failed: {err}");
+				}
+			})
+		});
+		self.components.push(ComponentRegistration::new(
+			path.to_string(),
+			factory,
+			process_factory,
+		));
 	}
 
 	pub fn add_component<C>(&mut self, path: &str)
@@ -1186,10 +1257,11 @@ where
 			panic!("invalid context type for component");
 		};
 
-		self.add_component_with(path, move || {
-			let ctx = ctx.clone();
-			async move {
-				ContextAwareController {
+		let factory_ctx = ctx.clone();
+		let factory: ControllerFactory = Arc::new(move || {
+			let ctx = factory_ctx.clone();
+			Box::pin(async move {
+				Box::new(ContextAwareController {
 					inner: match C::mount(ctx.clone(), RouteContext::default()).await {
 						MountResult::Ready(inner) => inner,
 						MountResult::Redirect(_) => {
@@ -1199,9 +1271,29 @@ where
 						}
 					},
 					ctx,
-				}
-			}
+				}) as BoxedController
+			})
 		});
+		self.ssr_components
+			.write()
+			.unwrap()
+			.push((path.to_string(), factory.clone()));
+		let process_ctx = ctx.clone();
+		let process_factory: ControllerProcessFactory = Arc::new(move |controller_ctx| {
+			let ctx = process_ctx.clone();
+			Box::pin(async move {
+				if let Err(err) =
+					<C as crate::wui::runtime::Component>::process(ctx, controller_ctx).await
+				{
+					log::warn!("controller process failed: {err}");
+				}
+			})
+		});
+		self.components.push(ComponentRegistration::new(
+			path.to_string(),
+			factory,
+			process_factory,
+		));
 	}
 
 	pub fn add_page_with<C, F, Fut>(&mut self, route: &str, controller: F)
@@ -1219,7 +1311,15 @@ where
 			.write()
 			.unwrap()
 			.push((pattern.clone(), factory.clone()));
-		self.pages.push(PageRegistration::new(pattern, factory));
+		let process_factory: ControllerProcessFactory = Arc::new(|ctx| {
+			Box::pin(async move {
+				if let Err(err) = C::process(ctx).await {
+					log::warn!("controller process failed: {err}");
+				}
+			})
+		});
+		self.pages
+			.push(PageRegistration::new(pattern, factory, process_factory));
 	}
 
 	pub fn add_page<C>(&mut self, route: &str)
@@ -1245,6 +1345,17 @@ where
 		};
 
 		let pattern = RoutePattern::parse(route);
+		let process_ctx = ctx.clone();
+		let process_factory: ControllerProcessFactory = Arc::new(move |controller_ctx| {
+			let ctx = process_ctx.clone();
+			Box::pin(async move {
+				if let Err(err) =
+					<C as crate::wui::runtime::Component>::process(ctx, controller_ctx).await
+				{
+					log::warn!("controller process failed: {err}");
+				}
+			})
+		});
 		let factory: PageControllerFactory = Arc::new(move |route, client_id, session| {
 			let ctx = ctx.clone();
 			Box::pin(async move {
@@ -1263,7 +1374,8 @@ where
 			.write()
 			.unwrap()
 			.push((pattern.clone(), factory.clone()));
-		self.pages.push(PageRegistration::new(pattern, factory));
+		self.pages
+			.push(PageRegistration::new(pattern, factory, process_factory));
 	}
 
 	pub async fn run(&mut self) {
@@ -1333,10 +1445,10 @@ where
 					}
 
 					for component in self.components.iter_mut() {
-						component.controllers.remove(&client_id);
+						component.unmount(client_id);
 					}
 					for page in self.pages.iter_mut() {
-						page.controllers.remove(&client_id);
+						page.unmount(client_id);
 					}
 					self.unmount_custom_components_for_client(client_id).await;
 					routes.remove(&client_id);
@@ -1501,10 +1613,11 @@ where
 					let mut rendered_custom_sync: Option<Item> = None;
 					for (index, page) in self.pages.iter_mut().enumerate() {
 						if Some(index) != selected_page {
-							page.controllers.remove(&client_id);
+							page.unmount(client_id);
 							continue;
 						}
 
+						page.unmount(client_id);
 						match (page.factory)(active_route.clone(), Some(client_id), session.clone())
 							.await
 						{
@@ -1530,9 +1643,10 @@ where
 								}
 								rendered_custom_sync = Some(item);
 								page.controllers.insert(client_id, controller);
+								page.mount_process(client_id, handle.event_tx.clone());
 							}
 							PageMount::Redirect(url) => {
-								page.controllers.remove(&client_id);
+								page.unmount(client_id);
 								handle.push_state(client_id, &url).await;
 							}
 						}
@@ -1545,7 +1659,7 @@ where
 
 					if selected_page.is_some() {
 						for component in self.components.iter_mut() {
-							component.controllers.remove(&client_id);
+							component.unmount(client_id);
 						}
 						continue;
 					}
@@ -1558,7 +1672,7 @@ where
 					let mut rendered_custom_sync: Option<Item> = None;
 					for (index, component) in self.components.iter_mut().enumerate() {
 						if Some(index) != selected_component {
-							component.controllers.remove(&client_id);
+							component.unmount(client_id);
 							continue;
 						}
 
@@ -1598,12 +1712,73 @@ where
 							handle.render(client_id, rendered).await;
 							rendered_custom_sync = Some(item);
 							component.controllers.insert(client_id, controller);
+							component.mount_process(client_id, handle.event_tx.clone());
 						}
 					}
 					if let Some(item) = rendered_custom_sync {
 						self.sync_custom_components(client_id, &item).await;
 					} else {
 						self.unmount_custom_components_for_client(client_id).await;
+					}
+				}
+				ClientEvent::Refresh => {
+					let session = handle.session_for_client(client_id).await;
+					let route = routes
+						.get(&client_id)
+						.cloned()
+						.unwrap_or_else(|| component_route_context("/", &HashMap::new()));
+					let mut rendered_custom_sync: Option<Item> = None;
+
+					if let Some(page_index) = selected_pages.get(&client_id).copied().flatten() {
+						if let Some(controller) =
+							self.pages[page_index].controllers.get_mut(&client_id)
+						{
+							controller.set_runtime_context(Some(client_id), session.clone());
+							controller.set_route_context(Some(route.clone()));
+							let item = controller.render_with_route(&route);
+							let title = controller
+								.title()
+								.or_else(|| controller.route_title(&route.path));
+							if let Some(title) = title {
+								handle.set_title(client_id, &title).await;
+							}
+							let mut rendered = item.clone();
+							resolve_custom_component_entries(
+								&mut rendered,
+								&custom_component_entries,
+							);
+							handle.render(client_id, rendered).await;
+							rendered_custom_sync = Some(item);
+						}
+					} else if let Some(component_index) =
+						best_component_route_index(&self.components, &route.path, |component| {
+							component.route_path.as_str()
+						}) {
+						if let Some(controller) = self.components[component_index]
+							.controllers
+							.get_mut(&client_id)
+						{
+							controller.set_runtime_context(Some(client_id), session.clone());
+							controller.set_route_context(Some(route.clone()));
+							let item = controller.render_with_route(&route);
+							let title = controller
+								.title()
+								.or_else(|| controller.route_title(&route.path));
+							if let Some(title) = title {
+								handle.set_title(client_id, &title).await;
+							}
+							let mut rendered = item.clone();
+							resolve_custom_component_entries(
+								&mut rendered,
+								&custom_component_entries,
+							);
+							handle.render(client_id, rendered).await;
+							rendered_custom_sync = Some(item);
+						}
+					}
+
+					if let Some(item) = rendered_custom_sync {
+						self.sync_custom_components(client_id, &item).await;
 					}
 				}
 				ClientEvent::Input(_) => {}

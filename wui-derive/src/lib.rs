@@ -229,11 +229,29 @@ fn expand_wgui_controller(
 	let mut title_method: Option<(syn::Ident, TitleReturn)> = None;
 	let mut handlers = Vec::new();
 	let mut fallback_event_handler: Option<FallbackEventHandler> = None;
+	let mut process_method: Option<syn::Ident> = None;
 
 	for item in &impl_block.items {
 		let ImplItem::Fn(method) = item else {
 			continue;
 		};
+
+		if method.sig.ident == "process"
+			&& method
+				.sig
+				.inputs
+				.iter()
+				.all(|arg| !matches!(arg, FnArg::Receiver(_)))
+		{
+			if process_method.is_some() {
+				return Err(syn::Error::new_spanned(
+					&method.sig.ident,
+					"wgui_controller allows only one process method",
+				));
+			}
+			process_method = Some(method.sig.ident.clone());
+			continue;
+		}
 
 		let receiver = method.sig.inputs.first();
 		let Some(FnArg::Receiver(recv)) = receiver else {
@@ -391,6 +409,19 @@ fn expand_wgui_controller(
 			}
 		},
 	});
+	let process_impl = process_method.as_ref().map(|ident| {
+		quote! {
+			async fn process(
+				ctx: ::wgui::wui::runtime::ControllerProcessCtx,
+			) -> ::wgui::wui::runtime::anyhow::Result<()>
+			where
+				Self: Sized,
+			{
+				Self::#ident(ctx).await;
+				::std::result::Result::Ok(())
+			}
+		}
+	});
 
 	let no_arg_arms = handlers
 		.iter()
@@ -482,6 +513,7 @@ fn expand_wgui_controller(
 				}
 
 				#title_impl
+				#process_impl
 
 				async fn handle(&mut self, event: &::wgui::ClientEvent) -> bool {
 					#fallback_decode
@@ -598,6 +630,7 @@ fn expand_wgui_controller(
 		}
 
 		#title_impl
+		#process_impl
 
 		fn route_title(&self, path: &str) -> ::std::option::Option<::std::string::String> {
 			#template_fn().title_for_path(path)

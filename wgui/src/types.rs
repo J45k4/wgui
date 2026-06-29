@@ -131,6 +131,7 @@ pub struct WebPushSubscriptionChanged {
 pub enum ClientEvent {
 	Disconnected { id: usize },
 	Connected { id: usize },
+	Refresh,
 	PathChanged(PathChanged),
 	Input(InputQuery),
 	OnClick(OnClick),
