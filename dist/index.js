@@ -1530,6 +1530,7 @@ var renderPayload = (item, ctx, old) => {
             width = maxWidth;
           element.dataset.wguiResizedWidth = `${width}`;
           element.style.width = `${width}px`;
+          element.style.flexBasis = `${width}px`;
         };
         const onUp = () => {
           document.removeEventListener("mousemove", onMove);
@@ -2080,6 +2081,7 @@ var renderItem = (item, ctx, old) => {
   element.style.width = item.fill ? "100%" : item.width ? item.width + "px" : "";
   if (element instanceof HTMLElement && item.payload.type === "layout" && (item.payload.horizontalResize || item.payload.horizontal_resize || item.payload.hresize) && element.dataset.wguiResizedWidth) {
     element.style.width = `${element.dataset.wguiResizedWidth}px`;
+    element.style.flexBasis = `${element.dataset.wguiResizedWidth}px`;
   }
   element.style.boxSizing = item.fill ? "border-box" : "";
   element.style.height = item.height ? item.height + "px" : "";
