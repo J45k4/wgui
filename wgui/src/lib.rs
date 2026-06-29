@@ -1,7 +1,7 @@
 #[cfg(feature = "hyper")]
 use server::Server;
 use std::any::{Any, TypeId};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::future::Future;
 #[cfg(feature = "hyper")]
 use std::net::SocketAddr;
@@ -10,7 +10,9 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use tokio::sync::Mutex;
 use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
 
 pub mod db_table;
 pub mod diff;
@@ -67,6 +69,9 @@ type PageControllerFactory =
 type SsrRenderer = Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>;
 type SsrComponentFactories = Arc<std::sync::RwLock<Vec<(String, ControllerFactory)>>>;
 type SsrPageFactories = Arc<std::sync::RwLock<Vec<(RoutePattern, PageControllerFactory)>>>;
+type BoxedCustomComponentController = Box<dyn CustomComponentController>;
+type CustomComponentFactory = Arc<dyn Fn() -> BoxedCustomComponentController + Send + Sync>;
+type CustomComponentEntries = HashMap<String, String>;
 
 enum PageMount {
 	Ready(BoxedController),
@@ -76,6 +81,185 @@ enum PageMount {
 pub(crate) enum SsrResponse {
 	Render(Item),
 	Redirect(String),
+}
+
+pub fn custom_component_entry_for_path(path: &str) -> String {
+	let trimmed = path.trim().trim_matches('/');
+	format!("/fs/wgui-controllers/{trimmed}/controller.js")
+}
+
+pub fn custom_component_entry_for_asset(asset: &str) -> String {
+	let trimmed = asset.trim().trim_matches('/');
+	format!("/fs/wgui-controllers/{trimmed}/controller.js")
+}
+
+fn custom_component_asset_for_type<C>() -> String {
+	let type_name = std::any::type_name::<C>()
+		.rsplit("::")
+		.next()
+		.unwrap_or("custom-component");
+	let base = type_name
+		.strip_suffix("Component")
+		.or_else(|| type_name.strip_suffix("Controller"))
+		.or_else(|| type_name.strip_suffix("View"))
+		.unwrap_or(type_name);
+	let mut out = String::new();
+	for (index, ch) in base.chars().enumerate() {
+		if ch.is_ascii_uppercase() {
+			if index > 0 {
+				out.push('-');
+			}
+			out.push(ch.to_ascii_lowercase());
+		} else if ch == '_' {
+			out.push('-');
+		} else {
+			out.push(ch);
+		}
+	}
+	out
+}
+
+fn resolve_custom_component_entries(item: &mut Item, entries: &CustomComponentEntries) {
+	match &mut item.payload {
+		ItemPayload::Custom { name, entry, .. } => {
+			if entry.is_empty() {
+				if let Some(resolved) = entries.get(name) {
+					*entry = resolved.clone();
+				}
+			}
+		}
+		ItemPayload::Layout(layout) => {
+			for child in &mut layout.body {
+				resolve_custom_component_entries(child, entries);
+			}
+		}
+		ItemPayload::Table { items }
+		| ItemPayload::Tbody { items }
+		| ItemPayload::Thead { items }
+		| ItemPayload::Tr { items } => {
+			for child in items {
+				resolve_custom_component_entries(child, entries);
+			}
+		}
+		ItemPayload::Th { item } | ItemPayload::Td { item } => {
+			resolve_custom_component_entries(item, entries);
+		}
+		ItemPayload::Modal { body, .. } => {
+			for child in body {
+				resolve_custom_component_entries(child, entries);
+			}
+		}
+		_ => {}
+	}
+}
+
+fn collect_rendered_custom_components(item: &Item, out: &mut Vec<RenderedCustomComponent>) {
+	match &item.payload {
+		ItemPayload::Custom { name, props, .. } => {
+			out.push(RenderedCustomComponent {
+				path: name.clone(),
+				item_id: item.id,
+				inx: if item.inx == 0 { None } else { Some(item.inx) },
+				props: props.clone(),
+			});
+		}
+		ItemPayload::Layout(layout) => {
+			for child in &layout.body {
+				collect_rendered_custom_components(child, out);
+			}
+		}
+		ItemPayload::Table { items }
+		| ItemPayload::Tbody { items }
+		| ItemPayload::Thead { items }
+		| ItemPayload::Tr { items } => {
+			for child in items {
+				collect_rendered_custom_components(child, out);
+			}
+		}
+		ItemPayload::Th { item } | ItemPayload::Td { item } => {
+			collect_rendered_custom_components(item, out);
+		}
+		ItemPayload::Modal { body, .. } => {
+			for child in body {
+				collect_rendered_custom_components(child, out);
+			}
+		}
+		_ => {}
+	}
+}
+
+#[derive(Clone)]
+pub struct CustomComponentCtx {
+	handle: WguiHandle,
+	pub client_id: usize,
+	pub item_id: u32,
+	pub inx: Option<u32>,
+	pub path: String,
+}
+
+impl CustomComponentCtx {
+	fn new(
+		handle: WguiHandle,
+		client_id: usize,
+		item_id: u32,
+		inx: Option<u32>,
+		path: String,
+	) -> Self {
+		Self {
+			handle,
+			client_id,
+			item_id,
+			inx,
+			path,
+		}
+	}
+
+	pub async fn send_data(
+		&self,
+		name: impl Into<String>,
+		payload: serde_json::Value,
+	) -> anyhow::Result<()> {
+		self.handle
+			.send_actions(
+				self.client_id,
+				vec![ClientAction::CustomData(CustomData {
+					id: self.item_id,
+					inx: self.inx,
+					name: name.into(),
+					payload,
+				})],
+			)
+			.await;
+		Ok(())
+	}
+}
+
+#[async_trait::async_trait]
+pub trait CustomComponentController: Send + 'static {
+	async fn mount(
+		&mut self,
+		_ctx: CustomComponentCtx,
+		_props: serde_json::Value,
+	) -> anyhow::Result<()> {
+		Ok(())
+	}
+
+	async fn process(&mut self, _ctx: CustomComponentCtx) -> anyhow::Result<()> {
+		Ok(())
+	}
+
+	async fn event(
+		&mut self,
+		_ctx: CustomComponentCtx,
+		_name: String,
+		_payload: serde_json::Value,
+	) -> anyhow::Result<()> {
+		Ok(())
+	}
+
+	async fn unmount(&mut self, _ctx: CustomComponentCtx) -> anyhow::Result<()> {
+		Ok(())
+	}
 }
 
 fn component_route_match_score(route_path: &str, current_path: &str) -> Option<usize> {
@@ -339,6 +523,44 @@ impl PageRegistration {
 	}
 }
 
+struct CustomComponentRegistration {
+	path: String,
+	entry: String,
+	factory: CustomComponentFactory,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct CustomComponentKey {
+	client_id: usize,
+	item_id: u32,
+	inx: Option<u32>,
+}
+
+#[derive(Clone)]
+struct RenderedCustomComponent {
+	path: String,
+	item_id: u32,
+	inx: Option<u32>,
+	props: serde_json::Value,
+}
+
+struct MountedCustomComponent {
+	path: String,
+	ctx: CustomComponentCtx,
+	controller: Arc<Mutex<BoxedCustomComponentController>>,
+	process: JoinHandle<()>,
+}
+
+impl MountedCustomComponent {
+	async fn unmount(self) {
+		self.process.abort();
+		let mut controller = self.controller.lock().await;
+		if let Err(err) = controller.unmount(self.ctx).await {
+			log::warn!("custom component unmount failed: {err}");
+		}
+	}
+}
+
 struct ContextAwareController<C, T, DB>
 where
 	C: crate::wui::runtime::WuiController + Send + 'static,
@@ -397,6 +619,8 @@ pub struct Wgui<DB = ()> {
 	handle: WguiHandle,
 	components: Vec<ComponentRegistration>,
 	pages: Vec<PageRegistration>,
+	custom_components: Vec<CustomComponentRegistration>,
+	mounted_custom_components: HashMap<CustomComponentKey, MountedCustomComponent>,
 	ssr_components: SsrComponentFactories,
 	ssr_pages: SsrPageFactories,
 	db: Arc<DB>,
@@ -496,6 +720,8 @@ impl Wgui<()> {
 			handle: WguiHandle::new(events_tx, clients, sessions),
 			components: Vec::new(),
 			pages: Vec::new(),
+			custom_components: Vec::new(),
+			mounted_custom_components: HashMap::new(),
 			ssr_components,
 			ssr_pages,
 			db: Arc::new(()),
@@ -554,6 +780,8 @@ impl Wgui<()> {
 			handle: WguiHandle::new(events_tx, clients, sessions),
 			components: Vec::new(),
 			pages: Vec::new(),
+			custom_components: Vec::new(),
+			mounted_custom_components: HashMap::new(),
 			ssr_components,
 			ssr_pages,
 			db: Arc::new(()),
@@ -582,6 +810,8 @@ impl Wgui<()> {
 			handle: WguiHandle::new(events_tx, clients, sessions),
 			components: Vec::new(),
 			pages: Vec::new(),
+			custom_components: Vec::new(),
+			mounted_custom_components: HashMap::new(),
 			ssr_components,
 			ssr_pages,
 			db: Arc::new(()),
@@ -609,6 +839,8 @@ where
 			handle: self.handle,
 			components: self.components,
 			pages: self.pages,
+			custom_components: self.custom_components,
+			mounted_custom_components: self.mounted_custom_components,
 			ssr_components: self.ssr_components,
 			ssr_pages: self.ssr_pages,
 			db: Arc::new(db),
@@ -657,12 +889,178 @@ where
 		self.handle.clone()
 	}
 
+	pub fn add_custom_component<C, F>(&mut self, path: &str, factory: F)
+	where
+		C: CustomComponentController,
+		F: Fn() -> C + Send + Sync + 'static,
+	{
+		let path = path.to_string();
+		let entry = custom_component_entry_for_asset(&custom_component_asset_for_type::<C>());
+		let factory: CustomComponentFactory =
+			Arc::new(move || Box::new(factory()) as BoxedCustomComponentController);
+		self.custom_components.push(CustomComponentRegistration {
+			path,
+			entry,
+			factory,
+		});
+	}
+
 	pub async fn next(&mut self) -> Option<ClientMessage> {
 		self.events_rx.recv().await
 	}
 
+	fn custom_component_factory(&self, path: &str) -> Option<CustomComponentFactory> {
+		self.custom_components
+			.iter()
+			.find(|component| component.path == path)
+			.map(|component| component.factory.clone())
+	}
+
+	fn custom_component_entries(&self) -> CustomComponentEntries {
+		self.custom_components
+			.iter()
+			.map(|component| (component.path.clone(), component.entry.clone()))
+			.collect()
+	}
+
+	fn prepare_item(&self, mut item: Item) -> Item {
+		let entries = self.custom_component_entries();
+		resolve_custom_component_entries(&mut item, &entries);
+		item
+	}
+
+	async fn mount_custom_component(
+		&mut self,
+		key: CustomComponentKey,
+		component: RenderedCustomComponent,
+		factory: CustomComponentFactory,
+	) {
+		let ctx = CustomComponentCtx::new(
+			self.handle(),
+			key.client_id,
+			key.item_id,
+			key.inx,
+			component.path.clone(),
+		);
+		let controller = Arc::new(Mutex::new(factory()));
+		{
+			let mut controller = controller.lock().await;
+			if let Err(err) = controller.mount(ctx.clone(), component.props).await {
+				log::warn!("custom component mount failed: {err}");
+				return;
+			}
+		}
+
+		let process_controller = controller.clone();
+		let process_ctx = ctx.clone();
+		let process = tokio::spawn(async move {
+			let mut controller = process_controller.lock().await;
+			if let Err(err) = controller.process(process_ctx).await {
+				log::warn!("custom component process failed: {err}");
+			}
+		});
+
+		self.mounted_custom_components.insert(
+			key,
+			MountedCustomComponent {
+				path: component.path,
+				ctx,
+				controller,
+				process,
+			},
+		);
+	}
+
+	async fn unmount_custom_component(&mut self, key: &CustomComponentKey) {
+		if let Some(mounted) = self.mounted_custom_components.remove(key) {
+			mounted.unmount().await;
+		}
+	}
+
+	async fn unmount_custom_components_for_client(&mut self, client_id: usize) {
+		let keys = self
+			.mounted_custom_components
+			.keys()
+			.filter(|key| key.client_id == client_id)
+			.cloned()
+			.collect::<Vec<_>>();
+		for key in keys {
+			self.unmount_custom_component(&key).await;
+		}
+	}
+
+	async fn sync_custom_components(&mut self, client_id: usize, item: &Item) {
+		let mut rendered = Vec::new();
+		collect_rendered_custom_components(item, &mut rendered);
+
+		let mut seen = HashSet::new();
+		for component in rendered {
+			if component.item_id == 0 {
+				if self.custom_component_factory(&component.path).is_some() {
+					log::warn!(
+						"registered custom component {} rendered without an id",
+						component.path
+					);
+				}
+				continue;
+			}
+
+			let Some(factory) = self.custom_component_factory(&component.path) else {
+				continue;
+			};
+			let key = CustomComponentKey {
+				client_id,
+				item_id: component.item_id,
+				inx: component.inx,
+			};
+			seen.insert(key.clone());
+
+			let needs_mount = match self.mounted_custom_components.get(&key) {
+				Some(mounted) if mounted.path == component.path => false,
+				Some(_) => {
+					self.unmount_custom_component(&key).await;
+					true
+				}
+				None => true,
+			};
+			if needs_mount {
+				self.mount_custom_component(key, component, factory).await;
+			}
+		}
+
+		let stale = self
+			.mounted_custom_components
+			.keys()
+			.filter(|key| key.client_id == client_id && !seen.contains(*key))
+			.cloned()
+			.collect::<Vec<_>>();
+		for key in stale {
+			self.unmount_custom_component(&key).await;
+		}
+	}
+
+	async fn handle_custom_component_event(&mut self, client_id: usize, custom: &OnCustom) -> bool {
+		let key = CustomComponentKey {
+			client_id,
+			item_id: custom.id,
+			inx: custom.inx,
+		};
+		let Some(mounted) = self.mounted_custom_components.get(&key) else {
+			return false;
+		};
+		let ctx = mounted.ctx.clone();
+		let controller = mounted.controller.clone();
+		let name = custom.name.clone();
+		let payload = custom.payload.clone();
+		let mut controller = controller.lock().await;
+		if let Err(err) = controller.event(ctx, name, payload).await {
+			log::warn!("custom component event failed: {err}");
+		}
+		true
+	}
+
 	pub async fn render(&self, client_id: usize, item: Item) {
-		self.handle.render(client_id, item).await
+		self.handle.render(client_id, self.prepare_item(item)).await
 	}
 
 	pub async fn set_title(&self, client_id: usize, title: &str) {
@@ -878,6 +1276,7 @@ where
 
 		while let Some(message) = self.next().await {
 			let client_id = message.client_id;
+			let custom_component_entries = self.custom_component_entries();
 			match &message.event {
 				ClientEvent::Connected { id: _ } => {}
 				ClientEvent::Disconnected { id: _ } => {
@@ -939,6 +1338,7 @@ where
 					for page in self.pages.iter_mut() {
 						page.controllers.remove(&client_id);
 					}
+					self.unmount_custom_components_for_client(client_id).await;
 					routes.remove(&client_id);
 					handle.clear_session(client_id).await;
 				}
@@ -1098,6 +1498,7 @@ where
 					};
 					routes.insert(client_id, active_route.clone());
 
+					let mut rendered_custom_sync: Option<Item> = None;
 					for (index, page) in self.pages.iter_mut().enumerate() {
 						if Some(index) != selected_page {
 							page.controllers.remove(&client_id);
@@ -1117,11 +1518,17 @@ where
 								if let Some(title) = title {
 									handle.set_title(client_id, &title).await;
 								}
+								let mut rendered = item.clone();
+								resolve_custom_component_entries(
+									&mut rendered,
+									&custom_component_entries,
+								);
 								if selected_page_changed {
-									handle.replace_root(client_id, item).await;
+									handle.replace_root(client_id, rendered).await;
 								} else {
-									handle.render(client_id, item).await;
+									handle.render(client_id, rendered).await;
 								}
+								rendered_custom_sync = Some(item);
 								page.controllers.insert(client_id, controller);
 							}
 							PageMount::Redirect(url) => {
@@ -1129,6 +1536,11 @@ where
 								handle.push_state(client_id, &url).await;
 							}
 						}
+					}
+					if let Some(item) = rendered_custom_sync {
+						self.sync_custom_components(client_id, &item).await;
+					} else if selected_page.is_some() {
+						self.unmount_custom_components_for_client(client_id).await;
 					}
 
 					if selected_page.is_some() {
@@ -1143,6 +1555,7 @@ where
 							component.route_path.as_str()
 						});
 
+					let mut rendered_custom_sync: Option<Item> = None;
 					for (index, component) in self.components.iter_mut().enumerate() {
 						if Some(index) != selected_component {
 							component.controllers.remove(&client_id);
@@ -1159,7 +1572,13 @@ where
 							if let Some(title) = title {
 								handle.set_title(client_id, &title).await;
 							}
-							handle.render(client_id, item).await;
+							let mut rendered = item.clone();
+							resolve_custom_component_entries(
+								&mut rendered,
+								&custom_component_entries,
+							);
+							handle.render(client_id, rendered).await;
+							rendered_custom_sync = Some(item);
 						} else {
 							let mut controller = (component.factory)().await;
 							controller.set_runtime_context(Some(client_id), session.clone());
@@ -1171,15 +1590,32 @@ where
 							if let Some(title) = title {
 								handle.set_title(client_id, &title).await;
 							}
-							handle.render(client_id, item).await;
+							let mut rendered = item.clone();
+							resolve_custom_component_entries(
+								&mut rendered,
+								&custom_component_entries,
+							);
+							handle.render(client_id, rendered).await;
+							rendered_custom_sync = Some(item);
 							component.controllers.insert(client_id, controller);
 						}
+					}
+					if let Some(item) = rendered_custom_sync {
+						self.sync_custom_components(client_id, &item).await;
+					} else {
+						self.unmount_custom_components_for_client(client_id).await;
 					}
 				}
 				ClientEvent::Input(_) => {}
 				_ => {
 					let session = handle.session_for_client(client_id).await;
+					if let ClientEvent::OnCustom(custom) = &message.event {
+						if self.handle_custom_component_event(client_id, custom).await {
+							continue;
+						}
+					}
 					let mut handled = false;
+					let mut custom_sync_updates: Vec<(usize, Item)> = Vec::new();
 					for component in self.components.iter_mut() {
 						if let Some(controller) = component.controllers.get_mut(&client_id) {
 							let route = routes
@@ -1215,14 +1651,24 @@ where
 								if let Some(title) = title {
 									handle.set_title(mounted_client_id, &title).await;
 								}
-								handle.render(mounted_client_id, item).await;
+								let mut rendered = item.clone();
+								resolve_custom_component_entries(
+									&mut rendered,
+									&custom_component_entries,
+								);
+								handle.render(mounted_client_id, rendered).await;
+								custom_sync_updates.push((mounted_client_id, item));
 							}
 							break;
 						}
 					}
 					if handled {
+						for (mounted_client_id, item) in custom_sync_updates {
+							self.sync_custom_components(mounted_client_id, &item).await;
+						}
 						continue;
 					}
+					let mut custom_sync_updates: Vec<(usize, Item)> = Vec::new();
 					for page in self.pages.iter_mut() {
 						if let Some(controller) = page.controllers.get_mut(&client_id) {
 							let route = routes
@@ -1258,10 +1704,19 @@ where
 								if let Some(title) = title {
 									handle.set_title(mounted_client_id, &title).await;
 								}
-								handle.render(mounted_client_id, item).await;
+								let mut rendered = item.clone();
+								resolve_custom_component_entries(
+									&mut rendered,
+									&custom_component_entries,
+								);
+								handle.render(mounted_client_id, rendered).await;
+								custom_sync_updates.push((mounted_client_id, item));
 							}
 							break;
 						}
+					}
+					for (mounted_client_id, item) in custom_sync_updates {
+						self.sync_custom_components(mounted_client_id, &item).await;
 					}
 				}
 			}
@@ -1301,6 +1756,22 @@ mod tests {
 		assert_eq!(
 			best_component_route_index(&routes, "/missing", |route| route.as_str()),
 			Some(0)
+		);
+	}
+
+	#[test]
+	fn custom_component_asset_comes_from_type_name() {
+		struct RobotSceneComponent;
+
+		assert_eq!(
+			custom_component_asset_for_type::<RobotSceneComponent>(),
+			"robot-scene"
+		);
+		assert_eq!(
+			custom_component_entry_for_asset(
+				&custom_component_asset_for_type::<RobotSceneComponent>()
+			),
+			"/fs/wgui-controllers/robot-scene/controller.js"
 		);
 	}
 }

@@ -106,6 +106,9 @@ pub enum IrProp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventKind {
 	Click,
+	Press,
+	Release,
+	Repeat,
 	TextChanged,
 	SliderChange,
 	Select,

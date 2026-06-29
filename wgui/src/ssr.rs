@@ -44,7 +44,7 @@ pub fn render_item(item: &Item) -> String {
 			value,
 			step,
 		} => render_slider(item, *min, *max, *value, *step),
-		ItemPayload::Button { title } => render_button(item, title),
+		ItemPayload::Button { title, .. } => render_button(item, title),
 		ItemPayload::Link { href, text } => render_link(item, href, text),
 		ItemPayload::Table { items } => render_table(item, items),
 		ItemPayload::Thead { items } => render_section(item, "thead", items),

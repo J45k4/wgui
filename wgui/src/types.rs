@@ -13,6 +13,27 @@ pub struct OnClick {
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", tag = "type")]
+pub struct OnPress {
+	pub id: u32,
+	pub inx: Option<u32>,
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", tag = "type")]
+pub struct OnRelease {
+	pub id: u32,
+	pub inx: Option<u32>,
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", tag = "type")]
+pub struct OnRepeat {
+	pub id: u32,
+	pub inx: Option<u32>,
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OnKeyDown {
 	pub id: Option<String>,
 	pub keycode: String,
@@ -51,6 +72,15 @@ pub struct OnSelect {
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnCustom {
+	pub id: u32,
+	pub inx: Option<u32>,
+	pub name: String,
+	pub payload: serde_json::Value,
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomData {
 	pub id: u32,
 	pub inx: Option<u32>,
 	pub name: String,
@@ -104,6 +134,9 @@ pub enum ClientEvent {
 	PathChanged(PathChanged),
 	Input(InputQuery),
 	OnClick(OnClick),
+	OnPress(OnPress),
+	OnRelease(OnRelease),
+	OnRepeat(OnRepeat),
 	OnTextChanged(OnTextChanged),
 	OnSliderChange(OnSliderChange),
 	OnSelect(OnSelect),
@@ -294,6 +327,7 @@ pub enum ClientAction {
 		#[serde(rename = "serviceWorkerPath")]
 		service_worker_path: String,
 	},
+	CustomData(CustomData),
 }
 
 pub enum ServerEvent {

@@ -17,6 +17,7 @@ type ControllerContext = {
 type Controller = {
 	mount?: (props: unknown) => void | Promise<void>
 	setProps?: (props: unknown) => void | Promise<void>
+	onData?: (name: string, payload: unknown) => void | Promise<void>
 	dispose?: () => void
 }
 
@@ -29,7 +30,10 @@ type ComponentModule = {
 
 type CustomState = {
 	key: string
+	id: number
+	inx?: number
 	props: unknown
+	pendingData: Array<{ name: string; payload: unknown }>
 	controller?: Controller
 	cancelled: boolean
 }
@@ -58,7 +62,7 @@ const setState = (element: HTMLElement, state: CustomState | undefined) => {
 
 const controllerContext = (item: Item, payload: CustomPayload, ctx: Context): ControllerContext => ({
 	id: item.id,
-	inx: item.inx,
+	inx: item.inx || undefined,
 	name: payload.name,
 	emit: (name: string, eventPayload?: unknown) => {
 		if (!item.id) {
@@ -67,7 +71,7 @@ const controllerContext = (item: Item, payload: CustomPayload, ctx: Context): Co
 		ctx.sender.send({
 			type: "onCustom",
 			id: item.id,
-			inx: item.inx,
+			inx: item.inx || undefined,
 			name,
 			payload: eventPayload ?? null,
 		})
@@ -84,6 +88,36 @@ const disposeState = (state: CustomState | undefined) => {
 		state.controller?.dispose?.()
 	} catch (err) {
 		console.warn("wgui custom component dispose failed", err)
+	}
+}
+
+const dispatchData = (state: CustomState, name: string, payload: unknown) => {
+	if (!state.controller?.onData) {
+		state.pendingData.push({ name, payload })
+		return
+	}
+	Promise.resolve(state.controller.onData(name, payload)).catch((err) => {
+		console.warn("wgui custom component onData failed", err)
+	})
+}
+
+export const sendCustomData = (
+	root: HTMLElement,
+	id: number,
+	inx: number | undefined,
+	name: string,
+	payload: unknown,
+) => {
+	for (const element of Array.from(root.querySelectorAll<HTMLElement>("[data-wgui-custom='true']"))) {
+		const state = getState(element)
+		if (!state || state.id !== id) {
+			continue
+		}
+		if ((state.inx ?? undefined) !== (inx ?? undefined)) {
+			continue
+		}
+		dispatchData(state, name, payload)
+		return
 	}
 }
 
@@ -110,6 +144,8 @@ export const mountCustomComponent = (element: HTMLElement, item: Item, payload: 
 	const existing = getState(element)
 
 	if (existing?.key === key) {
+		existing.id = item.id
+		existing.inx = item.inx || undefined
 		existing.props = payload.props
 		if (existing.controller?.setProps) {
 			Promise.resolve(existing.controller.setProps(payload.props)).catch((err) => {
@@ -123,7 +159,10 @@ export const mountCustomComponent = (element: HTMLElement, item: Item, payload: 
 
 	const state: CustomState = {
 		key,
+		id: item.id,
+		inx: item.inx || undefined,
 		props: payload.props,
+		pendingData: [],
 		cancelled: false,
 	}
 	setState(element, state)
@@ -140,6 +179,10 @@ export const mountCustomComponent = (element: HTMLElement, item: Item, payload: 
 			const controller = new Controller(element, controllerContext(item, payload, ctx))
 			state.controller = controller
 			return Promise.resolve(controller.mount?.(state.props)).then(() => {
+				while (!state.cancelled && state.pendingData.length > 0) {
+					const next = state.pendingData.shift()!
+					dispatchData(state, next.name, next.payload)
+				}
 				if (!state.cancelled && !controller.mount && controller.setProps) {
 					return controller.setProps(state.props)
 				}

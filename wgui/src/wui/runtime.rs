@@ -628,8 +628,44 @@ fn string_map_to_wui_value(map: &HashMap<String, String>) -> WuiValue {
 
 fn decode_action(action: &ActionDef, event: &crate::types::ClientEvent) -> Option<RuntimeAction> {
 	match action.kind {
-		EventKind::Click => match event {
+		EventKind::Click | EventKind::Press | EventKind::Release | EventKind::Repeat => match event
+		{
 			crate::types::ClientEvent::OnClick(ev) if ev.id == action.id => match action.payload {
+				ActionPayload::None => Some(RuntimeAction::Click {
+					name: action.name.clone(),
+					arg: None,
+				}),
+				ActionPayload::U32 => ev.inx.map(|arg| RuntimeAction::Click {
+					name: action.name.clone(),
+					arg: Some(arg),
+				}),
+				_ => None,
+			},
+			crate::types::ClientEvent::OnPress(ev) if ev.id == action.id => match action.payload {
+				ActionPayload::None => Some(RuntimeAction::Click {
+					name: action.name.clone(),
+					arg: None,
+				}),
+				ActionPayload::U32 => ev.inx.map(|arg| RuntimeAction::Click {
+					name: action.name.clone(),
+					arg: Some(arg),
+				}),
+				_ => None,
+			},
+			crate::types::ClientEvent::OnRelease(ev) if ev.id == action.id => {
+				match action.payload {
+					ActionPayload::None => Some(RuntimeAction::Click {
+						name: action.name.clone(),
+						arg: None,
+					}),
+					ActionPayload::U32 => ev.inx.map(|arg| RuntimeAction::Click {
+						name: action.name.clone(),
+						arg: Some(arg),
+					}),
+					_ => None,
+				}
+			}
+			crate::types::ClientEvent::OnRepeat(ev) if ev.id == action.id => match action.payload {
 				ActionPayload::None => Some(RuntimeAction::Click {
 					name: action.name.clone(),
 					arg: None,
@@ -801,8 +837,15 @@ fn render_widget(widget: &IrWidget, ctx: &mut EvalContext) -> Item {
 }
 
 fn render_custom(widget: &IrWidget, ctx: &mut EvalContext) -> Item {
-	let name = textual_value(widget, ctx, "name");
-	let entry = textual_value(widget, ctx, "entry");
+	let src = textual_value(widget, ctx, "src");
+	let (name, entry) = if src.is_empty() {
+		(
+			textual_value(widget, ctx, "name"),
+			textual_value(widget, ctx, "entry"),
+		)
+	} else {
+		(src.clone(), textual_value(widget, ctx, "entry"))
+	};
 	let props = widget
 		.props
 		.iter()
@@ -973,8 +1016,13 @@ fn should_apply_prop(tag: &str, prop: &IrProp) -> bool {
 
 fn apply_prop(item: Item, prop: &IrProp, ctx: &mut EvalContext) -> Item {
 	match prop {
-		IrProp::Event { action, arg, .. } => {
-			let mut item = item.id(action_id(action));
+		IrProp::Event { name, action, arg } => {
+			let id = action_id(action);
+			let mut item = if matches!(&item.payload, gui::ItemPayload::Button { .. }) {
+				apply_button_event(item, name, id)
+			} else {
+				item.id(id)
+			};
 			if let Some(expr) = arg {
 				let value = eval_expr(expr, ctx);
 				if let Some(inx) = value_as_u32(&value) {
@@ -995,6 +1043,21 @@ fn apply_prop(item: Item, prop: &IrProp, ctx: &mut EvalContext) -> Item {
 			apply_value_prop(item, name, value)
 		}
 	}
+}
+
+fn apply_button_event(mut item: Item, name: &str, id: u32) -> Item {
+	let gui::ItemPayload::Button { events, .. } = &mut item.payload else {
+		return item;
+	};
+	let events = events.get_or_insert_with(gui::ButtonEvents::default);
+	match name {
+		"onClick" => events.click = Some(id),
+		"onPress" => events.press = Some(id),
+		"onRelease" => events.release = Some(id),
+		"onRepeat" => events.repeat = Some(id),
+		_ => {}
+	}
+	item
 }
 
 fn apply_value_prop(item: Item, name: &str, value: WuiValue) -> Item {
@@ -1027,6 +1090,7 @@ fn apply_string_prop(item: Item, name: &str, value: &str) -> Item {
 
 fn apply_number_prop(item: Item, name: &str, value: f64) -> Item {
 	match name {
+		"id" => item.id(value as u32),
 		"ivalue" | "bind:ivalue" => item.ivalue(value as i32),
 		"min" => item.min(value as i32),
 		"max" => item.max(value as i32),
@@ -1049,8 +1113,19 @@ fn apply_number_prop(item: Item, name: &str, value: f64) -> Item {
 		"minHeight" => item.min_height(value as u32),
 		"maxHeight" => item.max_height(value as u32),
 		"grow" => item.grow(value as u32),
+		"repeatInterval" => apply_button_repeat_interval(item, value as u32),
 		_ => item,
 	}
+}
+
+fn apply_button_repeat_interval(mut item: Item, interval: u32) -> Item {
+	let gui::ItemPayload::Button { events, .. } = &mut item.payload else {
+		return item;
+	};
+	events
+		.get_or_insert_with(gui::ButtonEvents::default)
+		.repeat_interval = Some(interval);
+	item
 }
 
 fn apply_bool_prop(item: Item, name: &str, value: bool) -> Item {
@@ -1323,6 +1398,52 @@ mod tests {
 			rendered.payload,
 			ItemPayload::Text {
 				value: "Hello".to_string()
+			}
+		);
+	}
+
+	#[test]
+	fn custom_component_src_without_entry_keeps_entry_empty() {
+		let template = Template::parse(
+			r#"<CustomComponent id=7 src="/robot-scene" props={state.props} />"#,
+			"test",
+		)
+		.expect("parse template");
+		let state = WuiValue::object(vec![(
+			"props".to_string(),
+			WuiValue::object(vec![(
+				"mode".to_string(),
+				WuiValue::String("live".to_string()),
+			)]),
+		)]);
+		let rendered = template.render(&state);
+
+		assert_eq!(rendered.id, 7);
+		assert_eq!(
+			rendered.payload,
+			ItemPayload::Custom {
+				name: "/robot-scene".to_string(),
+				entry: "".to_string(),
+				props: serde_json::json!({ "mode": "live" }),
+			}
+		);
+	}
+
+	#[test]
+	fn custom_component_src_can_use_explicit_entry() {
+		let template = Template::parse(
+			r#"<CustomComponent id=7 src="/project/demo/robot-scene" entry="/fs/wgui-controllers/robot-scene/controller.js" />"#,
+			"test",
+		)
+		.expect("parse template");
+		let rendered = template.render(&WuiValue::Null);
+
+		assert_eq!(
+			rendered.payload,
+			ItemPayload::Custom {
+				name: "/project/demo/robot-scene".to_string(),
+				entry: "/fs/wgui-controllers/robot-scene/controller.js".to_string(),
+				props: serde_json::json!({}),
 			}
 		);
 	}

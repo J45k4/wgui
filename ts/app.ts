@@ -1,5 +1,5 @@
 import { Deboncer } from "./debouncer.ts";
-import { disposeCustomComponentTree } from "./custom_components.ts";
+import { disposeCustomComponentTree, sendCustomData } from "./custom_components.ts";
 import { getPathItem } from "./path.ts";
 import { renderItem } from "./render.ts";
 import { applyThreePatch } from "./three_host.ts";
@@ -248,6 +248,11 @@ window.onload = () => {
 					disableWebPush(sender, message).catch((err) => {
 						console.warn("web push disable failed", err)
 					})
+					continue
+				}
+
+				if (message.type === "customData") {
+					sendCustomData(res, message.id, message.inx, message.name, message.payload)
 					continue
 				}
 

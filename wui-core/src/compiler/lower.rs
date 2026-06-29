@@ -228,7 +228,7 @@ fn lower_widget(
 	diags: &mut Vec<Diagnostic>,
 ) -> Option<IrWidget> {
 	let mut props = Vec::new();
-	let mut event_prop: Option<(String, EventKind, Option<Expr>, Span)> = None;
+	let mut event_props: Vec<(String, EventKind, Option<Expr>, Span)> = Vec::new();
 
 	if let Some(schema) = schema_for(&el.name) {
 		for attr in &el.attrs {
@@ -241,7 +241,7 @@ fn lower_widget(
 						};
 						let scoped = ctx.scoped_action(&action_name);
 						let arg = get_expr_like(el, "arg");
-						event_prop = Some((scoped, kind, arg, attr.span));
+						event_props.push((scoped, kind, arg, attr.span));
 					}
 					crate::compiler::registry::PropKind::Bind(_) => {
 						if let AttrValue::Expr(expr) = &attr.value {
@@ -269,9 +269,9 @@ fn lower_widget(
 		}
 	}
 
-	if let Some((action, kind, arg, span)) = event_prop {
+	for (action, kind, arg, span) in event_props {
 		let payload = match kind {
-			EventKind::Click => {
+			EventKind::Click | EventKind::Press | EventKind::Release | EventKind::Repeat => {
 				if arg.is_some() {
 					ActionPayload::U32
 				} else {
@@ -329,6 +329,9 @@ fn lower_value_prop(props: &mut Vec<IrProp>, prop_name: String, value: &AttrValu
 fn kind_name(kind: EventKind) -> String {
 	match kind {
 		EventKind::Click => "onClick".to_string(),
+		EventKind::Press => "onPress".to_string(),
+		EventKind::Release => "onRelease".to_string(),
+		EventKind::Repeat => "onRepeat".to_string(),
 		EventKind::TextChanged => "onTextChanged".to_string(),
 		EventKind::SliderChange => "onSliderChange".to_string(),
 		EventKind::Select => "onSelect".to_string(),

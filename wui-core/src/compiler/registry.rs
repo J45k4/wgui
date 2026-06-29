@@ -82,7 +82,23 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 					kind: PropKind::Event(EventKind::Click),
 				},
 				PropSchema {
+					name: "onPress",
+					kind: PropKind::Event(EventKind::Press),
+				},
+				PropSchema {
+					name: "onRelease",
+					kind: PropKind::Event(EventKind::Release),
+				},
+				PropSchema {
+					name: "onRepeat",
+					kind: PropKind::Event(EventKind::Repeat),
+				},
+				PropSchema {
 					name: "arg",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "repeatInterval",
 					kind: PropKind::Value(ValueType::Number),
 				},
 				PropSchema {
@@ -264,7 +280,15 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 			name: "CustomComponent",
 			props: &[
 				PropSchema {
+					name: "id",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
 					name: "name",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "src",
 					kind: PropKind::Value(ValueType::String),
 				},
 				PropSchema {

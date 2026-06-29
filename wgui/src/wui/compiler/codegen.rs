@@ -176,12 +176,14 @@ fn decode_arm(action: &ActionDef) -> String {
 	let variant = action_variant(&action.name);
 	let id = action.id;
 	match action.kind {
-		EventKind::Click => match action.payload {
+		EventKind::Click | EventKind::Press | EventKind::Release | EventKind::Repeat => match action.payload {
 			ActionPayload::None => format!(
-				"\t\twgui::ClientEvent::OnClick(ev) if ev.id == {id} => Some(Action::{variant}),\n"
+				"\t\twgui::ClientEvent::{}(ev) if ev.id == {id} => Some(Action::{variant}),\n",
+				client_event_variant(action.kind)
 			),
 			ActionPayload::U32 => format!(
-				"\t\twgui::ClientEvent::OnClick(ev) if ev.id == {id} => ev.inx.map(|arg| Action::{variant} {{ arg }}),\n"
+				"\t\twgui::ClientEvent::{}(ev) if ev.id == {id} => ev.inx.map(|arg| Action::{variant} {{ arg }}),\n",
+				client_event_variant(action.kind)
 			),
 			_ => String::new(),
 		},
@@ -200,6 +202,18 @@ fn decode_arm(action: &ActionDef) -> String {
 		EventKind::Select => format!(
 			"\t\twgui::ClientEvent::OnSelect(ev) if ev.id == {id} => Some(Action::{variant} {{ value: ev.value.clone() }}),\n"
 		),
+	}
+}
+
+fn client_event_variant(kind: EventKind) -> &'static str {
+	match kind {
+		EventKind::Click => "OnClick",
+		EventKind::Press => "OnPress",
+		EventKind::Release => "OnRelease",
+		EventKind::Repeat => "OnRepeat",
+		EventKind::TextChanged => "OnTextChanged",
+		EventKind::SliderChange => "OnSliderChange",
+		EventKind::Select => "OnSelect",
 	}
 }
 
@@ -503,8 +517,10 @@ fn emit_prop(prop: &IrProp) -> String {
 			"bind:checked" => format!("checked({})", emit_expr(expr)),
 			_ => String::new(),
 		},
-		IrProp::Event { action, arg, .. } => {
-			let mut base = format!("id({})", action_id(action));
+		IrProp::Event {
+			name, action, arg, ..
+		} => {
+			let mut base = format!("{}({})", event_method(name), action_id(action));
 			if let Some(expr) = arg {
 				base = format!("{base}.inx({})", emit_expr(expr));
 			}
@@ -564,7 +580,18 @@ fn prop_method(name: &str) -> String {
 		"min" => "min".to_string(),
 		"max" => "max".to_string(),
 		"step" => "step".to_string(),
+		"repeatInterval" => "repeat_interval".to_string(),
 		_ => name.to_string(),
+	}
+}
+
+fn event_method(name: &str) -> &'static str {
+	match name {
+		"onClick" => "on_click",
+		"onPress" => "on_press",
+		"onRelease" => "on_release",
+		"onRepeat" => "on_repeat",
+		_ => "id",
 	}
 }
 

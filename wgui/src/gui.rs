@@ -121,6 +121,8 @@ pub enum ItemPayload {
 	},
 	Button {
 		title: String,
+		#[serde(skip_serializing_if = "Option::is_none")]
+		events: Option<ButtonEvents>,
 	},
 	Link {
 		href: String,
@@ -183,6 +185,16 @@ pub enum ItemPayload {
 		props: serde_json::Value,
 	},
 	None,
+}
+
+#[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ButtonEvents {
+	pub click: Option<u32>,
+	pub press: Option<u32>,
+	pub release: Option<u32>,
+	pub repeat: Option<u32>,
+	pub repeat_interval: Option<u32>,
 }
 
 impl Default for ItemPayload {
@@ -264,6 +276,7 @@ pub fn button(title: &str) -> Item {
 	Item {
 		payload: ItemPayload::Button {
 			title: title.to_string(),
+			events: None,
 		},
 		..Default::default()
 	}
@@ -631,6 +644,37 @@ impl Item {
 
 	pub fn inx(mut self, inx: u32) -> Self {
 		self.inx = inx;
+		self
+	}
+
+	pub fn on_click(mut self, id: u32) -> Self {
+		self = self.id(id);
+		self.set_button_event(|events| events.click = Some(id))
+	}
+
+	pub fn on_press(self, id: u32) -> Self {
+		self.set_button_event(|events| events.press = Some(id))
+	}
+
+	pub fn on_release(self, id: u32) -> Self {
+		self.set_button_event(|events| events.release = Some(id))
+	}
+
+	pub fn on_repeat(self, id: u32) -> Self {
+		self.set_button_event(|events| events.repeat = Some(id))
+	}
+
+	pub fn repeat_interval(self, interval: u32) -> Self {
+		self.set_button_event(|events| events.repeat_interval = Some(interval))
+	}
+
+	fn set_button_event<F>(mut self, update: F) -> Self
+	where
+		F: FnOnce(&mut ButtonEvents),
+	{
+		if let ItemPayload::Button { events, .. } = &mut self.payload {
+			update(events.get_or_insert_with(ButtonEvents::default));
+		}
 		self
 	}
 

@@ -172,6 +172,9 @@ struct ControllersCallArgs {
 #[serde(rename_all = "kebab-case")]
 enum ControllerEventKind {
 	Click,
+	Press,
+	Release,
+	Repeat,
 	TextChanged,
 	SliderChange,
 	Select,
@@ -952,7 +955,8 @@ fn apply_client_action(snapshot: &mut SessionSnapshot, action: ClientAction) {
 		| ClientAction::WebRtcRoomState { .. }
 		| ClientAction::WebRtcSignal { .. }
 		| ClientAction::WebPushEnable { .. }
-		| ClientAction::WebPushDisable { .. } => {}
+		| ClientAction::WebPushDisable { .. }
+		| ClientAction::CustomData(_) => {}
 	}
 }
 
@@ -1284,6 +1288,27 @@ fn controller_event_json(
 			}
 			Ok(event)
 		}
+		ControllerEventKind::Press => {
+			let mut event = json!({ "type": "onPress", "id": id });
+			if let Some(arg) = arg {
+				event["inx"] = json!(arg);
+			}
+			Ok(event)
+		}
+		ControllerEventKind::Release => {
+			let mut event = json!({ "type": "onRelease", "id": id });
+			if let Some(arg) = arg {
+				event["inx"] = json!(arg);
+			}
+			Ok(event)
+		}
+		ControllerEventKind::Repeat => {
+			let mut event = json!({ "type": "onRepeat", "id": id });
+			if let Some(arg) = arg {
+				event["inx"] = json!(arg);
+			}
+			Ok(event)
+		}
 		ControllerEventKind::TextChanged => Ok(json!({
 			"type": "onTextChanged",
 			"id": id,
@@ -1312,6 +1337,9 @@ impl From<EventKind> for ControllerEventKind {
 	fn from(value: EventKind) -> Self {
 		match value {
 			EventKind::Click => Self::Click,
+			EventKind::Press => Self::Press,
+			EventKind::Release => Self::Release,
+			EventKind::Repeat => Self::Repeat,
 			EventKind::TextChanged => Self::TextChanged,
 			EventKind::SliderChange => Self::SliderChange,
 			EventKind::Select => Self::Select,
@@ -1322,6 +1350,9 @@ impl From<EventKind> for ControllerEventKind {
 fn event_kind_name(kind: EventKind) -> &'static str {
 	match kind {
 		EventKind::Click => "click",
+		EventKind::Press => "press",
+		EventKind::Release => "release",
+		EventKind::Repeat => "repeat",
 		EventKind::TextChanged => "text-changed",
 		EventKind::SliderChange => "slider-change",
 		EventKind::Select => "select",

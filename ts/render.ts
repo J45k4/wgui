@@ -1,4 +1,4 @@
-import { Context, Item, ItemPayload } from "./types.ts";
+import { ButtonEvents, Context, Item, ItemPayload } from "./types.ts";
 import { disposeCustomComponentTree, mountCustomComponent } from "./custom_components.ts";
 import { applyThreeTree, disposeThreeHost } from "./three_host.ts";
 
@@ -91,6 +91,119 @@ const hasFileDragPayload = (event: DragEvent): boolean => {
 		}
 	}
 	return false
+}
+
+type ButtonHoldConfig = {
+	item: Item
+	events: ButtonEvents | undefined
+	ctx: Context
+}
+
+type ButtonHoldState = {
+	active: boolean
+	activePointer: number | null
+	repeatTimer: number | null
+	config: ButtonHoldConfig
+}
+
+const buttonHoldStates = new WeakMap<HTMLButtonElement, ButtonHoldState>()
+
+const buttonEventId = (item: Item, events: ButtonEvents | undefined, name: keyof ButtonEvents): number | undefined => {
+	if (events && typeof events[name] === "number") {
+		return events[name] as number
+	}
+	if (!events && name === "click" && item.id) {
+		return item.id
+	}
+	return undefined
+}
+
+const sendButtonEvent = (
+	type: "onClick" | "onPress" | "onRelease" | "onRepeat",
+	id: number | undefined,
+	item: Item,
+	ctx: Context,
+) => {
+	if (!id) {
+		return
+	}
+	ctx.sender.send({
+		type,
+		id,
+		inx: item.inx || undefined,
+	})
+	ctx.sender.sendNow()
+}
+
+const stopButtonHold = (state: ButtonHoldState, sendRelease: boolean) => {
+	if (!state.active) {
+		return
+	}
+	state.active = false
+	state.activePointer = null
+	if (state.repeatTimer !== null) {
+		window.clearInterval(state.repeatTimer)
+		state.repeatTimer = null
+	}
+	if (sendRelease) {
+		const { item, events, ctx } = state.config
+		sendButtonEvent("onRelease", buttonEventId(item, events, "release"), item, ctx)
+	}
+}
+
+const configureButtonEvents = (button: HTMLButtonElement, item: Item, events: ButtonEvents | undefined, ctx: Context) => {
+	let state = buttonHoldStates.get(button)
+	if (!state) {
+		state = {
+			active: false,
+			activePointer: null,
+			repeatTimer: null,
+			config: { item, events, ctx },
+		}
+		buttonHoldStates.set(button, state)
+
+		button.onclick = () => {
+			const { item, events, ctx } = state!.config
+			sendButtonEvent("onClick", buttonEventId(item, events, "click"), item, ctx)
+		}
+		button.onpointerdown = (event) => {
+			const { item, events, ctx } = state!.config
+			const pressId = buttonEventId(item, events, "press")
+			const repeatId = buttonEventId(item, events, "repeat")
+			if (!pressId && !repeatId) {
+				return
+			}
+			if (event.button !== undefined && event.button !== 0) {
+				return
+			}
+			event.preventDefault()
+			if (state!.active) {
+				return
+			}
+			state!.active = true
+			state!.activePointer = event.pointerId
+			button.setPointerCapture?.(event.pointerId)
+			sendButtonEvent("onPress", pressId, item, ctx)
+			if (repeatId) {
+				const interval = Math.max(1, events?.repeatInterval ?? 250)
+				state!.repeatTimer = window.setInterval(() => {
+					const { item, events, ctx } = state!.config
+					sendButtonEvent("onRepeat", buttonEventId(item, events, "repeat"), item, ctx)
+				}, interval)
+			}
+		}
+		button.onpointerup = (event) => {
+			if (state!.activePointer !== null && event.pointerId !== state!.activePointer) {
+				return
+			}
+			event.preventDefault()
+			stopButtonHold(state!, true)
+		}
+		button.onpointercancel = () => stopButtonHold(state!, true)
+		button.onlostpointercapture = () => stopButtonHold(state!, true)
+		button.onblur = () => stopButtonHold(state!, true)
+	}
+	state.config = { item, events, ctx }
 }
 
 const sendImageFileAsTextChanged = async (ctx: Context, id: number, inx: number | undefined, file: File) => {
@@ -351,16 +464,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			if (old) old.replaceWith(button)
 		}
 		button.textContent = payload.title
-		if (item.id) {
-			button.onclick = () => {
-				ctx.sender.send({
-					type: "onClick",
-					id: item.id,
-					inx: item.inx,
-				})
-				ctx.sender.sendNow()
-			}
-		}
+		configureButtonEvents(button, item, payload.events, ctx)
 		return button
 	}
 

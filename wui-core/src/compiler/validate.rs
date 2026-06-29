@@ -222,7 +222,6 @@ fn validate_widget(el: &crate::ast::Element, diags: &mut Vec<Diagnostic>) {
 		diags.push(Diagnostic::new("unknown tag", el.span));
 		return;
 	};
-	let mut event_count = 0;
 	for attr in &el.attrs {
 		let Some(prop) = schema.props.iter().find(|p| p.name == attr.name) else {
 			diags.push(Diagnostic::new(
@@ -233,7 +232,6 @@ fn validate_widget(el: &crate::ast::Element, diags: &mut Vec<Diagnostic>) {
 		};
 		match prop.kind {
 			PropKind::Event(_) => {
-				event_count += 1;
 				if !matches!(attr.value, AttrValue::String(_, _)) {
 					diags.push(Diagnostic::new(
 						"event handlers must be string literals",
@@ -250,12 +248,6 @@ fn validate_widget(el: &crate::ast::Element, diags: &mut Vec<Diagnostic>) {
 				}
 			}
 		}
-	}
-	if event_count > 1 {
-		diags.push(Diagnostic::new(
-			"only one event handler per element is supported",
-			el.span,
-		));
 	}
 	check_bind_conflicts(el, diags);
 }

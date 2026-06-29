@@ -54,7 +54,7 @@ var setState = (element, state) => {
 };
 var controllerContext = (item, payload, ctx) => ({
   id: item.id,
-  inx: item.inx,
+  inx: item.inx || undefined,
   name: payload.name,
   emit: (name, eventPayload) => {
     if (!item.id) {
@@ -63,7 +63,7 @@ var controllerContext = (item, payload, ctx) => ({
     ctx.sender.send({
       type: "onCustom",
       id: item.id,
-      inx: item.inx,
+      inx: item.inx || undefined,
       name,
       payload: eventPayload ?? null
     });
@@ -79,6 +79,28 @@ var disposeState = (state) => {
     state.controller?.dispose?.();
   } catch (err) {
     console.warn("wgui custom component dispose failed", err);
+  }
+};
+var dispatchData = (state, name, payload) => {
+  if (!state.controller?.onData) {
+    state.pendingData.push({ name, payload });
+    return;
+  }
+  Promise.resolve(state.controller.onData(name, payload)).catch((err) => {
+    console.warn("wgui custom component onData failed", err);
+  });
+};
+var sendCustomData = (root, id, inx, name, payload) => {
+  for (const element of Array.from(root.querySelectorAll("[data-wgui-custom='true']"))) {
+    const state = getState(element);
+    if (!state || state.id !== id) {
+      continue;
+    }
+    if ((state.inx ?? undefined) !== (inx ?? undefined)) {
+      continue;
+    }
+    dispatchData(state, name, payload);
+    return;
   }
 };
 var disposeCustomComponent = (element) => {
@@ -101,6 +123,8 @@ var mountCustomComponent = (element, item, payload, ctx) => {
   const key = componentKey(payload);
   const existing = getState(element);
   if (existing?.key === key) {
+    existing.id = item.id;
+    existing.inx = item.inx || undefined;
     existing.props = payload.props;
     if (existing.controller?.setProps) {
       Promise.resolve(existing.controller.setProps(payload.props)).catch((err) => {
@@ -112,7 +136,10 @@ var mountCustomComponent = (element, item, payload, ctx) => {
   disposeState(existing);
   const state = {
     key,
+    id: item.id,
+    inx: item.inx || undefined,
     props: payload.props,
+    pendingData: [],
     cancelled: false
   };
   setState(element, state);
@@ -127,6 +154,10 @@ var mountCustomComponent = (element, item, payload, ctx) => {
     const controller = new Controller(element, controllerContext(item, payload, ctx));
     state.controller = controller;
     return Promise.resolve(controller.mount?.(state.props)).then(() => {
+      while (!state.cancelled && state.pendingData.length > 0) {
+        const next = state.pendingData.shift();
+        dispatchData(state, next.name, next.payload);
+      }
       if (!state.cancelled && !controller.mount && controller.setProps) {
         return controller.setProps(state.props);
       }
@@ -1231,6 +1262,95 @@ var hasFileDragPayload = (event) => {
   }
   return false;
 };
+var buttonHoldStates = new WeakMap;
+var buttonEventId = (item, events, name) => {
+  if (events && typeof events[name] === "number") {
+    return events[name];
+  }
+  if (!events && name === "click" && item.id) {
+    return item.id;
+  }
+  return;
+};
+var sendButtonEvent = (type, id, item, ctx) => {
+  if (!id) {
+    return;
+  }
+  ctx.sender.send({
+    type,
+    id,
+    inx: item.inx || undefined
+  });
+  ctx.sender.sendNow();
+};
+var stopButtonHold = (state, sendRelease) => {
+  if (!state.active) {
+    return;
+  }
+  state.active = false;
+  state.activePointer = null;
+  if (state.repeatTimer !== null) {
+    window.clearInterval(state.repeatTimer);
+    state.repeatTimer = null;
+  }
+  if (sendRelease) {
+    const { item, events, ctx } = state.config;
+    sendButtonEvent("onRelease", buttonEventId(item, events, "release"), item, ctx);
+  }
+};
+var configureButtonEvents = (button, item, events, ctx) => {
+  let state = buttonHoldStates.get(button);
+  if (!state) {
+    state = {
+      active: false,
+      activePointer: null,
+      repeatTimer: null,
+      config: { item, events, ctx }
+    };
+    buttonHoldStates.set(button, state);
+    button.onclick = () => {
+      const { item: item2, events: events2, ctx: ctx2 } = state.config;
+      sendButtonEvent("onClick", buttonEventId(item2, events2, "click"), item2, ctx2);
+    };
+    button.onpointerdown = (event) => {
+      const { item: item2, events: events2, ctx: ctx2 } = state.config;
+      const pressId = buttonEventId(item2, events2, "press");
+      const repeatId = buttonEventId(item2, events2, "repeat");
+      if (!pressId && !repeatId) {
+        return;
+      }
+      if (event.button !== undefined && event.button !== 0) {
+        return;
+      }
+      event.preventDefault();
+      if (state.active) {
+        return;
+      }
+      state.active = true;
+      state.activePointer = event.pointerId;
+      button.setPointerCapture?.(event.pointerId);
+      sendButtonEvent("onPress", pressId, item2, ctx2);
+      if (repeatId) {
+        const interval = Math.max(1, events2?.repeatInterval ?? 250);
+        state.repeatTimer = window.setInterval(() => {
+          const { item: item3, events: events3, ctx: ctx3 } = state.config;
+          sendButtonEvent("onRepeat", buttonEventId(item3, events3, "repeat"), item3, ctx3);
+        }, interval);
+      }
+    };
+    button.onpointerup = (event) => {
+      if (state.activePointer !== null && event.pointerId !== state.activePointer) {
+        return;
+      }
+      event.preventDefault();
+      stopButtonHold(state, true);
+    };
+    button.onpointercancel = () => stopButtonHold(state, true);
+    button.onlostpointercapture = () => stopButtonHold(state, true);
+    button.onblur = () => stopButtonHold(state, true);
+  }
+  state.config = { item, events, ctx };
+};
 var sendImageFileAsTextChanged = async (ctx, id, inx, file) => {
   const value = await fileToDataUrl(file).catch(() => "");
   if (!value) {
@@ -1471,16 +1591,7 @@ var renderPayload = (item, ctx, old) => {
         old.replaceWith(button);
     }
     button.textContent = payload.title;
-    if (item.id) {
-      button.onclick = () => {
-        ctx.sender.send({
-          type: "onClick",
-          id: item.id,
-          inx: item.inx
-        });
-        ctx.sender.sendNow();
-      };
-    }
+    configureButtonEvents(button, item, payload.events, ctx);
     return button;
   }
   if (payload.type === "link") {
@@ -2921,6 +3032,10 @@ window.onload = () => {
           disableWebPush(sender2, message).catch((err) => {
             console.warn("web push disable failed", err);
           });
+          continue;
+        }
+        if (message.type === "customData") {
+          sendCustomData(res, message.id, message.inx, message.name, message.payload);
           continue;
         }
         if (message.type === "setProp") {

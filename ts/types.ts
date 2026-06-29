@@ -58,6 +58,15 @@ export type Layout = {
 export type Button = {
     type: "button"
     title: string
+	events?: ButtonEvents
+}
+
+export type ButtonEvents = {
+	click?: number
+	press?: number
+	release?: number
+	repeat?: number
+	repeatInterval?: number
 }
 
 export type Link = {
@@ -408,6 +417,14 @@ export type SetTitle = {
     title: string
 }
 
+export type CustomData = {
+	type: "customData"
+	id: number
+	inx?: number
+	name: string
+	payload: unknown
+}
+
 export type WebRtcRoomState = {
 	type: "webRtcRoomState"
 	room: string
@@ -453,11 +470,30 @@ export type SrvMessage = Replace |
 	WebRtcRoomState |
 	WebRtcSignal |
 	WebPushEnable |
-	WebPushDisable
+	WebPushDisable |
+	CustomData
 
 export type OnClick = {
     type: "onClick"
     id: number
+	inx?: number
+}
+
+export type OnPress = {
+	type: "onPress"
+	id: number
+	inx?: number
+}
+
+export type OnRelease = {
+	type: "onRelease"
+	id: number
+	inx?: number
+}
+
+export type OnRepeat = {
+	type: "onRepeat"
+	id: number
 	inx?: number
 }
 
@@ -530,7 +566,10 @@ export type WebPushSubscriptionChanged = {
 	subscription: { [key: string]: unknown } | null
 }
 
-export type MessageToSrv = OnClick | 
+export type MessageToSrv = OnClick |
+	OnPress |
+	OnRelease |
+	OnRepeat |
     OnTextChange | 
     OnKeyDown | 
 	PathChanged |
