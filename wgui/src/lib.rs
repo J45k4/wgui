@@ -1322,6 +1322,32 @@ where
 			.push(PageRegistration::new(pattern, factory, process_factory));
 	}
 
+	pub fn add_page_with_route<C, F, Fut>(&mut self, route: &str, controller: F)
+	where
+		C: crate::wui::runtime::WuiController + Send + 'static,
+		F: Fn(RouteContext) -> Fut + Send + Sync + 'static,
+		Fut: Future<Output = C> + Send + 'static,
+	{
+		let pattern = RoutePattern::parse(route);
+		let factory: PageControllerFactory = Arc::new(move |route, _client_id, _session| {
+			let fut = controller(route);
+			Box::pin(async move { PageMount::Ready(Box::new(fut.await) as BoxedController) })
+		});
+		self.ssr_pages
+			.write()
+			.unwrap()
+			.push((pattern.clone(), factory.clone()));
+		let process_factory: ControllerProcessFactory = Arc::new(|ctx| {
+			Box::pin(async move {
+				if let Err(err) = C::process(ctx).await {
+					log::warn!("controller process failed: {err}");
+				}
+			})
+		});
+		self.pages
+			.push(PageRegistration::new(pattern, factory, process_factory));
+	}
+
 	pub fn add_page<C>(&mut self, route: &str)
 	where
 		C: crate::wui::runtime::Component<Db = DB>
