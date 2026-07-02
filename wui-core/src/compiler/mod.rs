@@ -119,6 +119,21 @@ mod tests {
 	}
 
 	#[test]
+	fn compiles_custom_component_event_actions() {
+		let src = r#"
+<CustomComponent src="/trackpad" onMouseMoved="MovePeerMouse" />
+"#;
+		let generated = compile(src, "trackpad").expect("compile should succeed");
+
+		assert!(generated
+			.code
+			.contains("MovePeerMouse { payload: wgui::serde_json::Value }"));
+		assert!(generated.code.contains("wgui::ClientEvent::OnCustom"));
+		assert!(generated.code.contains("ev.name == \"mouseMoved\""));
+		assert!(generated.code.contains(".custom_event(\"mouseMoved\","));
+	}
+
+	#[test]
 	fn reports_unknown_tag() {
 		let src = "<UnknownTag />";
 		let result = compile(src, "bad");

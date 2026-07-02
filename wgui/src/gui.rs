@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FlexDirection {
@@ -183,6 +185,8 @@ pub enum ItemPayload {
 		name: String,
 		entry: String,
 		props: serde_json::Value,
+		#[serde(default, skip_serializing_if = "HashMap::is_empty")]
+		events: HashMap<String, u32>,
 	},
 	None,
 }
@@ -361,6 +365,7 @@ pub fn custom_component(
 			name: name.into(),
 			entry: entry.into(),
 			props,
+			events: HashMap::new(),
 		},
 		..Default::default()
 	}
@@ -666,6 +671,13 @@ impl Item {
 
 	pub fn repeat_interval(self, interval: u32) -> Self {
 		self.set_button_event(|events| events.repeat_interval = Some(interval))
+	}
+
+	pub fn custom_event(mut self, name: impl Into<String>, id: u32) -> Self {
+		if let ItemPayload::Custom { events, .. } = &mut self.payload {
+			events.insert(name.into(), id);
+		}
+		self
 	}
 
 	fn set_button_event<F>(mut self, update: F) -> Self

@@ -57,12 +57,13 @@ var controllerContext = (item, payload, ctx) => ({
   inx: item.inx || undefined,
   name: payload.name,
   emit: (name, eventPayload) => {
-    if (!item.id) {
+    const id = payload.events?.[name] ?? item.id;
+    if (!id) {
       return;
     }
     ctx.sender.send({
       type: "onCustom",
-      id: item.id,
+      id,
       inx: item.inx || undefined,
       name,
       payload: eventPayload ?? null

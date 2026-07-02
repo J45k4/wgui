@@ -320,6 +320,11 @@ pub enum RuntimeAction {
 		name: String,
 		value: String,
 	},
+	Custom {
+		name: String,
+		event: String,
+		payload: serde_json::Value,
+	},
 }
 
 #[derive(Debug, Clone)]
@@ -685,7 +690,7 @@ fn string_map_to_wui_value(map: &HashMap<String, String>) -> WuiValue {
 }
 
 fn decode_action(action: &ActionDef, event: &crate::types::ClientEvent) -> Option<RuntimeAction> {
-	match action.kind {
+	match &action.kind {
 		EventKind::Click | EventKind::Press | EventKind::Release | EventKind::Repeat => match event
 		{
 			crate::types::ClientEvent::OnClick(ev) if ev.id == action.id => match action.payload {
@@ -772,6 +777,18 @@ fn decode_action(action: &ActionDef, event: &crate::types::ClientEvent) -> Optio
 			}
 			_ => None,
 		},
+		EventKind::Custom(event_name) => match event {
+			crate::types::ClientEvent::OnCustom(ev)
+				if ev.id == action.id && ev.name == *event_name =>
+			{
+				Some(RuntimeAction::Custom {
+					name: action.name.clone(),
+					event: ev.name.clone(),
+					payload: ev.payload.clone(),
+				})
+			}
+			_ => None,
+		},
 	}
 }
 
@@ -851,7 +868,13 @@ fn render_nodes(nodes: &[IrNode], out: &mut Vec<Item>, ctx: &mut EvalContext) {
 
 fn render_widget(widget: &IrWidget, ctx: &mut EvalContext) -> Item {
 	if ctx.components.contains_key(&widget.tag) {
-		return single_or_wrapped(render_component(widget, ctx));
+		let mut item = single_or_wrapped(render_component(widget, ctx));
+		for prop in &widget.props {
+			if matches!(prop, IrProp::Event { .. }) {
+				item = apply_prop(item, prop, ctx);
+			}
+		}
+		return item;
 	}
 	let mut base = match widget.tag.as_str() {
 		"VStack" => render_container(gui::vstack, &widget.children, ctx),
@@ -1078,6 +1101,8 @@ fn apply_prop(item: Item, prop: &IrProp, ctx: &mut EvalContext) -> Item {
 			let id = action_id(action);
 			let mut item = if matches!(&item.payload, gui::ItemPayload::Button { .. }) {
 				apply_button_event(item, name, id)
+			} else if matches!(&item.payload, gui::ItemPayload::Custom { .. }) {
+				item.custom_event(name, id)
 			} else {
 				item.id(id)
 			};
@@ -1483,6 +1508,7 @@ mod tests {
 				name: "/robot-scene".to_string(),
 				entry: "".to_string(),
 				props: serde_json::json!({ "mode": "live" }),
+				events: HashMap::new(),
 			}
 		);
 	}
@@ -1502,7 +1528,64 @@ mod tests {
 				name: "/project/demo/robot-scene".to_string(),
 				entry: "/fs/wgui-controllers/robot-scene/controller.js".to_string(),
 				props: serde_json::json!({}),
+				events: HashMap::new(),
 			}
+		);
+	}
+
+	#[test]
+	fn custom_component_events_decode_by_event_name() {
+		let template = Template::parse(
+			r#"<CustomComponent src="/trackpad" onMouseMoved="MovePeerMouse" />"#,
+			"test",
+		)
+		.expect("parse template");
+		let event = crate::types::ClientEvent::OnCustom(crate::types::OnCustom {
+			id: action_id("MovePeerMouse"),
+			inx: None,
+			name: "mouseMoved".to_string(),
+			payload: serde_json::json!({ "dx": 4, "dy": -2 }),
+		});
+
+		let decoded = template.decode(&event).expect("decode action");
+
+		match decoded {
+			RuntimeAction::Custom {
+				name,
+				event,
+				payload,
+			} => {
+				assert_eq!(name, "MovePeerMouse");
+				assert_eq!(event, "mouseMoved");
+				assert_eq!(payload, serde_json::json!({ "dx": 4, "dy": -2 }));
+			}
+			_ => panic!("expected custom action"),
+		}
+	}
+
+	#[test]
+	fn imported_component_forwards_custom_event_bindings_to_custom_root() {
+		let template = Template::parse_with_sources(
+			r#"
+			<Import name="Trackpad" from="trackpad" />
+			<Trackpad onMouseMoved="MovePeerMouse" />
+			"#,
+			"test",
+			Some(Path::new("/embedded/pages/control.wui").parent().unwrap()),
+			&[(
+				"/embedded/pages/trackpad.wui",
+				r#"<CustomComponent src="/trackpad" />"#,
+			)],
+		)
+		.expect("parse template");
+		let rendered = template.render(&WuiValue::Null);
+
+		let ItemPayload::Custom { events, .. } = rendered.payload else {
+			panic!("expected custom component");
+		};
+		assert_eq!(
+			events.get("mouseMoved").copied(),
+			Some(action_id("MovePeerMouse"))
 		);
 	}
 

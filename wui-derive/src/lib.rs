@@ -187,6 +187,7 @@ enum HandlerArg {
 	I32,
 	U32I32,
 	String,
+	Json,
 }
 
 struct HandlerMethod {
@@ -485,6 +486,20 @@ fn expand_wgui_controller(
 		})
 		.collect::<Vec<_>>();
 	let string_arms_ref = &string_arms;
+	let json_arms = handlers
+		.iter()
+		.filter(|handler| matches!(handler.arg, HandlerArg::Json))
+		.map(|handler| {
+			let ident = &handler.ident;
+			let name = ident.to_string();
+			if handler.is_async {
+				quote! { #name => { self.#ident(payload).await; true } }
+			} else {
+				quote! { #name => { self.#ident(payload); true } }
+			}
+		})
+		.collect::<Vec<_>>();
+	let json_arms_ref = &json_arms;
 	let fallback_decode = if let Some(handler) = &fallback_event_handler {
 		let ident = &handler.ident;
 		if handler.is_async {
@@ -680,6 +695,13 @@ fn expand_wgui_controller(
 						let action_name = #action_fn(name);
 						match action_name.as_str() {
 							#(#string_arms_ref,)*
+							_ => false,
+						}
+					}
+					::wgui::wui::runtime::RuntimeAction::Custom { ref name, payload, .. } => {
+						let action_name = #action_fn(name);
+						match action_name.as_str() {
+							#(#json_arms_ref,)*
 							_ => false,
 						}
 					}
@@ -991,8 +1013,19 @@ fn handler_arg_from_type(ty: &Type) -> Option<HandlerArg> {
 		"String" => Some(HandlerArg::String),
 		"u32" => Some(HandlerArg::U32),
 		"i32" => Some(HandlerArg::I32),
+		"Value" if is_serde_json_value_path(path) => Some(HandlerArg::Json),
 		_ => None,
 	}
+}
+
+fn is_serde_json_value_path(path: &syn::TypePath) -> bool {
+	let segments = path
+		.path
+		.segments
+		.iter()
+		.map(|segment| segment.ident.to_string())
+		.collect::<Vec<_>>();
+	segments == ["serde_json", "Value"] || segments == ["wgui", "serde_json", "Value"]
 }
 
 fn handler_two_args_from_method(method: &syn::ImplItemFn) -> Option<HandlerArg> {

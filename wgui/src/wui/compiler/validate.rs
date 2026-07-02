@@ -196,6 +196,10 @@ fn validate_component_use(
 		));
 	}
 	for attr in &el.attrs {
+		if is_custom_event_attr(&attr.name) {
+			validate_event_attr(attr, diags);
+			continue;
+		}
 		if matches!(attr.value, AttrValue::Null(_)) {
 			diags.push(Diagnostic::new(
 				format!("invalid value for {}", attr.name),
@@ -224,23 +228,22 @@ fn validate_widget(el: &crate::wui::ast::Element, diags: &mut Vec<Diagnostic>) {
 	};
 	for attr in &el.attrs {
 		let Some(prop) = schema.props.iter().find(|p| p.name == attr.name) else {
+			if is_custom_component_tag(&el.name) && is_custom_event_attr(&attr.name) {
+				validate_event_attr(attr, diags);
+				continue;
+			}
 			diags.push(Diagnostic::new(
 				format!("unknown prop {}", attr.name),
 				attr.span,
 			));
 			continue;
 		};
-		match prop.kind {
+		match &prop.kind {
 			PropKind::Event(_) => {
-				if !matches!(attr.value, AttrValue::String(_, _)) {
-					diags.push(Diagnostic::new(
-						"event handlers must be string literals",
-						attr.span,
-					));
-				}
+				validate_event_attr(attr, diags);
 			}
 			PropKind::Bind(value_type) | PropKind::Value(value_type) => {
-				if !attr_value_matches(&attr.value, value_type) {
+				if !attr_value_matches(&attr.value, *value_type) {
 					diags.push(Diagnostic::new(
 						format!("invalid value for {}", attr.name),
 						attr.span,
@@ -250,6 +253,29 @@ fn validate_widget(el: &crate::wui::ast::Element, diags: &mut Vec<Diagnostic>) {
 		}
 	}
 	check_bind_conflicts(el, diags);
+}
+
+fn is_custom_component_tag(name: &str) -> bool {
+	matches!(name, "Custom" | "CustomComponent")
+}
+
+fn is_custom_event_attr(name: &str) -> bool {
+	let Some(rest) = name.strip_prefix("on") else {
+		return false;
+	};
+	rest.chars()
+		.next()
+		.map(|ch| ch.is_ascii_uppercase())
+		.unwrap_or(false)
+}
+
+fn validate_event_attr(attr: &crate::wui::ast::Attribute, diags: &mut Vec<Diagnostic>) {
+	if !matches!(attr.value, AttrValue::String(_, _)) {
+		diags.push(Diagnostic::new(
+			"event handlers must be string literals",
+			attr.span,
+		));
+	}
 }
 
 fn check_bind_conflicts(el: &crate::wui::ast::Element, diags: &mut Vec<Diagnostic>) {

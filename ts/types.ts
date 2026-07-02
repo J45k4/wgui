@@ -242,6 +242,7 @@ export type Custom = {
 	name: string
 	entry: string
 	props: unknown
+	events?: Record<string, number>
 }
 
 export type ItemPayload = Text |

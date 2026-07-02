@@ -103,7 +103,7 @@ pub enum IrProp {
 	},
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EventKind {
 	Click,
 	Press,
@@ -112,6 +112,7 @@ pub enum EventKind {
 	TextChanged,
 	SliderChange,
 	Select,
+	Custom(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,6 +122,7 @@ pub enum ActionPayload {
 	String,
 	I32,
 	U32I32,
+	Json,
 }
 
 #[derive(Debug, Clone)]

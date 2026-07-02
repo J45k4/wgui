@@ -350,7 +350,7 @@ fn list_controllers(args: ControllersListArgs) -> Result<(), String> {
 				json!({
 					"action": action.name,
 					"method": action.method,
-					"kind": event_kind_name(action.kind),
+					"kind": event_kind_name(&action.kind),
 					"payload": action_payload_name(&action.payload),
 					"id": action.id,
 					"module": action.module,
@@ -382,7 +382,7 @@ fn list_controllers(args: ControllersListArgs) -> Result<(), String> {
 			"{:<28} method={:<28} kind={:<12} payload={:<6} id={:<10} route={} module={}",
 			action.name,
 			action.method,
-			event_kind_name(action.kind),
+			event_kind_name(&action.kind),
 			action_payload_name(&action.payload),
 			action.id,
 			routes,
@@ -402,7 +402,11 @@ fn call_controller(args: ControllersCallArgs) -> Result<(), String> {
 		.unwrap_or_else(|| args.action.clone());
 	let event_kind = args
 		.kind
-		.or_else(|| discovered.as_ref().map(|action| action.kind.into()))
+		.or_else(|| {
+			discovered
+				.as_ref()
+				.and_then(|action| controller_event_kind_from_event(&action.kind))
+		})
 		.ok_or_else(|| {
 			format!(
 				"could not infer event kind for {}; pass --kind or add a matching WUI action",
@@ -806,7 +810,11 @@ where
 		.map(|action| action.name.clone())
 		.unwrap_or(action);
 	let event_kind = kind
-		.or_else(|| discovered.as_ref().map(|action| action.kind.into()))
+		.or_else(|| {
+			discovered
+				.as_ref()
+				.and_then(|action| controller_event_kind_from_event(&action.kind))
+		})
 		.ok_or_else(|| {
 			format!("could not infer event kind for {action_name}; pass --kind on session call")
 		})?;
@@ -1276,6 +1284,9 @@ fn controller_event_json(
 			ActionPayload::U32I32 if arg.is_none() || value.is_none() => {
 				return Err("this action requires --arg <u32> and --value <i32>".to_string());
 			}
+			ActionPayload::Json => {
+				return Err("custom events cannot be called with --kind".to_string());
+			}
 			_ => {}
 		}
 	}
@@ -1333,29 +1344,29 @@ fn controller_event_json(
 	}
 }
 
-impl From<EventKind> for ControllerEventKind {
-	fn from(value: EventKind) -> Self {
-		match value {
-			EventKind::Click => Self::Click,
-			EventKind::Press => Self::Press,
-			EventKind::Release => Self::Release,
-			EventKind::Repeat => Self::Repeat,
-			EventKind::TextChanged => Self::TextChanged,
-			EventKind::SliderChange => Self::SliderChange,
-			EventKind::Select => Self::Select,
-		}
+fn controller_event_kind_from_event(kind: &EventKind) -> Option<ControllerEventKind> {
+	match kind {
+		EventKind::Click => Some(ControllerEventKind::Click),
+		EventKind::Press => Some(ControllerEventKind::Press),
+		EventKind::Release => Some(ControllerEventKind::Release),
+		EventKind::Repeat => Some(ControllerEventKind::Repeat),
+		EventKind::TextChanged => Some(ControllerEventKind::TextChanged),
+		EventKind::SliderChange => Some(ControllerEventKind::SliderChange),
+		EventKind::Select => Some(ControllerEventKind::Select),
+		EventKind::Custom(_) => None,
 	}
 }
 
-fn event_kind_name(kind: EventKind) -> &'static str {
+fn event_kind_name(kind: &EventKind) -> String {
 	match kind {
-		EventKind::Click => "click",
-		EventKind::Press => "press",
-		EventKind::Release => "release",
-		EventKind::Repeat => "repeat",
-		EventKind::TextChanged => "text-changed",
-		EventKind::SliderChange => "slider-change",
-		EventKind::Select => "select",
+		EventKind::Click => "click".to_string(),
+		EventKind::Press => "press".to_string(),
+		EventKind::Release => "release".to_string(),
+		EventKind::Repeat => "repeat".to_string(),
+		EventKind::TextChanged => "text-changed".to_string(),
+		EventKind::SliderChange => "slider-change".to_string(),
+		EventKind::Select => "select".to_string(),
+		EventKind::Custom(name) => format!("custom:{name}"),
 	}
 }
 
@@ -1366,6 +1377,7 @@ fn action_payload_name(payload: &ActionPayload) -> &'static str {
 		ActionPayload::String => "string",
 		ActionPayload::I32 => "i32",
 		ActionPayload::U32I32 => "u32,i32",
+		ActionPayload::Json => "json",
 	}
 }
 

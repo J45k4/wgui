@@ -5,6 +5,7 @@ type CustomPayload = {
 	name: string
 	entry: string
 	props: unknown
+	events?: Record<string, number>
 }
 
 type ControllerContext = {
@@ -65,12 +66,13 @@ const controllerContext = (item: Item, payload: CustomPayload, ctx: Context): Co
 	inx: item.inx || undefined,
 	name: payload.name,
 	emit: (name: string, eventPayload?: unknown) => {
-		if (!item.id) {
+		const id = payload.events?.[name] ?? item.id
+		if (!id) {
 			return
 		}
 		ctx.sender.send({
 			type: "onCustom",
-			id: item.id,
+			id,
 			inx: item.inx || undefined,
 			name,
 			payload: eventPayload ?? null,

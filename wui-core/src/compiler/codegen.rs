@@ -156,6 +156,12 @@ pub fn generate_controller_stub(doc: &IrDocument, module_name: &str) -> Option<S
 					method
 				));
 			}
+			ActionPayload::Json => {
+				out.push_str(&format!(
+					"\tpub(crate) fn {}(&mut self, _payload: wgui::serde_json::Value) {{\n\t\t// TODO\n\t}}\n\n",
+					method
+				));
+			}
 		}
 	}
 	out.push_str("}\n");
@@ -169,21 +175,22 @@ fn action_payload(action: &ActionDef) -> String {
 		ActionPayload::String => " { value: String }".to_string(),
 		ActionPayload::I32 => " { value: i32 }".to_string(),
 		ActionPayload::U32I32 => " { arg: u32, value: i32 }".to_string(),
+		ActionPayload::Json => " { payload: wgui::serde_json::Value }".to_string(),
 	}
 }
 
 fn decode_arm(action: &ActionDef) -> String {
 	let variant = action_variant(&action.name);
 	let id = action.id;
-	match action.kind {
+	match &action.kind {
 		EventKind::Click | EventKind::Press | EventKind::Release | EventKind::Repeat => match action.payload {
 			ActionPayload::None => format!(
 				"\t\twgui::ClientEvent::{}(ev) if ev.id == {id} => Some(Action::{variant}),\n",
-				client_event_variant(action.kind)
+				client_event_variant(&action.kind)
 			),
 			ActionPayload::U32 => format!(
 				"\t\twgui::ClientEvent::{}(ev) if ev.id == {id} => ev.inx.map(|arg| Action::{variant} {{ arg }}),\n",
-				client_event_variant(action.kind)
+				client_event_variant(&action.kind)
 			),
 			_ => String::new(),
 		},
@@ -202,10 +209,14 @@ fn decode_arm(action: &ActionDef) -> String {
 		EventKind::Select => format!(
 			"\t\twgui::ClientEvent::OnSelect(ev) if ev.id == {id} => Some(Action::{variant} {{ value: ev.value.clone() }}),\n"
 		),
+		EventKind::Custom(event_name) => format!(
+			"\t\twgui::ClientEvent::OnCustom(ev) if ev.id == {id} && ev.name == {:?} => Some(Action::{variant} {{ payload: ev.payload.clone() }}),\n",
+			event_name
+		),
 	}
 }
 
-fn client_event_variant(kind: EventKind) -> &'static str {
+fn client_event_variant(kind: &EventKind) -> &'static str {
 	match kind {
 		EventKind::Click => "OnClick",
 		EventKind::Press => "OnPress",
@@ -214,6 +225,7 @@ fn client_event_variant(kind: EventKind) -> &'static str {
 		EventKind::TextChanged => "OnTextChanged",
 		EventKind::SliderChange => "OnSliderChange",
 		EventKind::Select => "OnSelect",
+		EventKind::Custom(_) => "OnCustom",
 	}
 }
 
@@ -395,6 +407,7 @@ fn emit_widget(widget: &IrWidget, indent: usize) -> String {
 		"Audio" => emit_media(widget, "audio"),
 		"FolderPicker" => "wgui::folder_picker()".to_string(),
 		"Modal" => emit_container("modal", &widget.children, indent),
+		"Custom" | "CustomComponent" => emit_custom(widget),
 		_ => "wgui::text(\"unsupported\")".to_string(),
 	};
 	for prop in &widget.props {
@@ -497,6 +510,54 @@ fn emit_media(widget: &IrWidget, kind: &str) -> String {
 	format!("wgui::{kind}({room})")
 }
 
+fn emit_custom(widget: &IrWidget) -> String {
+	let mut name = "\"\"".to_string();
+	let mut entry = "\"\"".to_string();
+	let mut props = "wgui::serde_json::json!({})".to_string();
+	for prop in &widget.props {
+		match prop {
+			IrProp::Literal {
+				name: prop_name,
+				value,
+			} if prop_name == "name" => name = format!("{:?}", value),
+			IrProp::Literal {
+				name: prop_name,
+				value,
+			} if prop_name == "src" => name = format!("{:?}", value),
+			IrProp::Value {
+				name: prop_name,
+				expr,
+			} if prop_name == "name" || prop_name == "src" => name = emit_string_expr(expr),
+			IrProp::Literal {
+				name: prop_name,
+				value,
+			} if prop_name == "entry" => entry = format!("{:?}", value),
+			IrProp::Value {
+				name: prop_name,
+				expr,
+			} if prop_name == "entry" => entry = emit_string_expr(expr),
+			IrProp::Literal {
+				name: prop_name,
+				value,
+			} if prop_name == "props" => props = format!("wgui::serde_json::json!({:?})", value),
+			IrProp::Number {
+				name: prop_name,
+				value,
+			} if prop_name == "props" => props = format!("wgui::serde_json::json!({})", value),
+			IrProp::Bool {
+				name: prop_name,
+				value,
+			} if prop_name == "props" => props = format!("wgui::serde_json::json!({})", value),
+			IrProp::Value {
+				name: prop_name,
+				expr,
+			} if prop_name == "props" => props = format!("wgui::serde_json::json!({})", emit_expr(expr)),
+			_ => {}
+		}
+	}
+	format!("wgui::custom_component({name}, {entry}, {props})")
+}
+
 fn emit_prop(prop: &IrProp) -> String {
 	match prop {
 		IrProp::Literal { name, value } => format!("{}({:?})", prop_method(name), value),
@@ -520,7 +581,11 @@ fn emit_prop(prop: &IrProp) -> String {
 		IrProp::Event {
 			name, action, arg, ..
 		} => {
-			let mut base = format!("{}({})", event_method(name), action_id(action));
+			let mut base = if let Some(method) = event_method(name) {
+				format!("{}({})", method, action_id(action))
+			} else {
+				format!("custom_event({:?}, {})", name, action_id(action))
+			};
 			if let Some(expr) = arg {
 				base = format!("{base}.inx({})", emit_expr(expr));
 			}
@@ -585,13 +650,13 @@ fn prop_method(name: &str) -> String {
 	}
 }
 
-fn event_method(name: &str) -> &'static str {
+fn event_method(name: &str) -> Option<&'static str> {
 	match name {
-		"onClick" => "on_click",
-		"onPress" => "on_press",
-		"onRelease" => "on_release",
-		"onRepeat" => "on_repeat",
-		_ => "id",
+		"onClick" => Some("on_click"),
+		"onPress" => Some("on_press"),
+		"onRelease" => Some("on_release"),
+		"onRepeat" => Some("on_repeat"),
+		_ => None,
 	}
 }
 

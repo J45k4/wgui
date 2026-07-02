@@ -233,7 +233,7 @@ fn lower_widget(
 	if let Some(schema) = schema_for(&el.name) {
 		for attr in &el.attrs {
 			if let Some(def) = schema.props.iter().find(|p| p.name == attr.name) {
-				match def.kind {
+				match &def.kind {
 					crate::wui::compiler::registry::PropKind::Event(kind) => {
 						let action_name = match &attr.value {
 							AttrValue::String(name, _) => name.clone(),
@@ -241,7 +241,7 @@ fn lower_widget(
 						};
 						let scoped = ctx.scoped_action(&action_name);
 						let arg = get_expr_like(el, "arg");
-						event_props.push((scoped, kind, arg, attr.span));
+						event_props.push((scoped, kind.clone(), arg, attr.span));
 					}
 					crate::wui::compiler::registry::PropKind::Bind(_) => {
 						if let AttrValue::Expr(expr) = &attr.value {
@@ -260,17 +260,40 @@ fn lower_widget(
 						lower_value_prop(&mut props, prop_name, &attr.value);
 					}
 				}
+			} else if is_custom_component_tag(&el.name) {
+				if let Some(event_name) = custom_event_name(&attr.name) {
+					let action_name = match &attr.value {
+						AttrValue::String(name, _) => name.clone(),
+						_ => continue,
+					};
+					let scoped = ctx.scoped_action(&action_name);
+					event_props.push((
+						scoped,
+						EventKind::Custom(event_name),
+						None,
+						attr.span,
+					));
+				}
 			}
 		}
 	} else {
 		for attr in &el.attrs {
-			let prop_name = attr.name.clone();
-			lower_value_prop(&mut props, prop_name, &attr.value);
+			if let Some(event_name) = custom_event_name(&attr.name) {
+				let action_name = match &attr.value {
+					AttrValue::String(name, _) => name.clone(),
+					_ => continue,
+				};
+				let scoped = ctx.scoped_action(&action_name);
+				event_props.push((scoped, EventKind::Custom(event_name), None, attr.span));
+			} else {
+				let prop_name = attr.name.clone();
+				lower_value_prop(&mut props, prop_name, &attr.value);
+			}
 		}
 	}
 
 	for (action, kind, arg, span) in event_props {
-		let payload = match kind {
+		let payload = match &kind {
 			EventKind::Click | EventKind::Press | EventKind::Release | EventKind::Repeat => {
 				if arg.is_some() {
 					ActionPayload::U32
@@ -287,10 +310,12 @@ fn lower_widget(
 				}
 			}
 			EventKind::Select => ActionPayload::String,
+			EventKind::Custom(_) => ActionPayload::Json,
 		};
+		let event_name = kind_name(&kind);
 		ctx.add_action(action.clone(), kind, payload, span, diags);
 		props.push(IrProp::Event {
-			name: kind_name(kind),
+			name: event_name,
 			action,
 			arg,
 		});
@@ -302,6 +327,23 @@ fn lower_widget(
 		props,
 		children,
 	})
+}
+
+fn is_custom_component_tag(name: &str) -> bool {
+	matches!(name, "Custom" | "CustomComponent")
+}
+
+fn custom_event_name(name: &str) -> Option<String> {
+	let rest = name.strip_prefix("on")?;
+	let mut chars = rest.chars();
+	let first = chars.next()?;
+	if !first.is_ascii_uppercase() {
+		return None;
+	}
+	let mut event = String::new();
+	event.push(first.to_ascii_lowercase());
+	event.extend(chars);
+	Some(event)
 }
 
 fn lower_value_prop(props: &mut Vec<IrProp>, prop_name: String, value: &AttrValue) {
@@ -326,7 +368,7 @@ fn lower_value_prop(props: &mut Vec<IrProp>, prop_name: String, value: &AttrValu
 	}
 }
 
-fn kind_name(kind: EventKind) -> String {
+fn kind_name(kind: &EventKind) -> String {
 	match kind {
 		EventKind::Click => "onClick".to_string(),
 		EventKind::Press => "onPress".to_string(),
@@ -335,6 +377,7 @@ fn kind_name(kind: EventKind) -> String {
 		EventKind::TextChanged => "onTextChanged".to_string(),
 		EventKind::SliderChange => "onSliderChange".to_string(),
 		EventKind::Select => "onSelect".to_string(),
+		EventKind::Custom(name) => name.clone(),
 	}
 }
 

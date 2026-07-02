@@ -44,6 +44,7 @@ use crate::wui::runtime::{MountResult, RouteContext};
 pub use db_table::{Db, DbTable};
 pub use dist::*;
 pub use gui::*;
+pub use serde_json;
 #[cfg(feature = "hyper")]
 pub use server::{HttpHandler, HttpRequest, HttpResponse};
 #[cfg(feature = "sqlite")]
