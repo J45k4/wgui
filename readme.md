@@ -52,6 +52,13 @@ See `docs/wui.md` for the WUI template language, compiler/runtime usage, and hot
 
 `#[wgui_controller]` uses `mode = "auto"` by default: debug builds load `.wui` files from the app `wui/` directory for hot reload, while release builds embed the validated WUI source graph into the binary so the templates do not need to exist on disk. Use `mode = "runtime"` to always read files or `mode = "compiled"` to always embed templates.
 
+Validate templates from the CLI before starting an app:
+
+```
+cargo run -p wgui -- check path/to/project
+cargo run -p wgui -- check path/to/template.wui
+```
+
 ## LSP
 
 See `docs/lsp.md` for setting up the `wui-lsp` server in Zed or other editors.

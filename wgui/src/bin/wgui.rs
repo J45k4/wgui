@@ -49,6 +49,7 @@ enum TopCommand {
 		command: SessionCommand,
 	},
 	Generate(GenerateArgs),
+	Check(CheckArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -139,6 +140,13 @@ struct GenerateArgs {
 	out: Option<PathBuf>,
 	#[arg(long)]
 	db_name: Option<String>,
+}
+
+#[derive(Args, Debug)]
+struct CheckArgs {
+	paths: Vec<PathBuf>,
+	#[arg(long)]
+	quiet: bool,
 }
 
 #[derive(Args, Debug)]
@@ -257,6 +265,7 @@ fn run() -> Result<(), String> {
 		TopCommand::Controllers { command } => run_controllers(command),
 		TopCommand::Session { command } => run_session(command),
 		TopCommand::Generate(args) => run_generate(args),
+		TopCommand::Check(args) => run_check(args),
 	}
 }
 
@@ -326,6 +335,88 @@ fn run_generate(args: GenerateArgs) -> Result<(), String> {
 		.map_err(|e| format!("failed writing {}: {e}", out_path.display()))?;
 	println!("generated {}", out_path.display());
 	Ok(())
+}
+
+fn run_check(args: CheckArgs) -> Result<(), String> {
+	let paths = if args.paths.is_empty() {
+		vec![PathBuf::from(".")]
+	} else {
+		args.paths
+	};
+	let files = discover_wui_check_files(&paths)?;
+	if files.is_empty() {
+		return Err("no .wui files found".to_string());
+	}
+
+	let mut failures = 0usize;
+	for (base, file) in &files {
+		match check_wui_file(base, file) {
+			Ok(()) => {
+				if !args.quiet {
+					println!("ok {}", file.display());
+				}
+			}
+			Err(err) => {
+				failures += 1;
+				eprintln!("{err}");
+			}
+		}
+	}
+
+	if failures > 0 {
+		Err(format!(
+			"wui check failed for {failures} of {} file(s)",
+			files.len()
+		))
+	} else {
+		if !args.quiet {
+			println!("checked {} WUI file(s)", files.len());
+		}
+		Ok(())
+	}
+}
+
+fn discover_wui_check_files(paths: &[PathBuf]) -> Result<Vec<(PathBuf, PathBuf)>, String> {
+	let mut files = Vec::new();
+	for path in paths {
+		let path = std::fs::canonicalize(path)
+			.map_err(|e| format!("failed resolving {}: {e}", path.display()))?;
+		if path.is_file() {
+			if path.extension().and_then(|ext| ext.to_str()) != Some("wui") {
+				return Err(format!("{} is not a .wui file", path.display()));
+			}
+			let base = path
+				.parent()
+				.ok_or_else(|| format!("{} has no parent directory", path.display()))?
+				.to_path_buf();
+			files.push((base, path));
+		} else if path.is_dir() {
+			let base = if path.join("wui").is_dir() {
+				path.join("wui")
+			} else {
+				path
+			};
+			let mut found = Vec::new();
+			collect_wui_files(&base, &mut found)?;
+			for file in found {
+				files.push((base.clone(), file));
+			}
+		} else {
+			return Err(format!("{} is not a file or directory", path.display()));
+		}
+	}
+	files.sort();
+	files.dedup();
+	Ok(files)
+}
+
+fn check_wui_file(base: &std::path::Path, file: &std::path::Path) -> Result<(), String> {
+	let module = module_name_for_wui_file(base, file)?;
+	let source = std::fs::read_to_string(file)
+		.map_err(|e| format!("failed reading {}: {e}", file.display()))?;
+	wgui::wui::compiler::compile_with_dir(&source, &module, file.parent())
+		.map(|_| ())
+		.map_err(|diags| format_wui_diagnostics(file, &diags))
 }
 
 #[derive(Debug, Clone)]
@@ -1961,4 +2052,74 @@ fn list_sql_migrations(dir: &std::path::Path) -> Result<Vec<String>, String> {
 	}
 	files.sort();
 	Ok(files)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn make_temp_dir(name: &str) -> PathBuf {
+		let unique = format!(
+			"wgui-cli-test-{}-{}",
+			std::process::id(),
+			std::time::SystemTime::now()
+				.duration_since(std::time::UNIX_EPOCH)
+				.unwrap()
+				.as_nanos()
+		);
+		let dir = std::env::temp_dir().join(unique).join(name);
+		std::fs::create_dir_all(&dir).unwrap();
+		dir
+	}
+
+	#[test]
+	fn check_wui_file_accepts_valid_template() {
+		let dir = make_temp_dir("valid");
+		let file = dir.join("home.wui");
+		std::fs::write(
+			&file,
+			r#"<VStack><Button text="Move" onClick="Move" /></VStack>"#,
+		)
+		.unwrap();
+
+		let result = check_wui_file(&dir, &file);
+
+		let _ = std::fs::remove_dir_all(dir.parent().unwrap());
+		assert!(result.is_ok(), "{result:?}");
+	}
+
+	#[test]
+	fn check_wui_file_reports_action_payload_conflict() {
+		let dir = make_temp_dir("invalid");
+		let file = dir.join("home.wui");
+		std::fs::write(
+			&file,
+			r#"
+<VStack>
+	<Button text="Move" onClick="Move" />
+	<TextInput value="" onTextChanged="Move" />
+</VStack>
+"#,
+		)
+		.unwrap();
+
+		let err = check_wui_file(&dir, &file).unwrap_err();
+
+		let _ = std::fs::remove_dir_all(dir.parent().unwrap());
+		assert!(err.contains("conflicting payloads"), "{err}");
+	}
+
+	#[test]
+	fn discover_wui_check_files_uses_project_wui_dir() {
+		let project = make_temp_dir("project");
+		let wui_dir = project.join("wui");
+		std::fs::create_dir_all(&wui_dir).unwrap();
+		let file = wui_dir.join("home.wui");
+		std::fs::write(&file, r#"<Text value="Hi" />"#).unwrap();
+
+		let files = discover_wui_check_files(&[project.clone()]).unwrap();
+
+		let _ = std::fs::remove_dir_all(project.parent().unwrap());
+		assert_eq!(files, vec![(wui_dir, file)]);
+	}
 }
