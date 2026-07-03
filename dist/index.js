@@ -1864,72 +1864,78 @@ var renderPayload = (item, ctx, old) => {
     let table;
     if (old instanceof HTMLTableElement) {
       table = old;
+      reconcileChildren(table, payload.items, ctx);
     } else {
       table = document.createElement("table");
       if (old)
         old.replaceWith(table);
+      renderChildren(table, payload.items, ctx);
     }
-    renderChildren(table, payload.items, ctx);
     return table;
   }
   if (payload.type === "thead") {
     let thead;
     if (old instanceof HTMLTableSectionElement) {
       thead = old;
+      reconcileChildren(thead, payload.items, ctx);
     } else {
       thead = document.createElement("thead");
       if (old)
         old.replaceWith(thead);
+      renderChildren(thead, payload.items, ctx);
     }
-    renderChildren(thead, payload.items, ctx);
     return thead;
   }
   if (payload.type === "tbody") {
     let tbody;
     if (old instanceof HTMLTableSectionElement) {
       tbody = old;
+      reconcileChildren(tbody, payload.items, ctx);
     } else {
       tbody = document.createElement("tbody");
       if (old)
         old.replaceWith(tbody);
+      renderChildren(tbody, payload.items, ctx);
     }
-    renderChildren(tbody, payload.items, ctx);
     return tbody;
   }
   if (payload.type === "tr") {
     let tr;
     if (old instanceof HTMLTableRowElement) {
       tr = old;
+      reconcileChildren(tr, payload.items, ctx);
     } else {
       tr = document.createElement("tr");
       if (old)
         old.replaceWith(tr);
+      renderChildren(tr, payload.items, ctx);
     }
-    renderChildren(tr, payload.items, ctx);
     return tr;
   }
   if (payload.type === "th") {
     let th;
     if (old instanceof HTMLTableCellElement) {
       th = old;
+      reconcileChildren(th, [payload.item], ctx);
     } else {
       th = document.createElement("th");
       if (old)
         old.replaceWith(th);
+      renderChildren(th, [payload.item], ctx);
     }
-    renderChildren(th, [payload.item], ctx);
     return th;
   }
   if (payload.type === "td") {
     let td;
     if (old instanceof HTMLTableCellElement) {
       td = old;
+      reconcileChildren(td, [payload.item], ctx);
     } else {
       td = document.createElement("td");
       if (old)
         old.replaceWith(td);
+      renderChildren(td, [payload.item], ctx);
     }
-    renderChildren(td, [payload.item], ctx);
     return td;
   }
   if (payload.type === "text") {
@@ -1986,7 +1992,6 @@ var renderPayload = (item, ctx, old) => {
     let overlay;
     if (old instanceof HTMLDivElement && old.dataset.modal === "overlay") {
       overlay = old;
-      overlay.innerHTML = "";
     } else {
       overlay = document.createElement("div");
       overlay.dataset.modal = "overlay";
@@ -2010,7 +2015,11 @@ var renderPayload = (item, ctx, old) => {
     overlay.style.zIndex = "1000";
     overlay.style.pointerEvents = payload.open ? "auto" : "none";
     overlay.setAttribute("aria-hidden", payload.open ? "false" : "true");
-    renderChildren(overlay, payload.body, ctx);
+    if (old instanceof HTMLDivElement && old.dataset.modal === "overlay") {
+      reconcileChildren(overlay, payload.body, ctx);
+    } else {
+      renderChildren(overlay, payload.body, ctx);
+    }
     for (const child of overlay.children) {
       if (child instanceof HTMLElement) {
         child.style.maxWidth = "calc(100vw - 64px)";
