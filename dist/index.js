@@ -1405,6 +1405,19 @@ var bindSliderControlTracking = (slider) => {
   slider.addEventListener("blur", end);
 };
 var isSliderUserControlled = (slider) => slider.dataset.wguiSliderActive === "1" || document.activeElement === slider;
+var textControlKey = (item) => `${item.id ?? ""}:${item.inx ?? ""}`;
+var isTextControlUserControlled = (control) => document.activeElement === control;
+var syncTextControlValue = (control, value, item) => {
+  const key = textControlKey(item);
+  const sameControl = control.dataset.wguiTextControlKey === key;
+  control.dataset.wguiTextControlKey = key;
+  if (sameControl && isTextControlUserControlled(control)) {
+    return;
+  }
+  if (control.value !== value) {
+    control.value = value;
+  }
+};
 var pathQuery = (search) => {
   const params = new URLSearchParams(search);
   const query = {};
@@ -1737,7 +1750,7 @@ var renderPayload = (item, ctx, old) => {
     }
     input.type = "date";
     input.placeholder = payload.placeholder;
-    input.value = payload.value;
+    syncTextControlValue(input, payload.value, item);
     if (item.id) {
       input.oninput = (e) => {
         ctx.sender.send({
@@ -1760,7 +1773,7 @@ var renderPayload = (item, ctx, old) => {
         old.replaceWith(input);
     }
     input.placeholder = payload.placeholder;
-    input.value = payload.value;
+    syncTextControlValue(input, payload.value, item);
     if (item.id) {
       input.oninput = (e) => {
         ctx.sender.send({
@@ -1827,8 +1840,8 @@ var renderPayload = (item, ctx, old) => {
     textarea.style.overflowY = "hidden";
     textarea.style.minHeight = "20px";
     textarea.style.lineHeight = "20px";
-    textarea.value = payload.value;
-    const rowCount = payload.value.split(`
+    syncTextControlValue(textarea, payload.value, item);
+    const rowCount = textarea.value.split(`
 `).length;
     textarea.style.height = rowCount * 20 + "px";
     textarea.oninput = (e) => {
@@ -2947,15 +2960,13 @@ var bodyPathItem = (body, path) => {
 };
 var renderBodyRoot = (body, item, ctx) => {
   const current = bodyAppRoot(body);
-  const rendered = renderItem(item, ctx);
-  if (!rendered) {
-    return;
-  }
   if (current) {
-    disposeCustomComponentTree(current);
-    current.replaceWith(rendered);
+    renderItem(item, ctx, current);
   } else {
-    body.appendChild(rendered);
+    const rendered = renderItem(item, ctx);
+    if (rendered) {
+      body.appendChild(rendered);
+    }
   }
 };
 window.onload = () => {
