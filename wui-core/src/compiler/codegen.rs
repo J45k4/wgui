@@ -402,6 +402,7 @@ fn emit_widget(widget: &IrWidget, indent: usize) -> String {
 		"DatePicker" => "wgui::date_picker()".to_string(),
 		"Checkbox" => "wgui::checkbox()".to_string(),
 		"Slider" => "wgui::slider()".to_string(),
+		"Select" => emit_select(widget),
 		"Image" => emit_image(widget),
 		"Video" => emit_media(widget, "video"),
 		"Audio" => emit_media(widget, "audio"),
@@ -417,6 +418,32 @@ fn emit_widget(widget: &IrWidget, indent: usize) -> String {
 		base = format!("{}.{}", base, emit_prop(prop));
 	}
 	base
+}
+
+fn emit_select(widget: &IrWidget) -> String {
+	let mut value = "\"\"".to_string();
+	let mut options = "Vec::new()".to_string();
+	for prop in &widget.props {
+		match prop {
+			IrProp::Literal {
+				name,
+				value: prop_value,
+			} if name == "value" => {
+				value = format!("{:?}", prop_value);
+			}
+			IrProp::Value { name, expr } if name == "value" => {
+				value = emit_string_expr(expr);
+			}
+			IrProp::Value { name, expr } if name == "options" => {
+				let expr = emit_expr(expr);
+				options = format!(
+					"{expr}.iter().map(|option| wgui::option(&option.value, &option.name))"
+				);
+			}
+			_ => {}
+		}
+	}
+	format!("wgui::select({options}).svalue({value})")
 }
 
 fn emit_container(kind: &str, children: &[IrNode], indent: usize) -> String {
@@ -761,6 +788,7 @@ fn should_emit_prop(tag: &str, prop: &IrProp) -> bool {
 			"Link" => name != "href" && name != "text",
 			"Image" => name != "src" && name != "alt",
 			"Video" | "Audio" => name != "room",
+			"Select" => name != "value" && name != "options",
 			_ => name != "arg",
 		},
 	}

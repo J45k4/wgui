@@ -341,6 +341,35 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 				},
 			],
 		}),
+		"Select" => Some(TagSchema {
+			name: "Select",
+			props: &[
+				PropSchema {
+					name: "value",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "options",
+					kind: PropKind::Value(ValueType::Any),
+				},
+				PropSchema {
+					name: "onSelect",
+					kind: PropKind::Event(EventKind::Select),
+				},
+				PropSchema {
+					name: "grow",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "minWidth",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "fill",
+					kind: PropKind::Value(ValueType::Bool),
+				},
+			],
+		}),
 		"Image" => Some(TagSchema {
 			name: "Image",
 			props: &[
