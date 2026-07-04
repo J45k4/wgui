@@ -656,7 +656,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			input = document.createElement("input")
 			if (old) old.replaceWith(input)
 		}
-		input.type = payload.inputType || "text"
+		input.type = payload.inputType || payload.input_type || "text"
 		input.placeholder = payload.placeholder as string
 		syncTextControlValue(input, payload.value, item)
 		if (item.id) {

@@ -99,6 +99,7 @@ pub enum ItemPayload {
 	TextInput {
 		value: String,
 		placeholder: String,
+		#[serde(rename = "inputType")]
 		input_type: String,
 	},
 	DatePicker {
@@ -1082,5 +1083,13 @@ mod tests {
 	#[test]
 	fn test_vstack() {
 		let view = vstack([hstack([text("Hello"), button("Click me")]), button("DUNNO")]);
+	}
+
+	#[test]
+	fn text_input_serializes_input_type_as_camel_case() {
+		let value = serde_json::to_value(text_input().input_type("password")).unwrap();
+
+		assert_eq!(value["payload"]["inputType"], "password");
+		assert!(value["payload"].get("input_type").is_none());
 	}
 }
