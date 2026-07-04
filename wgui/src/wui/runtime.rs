@@ -1213,6 +1213,7 @@ fn apply_string_prop(item: Item, name: &str, value: &str) -> Item {
 	match name {
 		"svalue" | "bind:svalue" => item.svalue(value),
 		"placeholder" => item.placeholder(value),
+		"type" => item.input_type(value),
 		"textAlign" => item.text_align(value),
 		"cursor" => item.cursor(value),
 		"overflow" => item.overflow(value),
@@ -1288,7 +1289,7 @@ fn is_string_prop(name: &str) -> bool {
 		"svalue"
 			| "bind:svalue"
 			| "placeholder"
-			| "textAlign"
+			| "type" | "textAlign"
 			| "cursor"
 			| "overflow"
 			| "backgroundColor"
@@ -1535,6 +1536,26 @@ mod tests {
 			rendered.payload,
 			ItemPayload::Text {
 				value: "Hello".to_string()
+			}
+		);
+	}
+
+	#[test]
+	fn text_input_type_prop_sets_input_type() {
+		let template = Template::parse(
+			r#"<TextInput value="" placeholder="Password" type="password" />"#,
+			"test",
+		)
+		.expect("parse template");
+		let state = WuiValue::object(Vec::new());
+		let rendered = template.render(&state);
+
+		assert_eq!(
+			rendered.payload,
+			ItemPayload::TextInput {
+				value: "".to_string(),
+				placeholder: "Password".to_string(),
+				input_type: "password".to_string(),
 			}
 		);
 	}

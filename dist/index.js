@@ -1773,6 +1773,7 @@ var renderPayload = (item, ctx, old) => {
       if (old)
         old.replaceWith(input);
     }
+    input.type = payload.inputType || "text";
     input.placeholder = payload.placeholder;
     syncTextControlValue(input, payload.value, item);
     if (item.id) {

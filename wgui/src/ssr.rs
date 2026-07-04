@@ -29,9 +29,11 @@ pub fn render_item(item: &Item) -> String {
 	match &item.payload {
 		ItemPayload::Layout(layout) => render_layout(item, layout),
 		ItemPayload::Text { value } => render_text(item, value),
-		ItemPayload::TextInput { value, placeholder } => {
-			render_text_input(item, value, placeholder)
-		}
+		ItemPayload::TextInput {
+			value,
+			placeholder,
+			input_type,
+		} => render_text_input(item, value, placeholder, input_type),
 		ItemPayload::DatePicker { value, placeholder } => {
 			render_date_picker(item, value, placeholder)
 		}
@@ -139,12 +141,12 @@ fn render_custom(item: &Item, name: &str) -> String {
 	render_element("div", &classes, style, &attrs, "")
 }
 
-fn render_text_input(item: &Item, value: &str, placeholder: &str) -> String {
+fn render_text_input(item: &Item, value: &str, placeholder: &str, input_type: &str) -> String {
 	let mut style = StyleBuilder::new();
 	apply_item_styles(item, &mut style);
 	let classes = Vec::new();
 	let mut attrs = collect_item_attrs(item);
-	attrs.push(("type".to_string(), "text".to_string()));
+	attrs.push(("type".to_string(), input_type.to_string()));
 	attrs.push(("value".to_string(), escape_attr(value)));
 	if !placeholder.is_empty() {
 		attrs.push(("placeholder".to_string(), escape_attr(placeholder)));

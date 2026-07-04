@@ -164,6 +164,10 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 					kind: PropKind::Value(ValueType::String),
 				},
 				PropSchema {
+					name: "type",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
 					name: "onTextChanged",
 					kind: PropKind::Event(EventKind::TextChanged),
 				},

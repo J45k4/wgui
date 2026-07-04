@@ -663,6 +663,7 @@ fn prop_method(name: &str) -> String {
 		"wrap" => "wrap".to_string(),
 		"overflow" => "overflow".to_string(),
 		"placeholder" => "placeholder".to_string(),
+		"type" => "input_type".to_string(),
 		"objectFit" => "object_fit".to_string(),
 		"room" => "room".to_string(),
 		"local" => "local".to_string(),
@@ -768,7 +769,7 @@ fn is_string_prop(name: &str) -> bool {
 			| "cursor"
 			| "overflow"
 			| "placeholder"
-			| "backgroundColor"
+			| "type" | "backgroundColor"
 			| "color" | "border"
 			| "objectFit"
 			| "room"

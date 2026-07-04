@@ -77,6 +77,7 @@ export type Link = {
 
 export type TextInput = {
     type: "textInput"
+	inputType: string
     placeholder: string
     value: string
 }

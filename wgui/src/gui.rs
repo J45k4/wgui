@@ -99,6 +99,7 @@ pub enum ItemPayload {
 	TextInput {
 		value: String,
 		placeholder: String,
+		input_type: String,
 	},
 	DatePicker {
 		value: String,
@@ -310,6 +311,7 @@ pub fn text_input() -> Item {
 		payload: ItemPayload::TextInput {
 			value: "".to_string(),
 			placeholder: "".to_string(),
+			input_type: "text".to_string(),
 		},
 		..Default::default()
 	}
@@ -838,6 +840,20 @@ impl Item {
 				*placeholder = p.to_string();
 			}
 			_ => {}
+		}
+		self
+	}
+
+	pub fn input_type(mut self, t: &str) -> Self {
+		let sanitized = match t {
+			"password" => "password",
+			_ => "text",
+		};
+		if let ItemPayload::TextInput {
+			ref mut input_type, ..
+		} = self.payload
+		{
+			*input_type = sanitized.to_string();
 		}
 		self
 	}
