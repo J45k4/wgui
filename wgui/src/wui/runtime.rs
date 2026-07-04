@@ -889,6 +889,7 @@ fn render_widget(widget: &IrWidget, ctx: &mut EvalContext) -> Item {
 		"DatePicker" => gui::date_picker(),
 		"Checkbox" => gui::checkbox(),
 		"Slider" => gui::slider(),
+		"Select" => render_select(widget, ctx),
 		"Custom" | "CustomComponent" => render_custom(widget, ctx),
 		"Image" => {
 			let (src, alt) = image_values(widget, ctx);
@@ -1077,6 +1078,58 @@ fn media_room_value(widget: &IrWidget, ctx: &mut EvalContext) -> String {
 	String::new()
 }
 
+fn select_option_from_value(value: WuiValue) -> Option<gui::SelectOption> {
+	let WuiValue::Object(mut map) = value else {
+		return None;
+	};
+	let value = value_as_string(&map.remove("value").unwrap_or(WuiValue::Null));
+	let name = value_as_string(&map.remove("name").unwrap_or(WuiValue::Null));
+	if value.is_empty() {
+		return None;
+	}
+	Some(gui::option(
+		&value,
+		if name.is_empty() { &value } else { &name },
+	))
+}
+
+fn select_options(widget: &IrWidget, ctx: &mut EvalContext) -> Vec<gui::SelectOption> {
+	for prop in &widget.props {
+		match prop {
+			IrProp::Value { name, expr } if name == "options" => {
+				let WuiValue::List(values) = eval_expr(expr, ctx) else {
+					return Vec::new();
+				};
+				return values
+					.into_iter()
+					.filter_map(select_option_from_value)
+					.collect();
+			}
+			_ => {}
+		}
+	}
+	Vec::new()
+}
+
+fn render_select(widget: &IrWidget, ctx: &mut EvalContext) -> Item {
+	let mut item = gui::select(select_options(widget, ctx));
+	for prop in &widget.props {
+		match prop {
+			IrProp::Literal { name, value } if name == "value" => {
+				item = item.svalue(value);
+			}
+			IrProp::Value { name, expr } if name == "value" => {
+				item = item.svalue(&value_as_string(&eval_expr(expr, ctx)));
+			}
+			IrProp::Bind { name, expr } if name == "bind:value" => {
+				item = item.svalue(&value_as_string(&eval_expr(expr, ctx)));
+			}
+			_ => {}
+		}
+	}
+	item
+}
+
 fn should_apply_prop(tag: &str, prop: &IrProp) -> bool {
 	match prop {
 		IrProp::Event { .. } => true,
@@ -1090,6 +1143,7 @@ fn should_apply_prop(tag: &str, prop: &IrProp) -> bool {
 			"Link" => name != "href" && name != "text",
 			"Image" => name != "src" && name != "alt",
 			"Video" | "Audio" => name != "room",
+			"Select" => name != "value" && name != "bind:value" && name != "options",
 			_ => true,
 		},
 	}

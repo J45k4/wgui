@@ -458,6 +458,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 					old.add(opt)
 				}
 			}
+			select.value = payload.value
 		} else {
 			select = document.createElement("select")
 			for (const option of payload.options) {

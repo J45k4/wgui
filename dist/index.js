@@ -1576,6 +1576,7 @@ var renderPayload = (item, ctx, old) => {
           old.add(opt);
         }
       }
+      select.value = payload.value;
     } else {
       select = document.createElement("select");
       for (const option of payload.options) {
