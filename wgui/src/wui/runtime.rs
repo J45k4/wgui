@@ -1232,6 +1232,9 @@ fn apply_value_prop(item: Item, name: &str, value: WuiValue) -> Item {
 fn apply_string_prop(item: Item, name: &str, value: &str) -> Item {
 	match name {
 		"svalue" | "bind:svalue" => item.svalue(value),
+		"name" => item.name(value),
+		"action" => item.action(value),
+		"method" => item.method(value),
 		"placeholder" => item.placeholder(value),
 		"type" => item.input_type(value),
 		"textAlign" => item.text_align(value),
@@ -1578,6 +1581,31 @@ mod tests {
 				input_type: "password".to_string(),
 			}
 		);
+	}
+
+	#[test]
+	fn form_props_render_to_item_fields() {
+		let template = Template::parse(
+			r#"<Form action="/auth/login" method="post"><TextInput name="username" value="" /></Form>"#,
+			"test",
+		)
+		.expect("parse template");
+		let state = WuiValue::object(Vec::new());
+		let rendered = template.render(&state);
+
+		match rendered.payload {
+			ItemPayload::Form {
+				action,
+				method,
+				body,
+				..
+			} => {
+				assert_eq!(action, "/auth/login");
+				assert_eq!(method, "post");
+				assert_eq!(body[0].name, "username");
+			}
+			other => panic!("expected form, got {other:?}"),
+		}
 	}
 
 	#[test]
