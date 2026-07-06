@@ -76,6 +76,10 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 					name: "backgroundColor",
 					kind: PropKind::Value(ValueType::String),
 				},
+				PropSchema {
+					name: "color",
+					kind: PropKind::Value(ValueType::String),
+				},
 			],
 		}),
 		"Text" => Some(TagSchema {
@@ -710,6 +714,10 @@ fn layout_props() -> &'static [PropSchema] {
 		},
 		PropSchema {
 			name: "backgroundColor",
+			kind: PropKind::Value(ValueType::String),
+		},
+		PropSchema {
+			name: "color",
 			kind: PropKind::Value(ValueType::String),
 		},
 		PropSchema {
