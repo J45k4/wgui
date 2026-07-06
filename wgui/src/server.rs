@@ -21,6 +21,7 @@ use tokio::sync::mpsc;
 use crate::ssr;
 use crate::types::{ClientMessage, Clients};
 use crate::ws::TungsteniteWs;
+use crate::wui::routing::{best_route_index, RoutePattern};
 use crate::wui::runtime::RouteContext;
 use crate::{Sessions, SsrResponse, WguiHandle};
 
@@ -31,9 +32,39 @@ const CSS_JS_BYTES: &[u8] = include_bytes!("../../dist/index.css");
 pub type HttpHandler = Arc<
 	dyn Fn(HttpRequest) -> Pin<Box<dyn Future<Output = Option<HttpResponse>> + Send>> + Send + Sync,
 >;
+pub(crate) type HttpRouteHandler = Arc<
+	dyn Fn(HttpRequest, HttpCtx) -> Pin<Box<dyn Future<Output = HttpResponse> + Send>>
+		+ Send
+		+ Sync,
+>;
 pub(crate) type SharedAppCss = Arc<RwLock<Option<String>>>;
 pub(crate) type SharedHttpHandler = Arc<RwLock<Option<HttpHandler>>>;
+pub(crate) type SharedHttpRoutes = Arc<RwLock<Vec<HttpRoute>>>;
 pub(crate) type SharedStaticMounts = Arc<RwLock<Vec<StaticMount>>>;
+
+#[derive(Clone)]
+pub(crate) struct HttpRoute {
+	pub(crate) method: String,
+	pub(crate) pattern: RoutePattern,
+	pub(crate) handler: HttpRouteHandler,
+}
+
+#[derive(Debug, Clone)]
+pub struct HttpRouteSpec {
+	pub method: &'static str,
+	pub path: &'static str,
+	pub id: &'static str,
+}
+
+impl HttpRouteSpec {
+	pub fn post(path: &'static str) -> Self {
+		Self {
+			method: "POST",
+			path,
+			id: path,
+		}
+	}
+}
 
 #[derive(Clone)]
 pub(crate) enum StaticMount {
@@ -73,6 +104,26 @@ pub struct HttpResponse {
 	stream: Option<HttpResponseStream>,
 }
 
+#[derive(Debug, Clone)]
+pub struct HttpCtx {
+	pub path: String,
+	pub params: HashMap<String, String>,
+	pub query: HashMap<String, String>,
+	pub headers: HashMap<String, String>,
+	pub session: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FormData {
+	fields: HashMap<String, String>,
+}
+
+pub struct Json<T>(pub T);
+
+pub trait FromHttpRequest: Sized {
+	fn from_http_request(req: &HttpRequest) -> Result<Self, HttpResponse>;
+}
+
 type HttpBody = UnsyncBoxBody<Bytes, Infallible>;
 type HttpResponseStream = Pin<Box<dyn Stream<Item = Result<Vec<u8>, Infallible>> + Send>>;
 
@@ -102,6 +153,59 @@ impl HttpResponse {
 		self.headers.push((name.into(), value.into()));
 		self
 	}
+}
+
+impl FormData {
+	pub fn get(&self, name: &str) -> Option<&str> {
+		self.fields.get(name).map(String::as_str)
+	}
+
+	pub fn into_inner(self) -> HashMap<String, String> {
+		self.fields
+	}
+}
+
+impl FromHttpRequest for FormData {
+	fn from_http_request(req: &HttpRequest) -> Result<Self, HttpResponse> {
+		if !content_type_matches(req, "application/x-www-form-urlencoded") {
+			return Err(HttpResponse::new(
+				415,
+				"expected application/x-www-form-urlencoded",
+			));
+		}
+		let fields = form_urlencoded::parse(&req.body)
+			.into_owned()
+			.collect::<HashMap<_, _>>();
+		Ok(Self { fields })
+	}
+}
+
+impl<T> FromHttpRequest for Json<T>
+where
+	T: serde::de::DeserializeOwned,
+{
+	fn from_http_request(req: &HttpRequest) -> Result<Self, HttpResponse> {
+		if !content_type_matches(req, "application/json") {
+			return Err(HttpResponse::new(415, "expected application/json"));
+		}
+		serde_json::from_slice(&req.body)
+			.map(Self)
+			.map_err(|_| HttpResponse::new(400, "invalid json"))
+	}
+}
+
+impl FromHttpRequest for HttpRequest {
+	fn from_http_request(req: &HttpRequest) -> Result<Self, HttpResponse> {
+		Ok(req.clone())
+	}
+}
+
+fn content_type_matches(req: &HttpRequest, expected: &str) -> bool {
+	req.headers
+		.get("content-type")
+		.and_then(|value| value.split(';').next())
+		.map(|value| value.trim().eq_ignore_ascii_case(expected))
+		.unwrap_or(false)
 }
 
 fn content_type_for(path: &Path) -> &'static str {
@@ -256,6 +360,7 @@ struct Ctx {
 	sessions: Sessions,
 	ssr: Option<Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>>,
 	http_handler: SharedHttpHandler,
+	http_routes: SharedHttpRoutes,
 	app_css: SharedAppCss,
 	static_mounts: SharedStaticMounts,
 }
@@ -319,6 +424,24 @@ fn session_from_request(req: &Request<hyper::body::Incoming>) -> Option<String> 
 	cookie_value(req, "sid").or_else(|| session_from_query(req))
 }
 
+fn matching_http_route(
+	routes: &SharedHttpRoutes,
+	method: &str,
+	path: &str,
+) -> Option<(HttpRoute, HashMap<String, String>)> {
+	let routes = routes
+		.read()
+		.unwrap()
+		.iter()
+		.filter(|route| route.method == method)
+		.cloned()
+		.collect::<Vec<_>>();
+	let index = best_route_index(&routes, path, |route| &route.pattern)?;
+	let route = routes[index].clone();
+	let params = route.pattern.match_path(path)?.params;
+	Some((route, params))
+}
+
 fn full_body(body: impl Into<Bytes>) -> HttpBody {
 	Full::new(body.into())
 		.map_err(|never| match never {})
@@ -343,25 +466,30 @@ fn http_response(response: HttpResponse) -> Response<HttpBody> {
 }
 
 async fn custom_http_response(
-	req: &mut Request<hyper::body::Incoming>,
+	request: HttpRequest,
 	handler: &SharedHttpHandler,
-) -> Result<Option<Response<HttpBody>>, hyper::Error> {
+) -> Option<Response<HttpBody>> {
 	let Some(handler) = handler.read().unwrap().clone() else {
-		return Ok(None);
+		return None;
 	};
+	(handler)(request).await.map(http_response)
+}
+
+async fn http_request(
+	req: &mut Request<hyper::body::Incoming>,
+) -> Result<HttpRequest, hyper::Error> {
 	let method = req.method().as_str().to_string();
 	let path = req.uri().path().to_string();
 	let query = query_map(req);
 	let headers = header_map(req);
 	let body = req.body_mut().collect().await?.to_bytes().to_vec();
-	let request = HttpRequest {
+	Ok(HttpRequest {
 		method,
 		path,
 		query,
 		headers,
 		body,
-	};
-	Ok((handler)(request).await.map(http_response))
+	})
 }
 
 async fn handle_req(
@@ -393,8 +521,24 @@ async fn handle_req(
 		return Ok(response.map(|body| body.map_err(|never| match never {}).boxed_unsync()));
 	}
 
-	if let Some(response) = custom_http_response(&mut req, &ctx.http_handler).await? {
-		return Ok(response);
+	let session = session_from_request(&req);
+	let route = matching_http_route(&ctx.http_routes, req.method().as_str(), req.uri().path());
+	let has_http_handler = ctx.http_handler.read().unwrap().is_some();
+	if has_http_handler || route.is_some() {
+		let request = http_request(&mut req).await?;
+		if let Some(response) = custom_http_response(request.clone(), &ctx.http_handler).await {
+			return Ok(response);
+		}
+		if let Some((route, params)) = route {
+			let http_ctx = HttpCtx {
+				path: request.path.clone(),
+				params,
+				query: request.query.clone(),
+				headers: request.headers.clone(),
+				session,
+			};
+			return Ok(http_response((route.handler)(request, http_ctx).await));
+		}
 	}
 
 	if let Some(response) = static_mount_response(req.uri().path(), &ctx.static_mounts).await {
@@ -518,6 +662,7 @@ pub struct Server {
 	sessions: Sessions,
 	ssr: Option<Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>>,
 	http_handler: SharedHttpHandler,
+	http_routes: SharedHttpRoutes,
 	app_css: SharedAppCss,
 	static_mounts: SharedStaticMounts,
 }
@@ -530,6 +675,7 @@ impl Server {
 		sessions: Sessions,
 		ssr: Option<Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>>,
 		http_handler: SharedHttpHandler,
+		http_routes: SharedHttpRoutes,
 		app_css: SharedAppCss,
 		static_mounts: SharedStaticMounts,
 	) -> Self {
@@ -543,6 +689,7 @@ impl Server {
 			sessions,
 			ssr,
 			http_handler,
+			http_routes,
 			app_css,
 			static_mounts,
 		}
@@ -561,6 +708,7 @@ impl Server {
 								let sessions = self.sessions.clone();
 								let ssr = self.ssr.clone();
 								let http_handler = self.http_handler.clone();
+								let http_routes = self.http_routes.clone();
 								let app_css = self.app_css.clone();
 								let static_mounts = self.static_mounts.clone();
 								tokio::spawn(async move {
@@ -571,6 +719,7 @@ impl Server {
 											sessions: sessions.clone(),
 											ssr: ssr.clone(),
 											http_handler: http_handler.clone(),
+											http_routes: http_routes.clone(),
 											app_css: app_css.clone(),
 											static_mounts: static_mounts.clone(),
 										})

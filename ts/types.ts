@@ -55,6 +55,14 @@ export type Layout = {
     body: Item[]
 }
 
+export type Form = {
+	type: "form"
+	action: string
+	method: string
+	spacing?: number
+	body: Item[]
+}
+
 export type Button = {
     type: "button"
     title: string
@@ -249,6 +257,7 @@ export type Custom = {
 
 export type ItemPayload = Text |
   	TextInput |
+	Form |
 	DatePicker |
   	Textarea |
  	Table |
@@ -303,6 +312,9 @@ export type Item = {
 	paddingBottom?: number
 	editable?: boolean
 	overflow?: string
+	name?: string
+	action?: string
+	method?: string
 	payload: ItemPayload
 }
 

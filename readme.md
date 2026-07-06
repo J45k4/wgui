@@ -68,6 +68,7 @@ See `docs/lsp.md` for setting up the `wui-lsp` server in Zed or other editors.
 - Core runtime: `Wgui::new(addr)`, `wgui.next().await`, `wgui.render(client_id, item)`
 - SSR snapshot: `Wgui::new_with_ssr(addr, || render())`
 - HTTP hooks: `wgui.set_http_handler(...)` for app-specific same-origin endpoints before WGUI falls back to assets/SSR.
+- Controller POST routes: add `#[wgui_post("/auth/login")]` to a `#[wgui_controller]` method and accept extractors such as `FormData`, `Json<T>`, `HttpRequest`, plus optional `HttpCtx`.
 - Navigation: `ctx.push_state(url)` updates the SPA route, while `ctx.navigate(url)` performs a full browser navigation.
 - Events: `ClientEvent::{Connected, Disconnected, OnClick, OnTextChanged, OnSliderChange, OnSelect, PathChanged}`
 

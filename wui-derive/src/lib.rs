@@ -201,6 +201,18 @@ struct FallbackEventHandler {
 	is_async: bool,
 }
 
+struct HttpHandlerMethod {
+	ident: syn::Ident,
+	routes: Vec<String>,
+	args: Vec<HttpHandlerArg>,
+	is_async: bool,
+}
+
+enum HttpHandlerArg {
+	Extractor { var: syn::Ident, ty: Box<Type> },
+	Ctx { var: syn::Ident },
+}
+
 enum TitleReturn {
 	String,
 	OptionString,
@@ -208,7 +220,7 @@ enum TitleReturn {
 
 fn expand_wgui_controller(
 	args: WguiControllerArgs,
-	impl_block: ItemImpl,
+	mut impl_block: ItemImpl,
 ) -> syn::Result<TokenStream> {
 	let controller_ident = match *impl_block.self_ty.clone() {
 		Type::Path(path) => path
@@ -231,11 +243,18 @@ fn expand_wgui_controller(
 	let mut handlers = Vec::new();
 	let mut fallback_event_handler: Option<FallbackEventHandler> = None;
 	let mut process_method: Option<syn::Ident> = None;
+	let mut http_handlers = Vec::new();
 
-	for item in &impl_block.items {
+	for item in &mut impl_block.items {
 		let ImplItem::Fn(method) = item else {
 			continue;
 		};
+
+		let post_routes = take_wgui_post_routes(method)?;
+		if !post_routes.is_empty() {
+			http_handlers.push(http_handler_from_method(method, post_routes)?);
+			continue;
+		}
 
 		if method.sig.ident == "process"
 			&& method
@@ -391,13 +410,17 @@ fn expand_wgui_controller(
 	let template_fn = format_ident!("__wgui_template_for_{}", controller_ident);
 	let action_fn = format_ident!("__wgui_action_name_for_{}", controller_ident);
 	let module_name_fn = format_ident!("__wgui_module_name_for_{}", controller_ident);
-	let template_impl = template_impl_tokens(
-		&args,
-		&controller_ident.to_string(),
-		&module_name,
-		&module_name_fn,
-		&template_fn,
-	)?;
+	let template_impl = if direct_item_render {
+		quote! {}
+	} else {
+		template_impl_tokens(
+			&args,
+			&controller_ident.to_string(),
+			&module_name,
+			&module_name_fn,
+			&template_fn,
+		)?
+	};
 	let title_impl = title_method.map(|(ident, return_type)| match return_type {
 		TitleReturn::String => quote! {
 			fn title(&self) -> ::std::option::Option<::std::string::String> {
@@ -423,6 +446,7 @@ fn expand_wgui_controller(
 			}
 		}
 	});
+	let http_impl = http_impl_tokens(&http_handlers);
 
 	let no_arg_arms = handlers
 		.iter()
@@ -528,6 +552,7 @@ fn expand_wgui_controller(
 				}
 
 				#title_impl
+				#http_impl
 				#process_impl
 
 				async fn handle(&mut self, event: &::wgui::ClientEvent) -> bool {
@@ -645,6 +670,7 @@ fn expand_wgui_controller(
 		}
 
 		#title_impl
+		#http_impl
 		#process_impl
 
 		fn route_title(&self, path: &str) -> ::std::option::Option<::std::string::String> {
@@ -711,6 +737,149 @@ fn expand_wgui_controller(
 	};
 
 	Ok(output.into())
+}
+
+fn take_wgui_post_routes(method: &mut syn::ImplItemFn) -> syn::Result<Vec<String>> {
+	let mut routes = Vec::new();
+	let mut attrs = Vec::new();
+	for attr in method.attrs.drain(..) {
+		if attr.path().is_ident("wgui_post") {
+			let route: LitStr = attr.parse_args()?;
+			routes.push(route.value());
+		} else {
+			attrs.push(attr);
+		}
+	}
+	method.attrs = attrs;
+	Ok(routes)
+}
+
+fn http_handler_from_method(
+	method: &syn::ImplItemFn,
+	routes: Vec<String>,
+) -> syn::Result<HttpHandlerMethod> {
+	let receiver = method.sig.inputs.first();
+	if !matches!(
+		receiver,
+		Some(FnArg::Receiver(recv)) if recv.reference.is_some() && recv.mutability.is_some()
+	) {
+		return Err(syn::Error::new_spanned(
+			&method.sig.ident,
+			"wgui_post handlers must use &mut self",
+		));
+	}
+
+	let mut args = Vec::new();
+	for (index, arg) in method
+		.sig
+		.inputs
+		.iter()
+		.filter_map(|arg| match arg {
+			FnArg::Typed(pat) => Some(&*pat.ty),
+			_ => None,
+		})
+		.enumerate()
+	{
+		let var = format_ident!("__wgui_http_arg_{index}");
+		if is_http_ctx_type(arg) {
+			args.push(HttpHandlerArg::Ctx { var });
+		} else {
+			args.push(HttpHandlerArg::Extractor {
+				var,
+				ty: Box::new((*arg).clone()),
+			});
+		}
+	}
+
+	Ok(HttpHandlerMethod {
+		ident: method.sig.ident.clone(),
+		routes,
+		args,
+		is_async: method.sig.asyncness.is_some(),
+	})
+}
+
+fn http_impl_tokens(handlers: &[HttpHandlerMethod]) -> proc_macro2::TokenStream {
+	if handlers.is_empty() {
+		return quote! {};
+	}
+
+	let route_specs = handlers.iter().flat_map(|handler| {
+		let ident = &handler.ident;
+		handler.routes.iter().map(move |route| {
+			quote! {
+				::wgui::HttpRouteSpec {
+					method: "POST",
+					path: #route,
+					id: concat!(#route, "#", stringify!(#ident)),
+				}
+			}
+		})
+	});
+	let route_arms = handlers.iter().flat_map(|handler| {
+		let ident = &handler.ident;
+		handler.routes.iter().map(move |route| {
+			let route_id = quote! { concat!(#route, "#", stringify!(#ident)) };
+			let extractors = handler.args.iter().map(|arg| match arg {
+				HttpHandlerArg::Extractor { var, ty } => {
+					let ty = ty.as_ref();
+					quote! {
+						let #var: #ty = match <#ty as ::wgui::FromHttpRequest>::from_http_request(&request) {
+							::std::result::Result::Ok(value) => value,
+							::std::result::Result::Err(response) => {
+								return ::std::option::Option::Some(response);
+							}
+						};
+					}
+				}
+				HttpHandlerArg::Ctx { var } => quote! {
+					let #var = ctx.clone();
+				},
+			});
+			let call_args = handler.args.iter().map(|arg| match arg {
+				HttpHandlerArg::Extractor { var, .. } | HttpHandlerArg::Ctx { var } => var,
+			});
+			if handler.is_async {
+				quote! {
+					#route_id => {
+						#(#extractors)*
+						::std::option::Option::Some(self.#ident(#(#call_args),*).await)
+					}
+				}
+			} else {
+				quote! {
+					#route_id => {
+						#(#extractors)*
+						::std::option::Option::Some(self.#ident(#(#call_args),*))
+					}
+				}
+			}
+		})
+	});
+
+	quote! {
+		fn http_routes() -> ::std::vec::Vec<::wgui::HttpRouteSpec>
+		where
+			Self: Sized,
+		{
+			::std::vec![#(#route_specs),*]
+		}
+
+		async fn handle_http(
+			&mut self,
+			route: &str,
+			request: ::wgui::HttpRequest,
+			ctx: ::wgui::HttpCtx,
+		) -> ::std::option::Option<::wgui::HttpResponse>
+		where
+			Self: Sized,
+		{
+			match route {
+				#(#route_arms,)*
+				_ => ::std::option::Option::None,
+			}
+		}
+	}
 }
 
 fn template_impl_tokens(
@@ -1016,6 +1185,19 @@ fn handler_arg_from_type(ty: &Type) -> Option<HandlerArg> {
 		"Value" if is_serde_json_value_path(path) => Some(HandlerArg::Json),
 		_ => None,
 	}
+}
+
+fn is_http_ctx_type(ty: &Type) -> bool {
+	let Type::Path(path) = ty else {
+		return false;
+	};
+	let segments = path
+		.path
+		.segments
+		.iter()
+		.map(|segment| segment.ident.to_string())
+		.collect::<Vec<_>>();
+	segments == ["HttpCtx"] || segments == ["wgui", "HttpCtx"]
 }
 
 fn is_serde_json_value_path(path: &syn::TypePath) -> bool {

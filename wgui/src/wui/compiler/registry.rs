@@ -37,6 +37,47 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 			name: "HStack",
 			props: layout_props(),
 		}),
+		"Form" => Some(TagSchema {
+			name: "Form",
+			props: &[
+				PropSchema {
+					name: "action",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "method",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "spacing",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "fill",
+					kind: PropKind::Value(ValueType::Bool),
+				},
+				PropSchema {
+					name: "width",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "maxWidth",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "padding",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
+					name: "border",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "backgroundColor",
+					kind: PropKind::Value(ValueType::String),
+				},
+			],
+		}),
 		"Text" => Some(TagSchema {
 			name: "Text",
 			props: &[
@@ -165,6 +206,10 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 				},
 				PropSchema {
 					name: "type",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "name",
 					kind: PropKind::Value(ValueType::String),
 				},
 				PropSchema {

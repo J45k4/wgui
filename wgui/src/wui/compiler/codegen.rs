@@ -395,6 +395,7 @@ fn emit_widget(widget: &IrWidget, indent: usize) -> String {
 	let mut base = match widget.tag.as_str() {
 		"VStack" => emit_container("vstack", &widget.children, indent),
 		"HStack" => emit_container("hstack", &widget.children, indent),
+		"Form" => emit_container("form", &widget.children, indent),
 		"Text" => emit_text(widget),
 		"Button" => emit_textual("button", widget, "text"),
 		"Link" => emit_link(widget),

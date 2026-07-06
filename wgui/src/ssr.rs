@@ -28,6 +28,12 @@ pub fn render_document_with_app_css(item: &Item, app_css: bool) -> String {
 pub fn render_item(item: &Item) -> String {
 	match &item.payload {
 		ItemPayload::Layout(layout) => render_layout(item, layout),
+		ItemPayload::Form {
+			action,
+			method,
+			spacing,
+			body,
+		} => render_form(item, action, method, *spacing, body),
 		ItemPayload::Text { value } => render_text(item, value),
 		ItemPayload::TextInput {
 			value,
@@ -121,6 +127,26 @@ fn render_layout(item: &Item, layout: &Layout) -> String {
 	let attrs = collect_item_attrs(item);
 	let children = render_children(&layout.body);
 	render_element("div", &classes, style, &attrs, &children)
+}
+
+fn render_form(item: &Item, action: &str, method: &str, spacing: u32, body: &[Item]) -> String {
+	let mut style = StyleBuilder::new();
+	style.push("display", "flex");
+	style.push("flex-direction", "column");
+	if spacing > 0 {
+		style.push("gap", &format!("{spacing}px"));
+	}
+	apply_item_styles(item, &mut style);
+	let classes = Vec::new();
+	let mut attrs = collect_item_attrs(item);
+	if !action.is_empty() {
+		attrs.push(("action".to_string(), escape_attr(action)));
+	}
+	if !method.is_empty() {
+		attrs.push(("method".to_string(), escape_attr(method)));
+	}
+	let children = render_children(body);
+	render_element("form", &classes, style, &attrs, &children)
 }
 
 fn render_text(item: &Item, value: &str) -> String {
@@ -551,6 +577,9 @@ fn collect_item_attrs(item: &Item) -> Vec<(String, String)> {
 	let mut attrs = Vec::new();
 	if item.editable {
 		attrs.push(("contenteditable".to_string(), "true".to_string()));
+	}
+	if !item.name.is_empty() {
+		attrs.push(("name".to_string(), escape_attr(&item.name)));
 	}
 	attrs
 }

@@ -440,6 +440,26 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		return element
 	}
 
+	if (payload.type === "form") {
+		let form: HTMLFormElement
+		if (old instanceof HTMLFormElement) {
+			form = old
+			reconcileChildren(form, payload.body, ctx)
+		} else {
+			form = document.createElement("form")
+			if (old) old.replaceWith(form)
+			renderChildren(form, payload.body, ctx)
+		}
+		form.action = payload.action || item.action || ""
+		form.method = payload.method || item.method || "post"
+		form.style.display = "flex"
+		form.style.flexDirection = "column"
+		if (payload.spacing) {
+			form.style.gap = payload.spacing + "px"
+		}
+		return form
+	}
+
 	if (payload.type === "select") {
 		let select: HTMLSelectElement
 		if (old instanceof HTMLSelectElement) {
@@ -1050,6 +1070,11 @@ export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 		element.contentEditable = "true"
 	} else {
 		element.removeAttribute("contenteditable")
+	}
+	if (item.name) {
+		element.setAttribute("name", item.name)
+	} else {
+		element.removeAttribute("name")
 	}
 	if (item.overflow) {
 		element.style.overflow = item.overflow

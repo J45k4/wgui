@@ -62,6 +62,25 @@ pub trait WuiController {
 	}
 	fn set_runtime_context(&mut self, _client_id: Option<usize>, _session: Option<String>) {}
 	fn set_route_context(&mut self, _route: Option<RouteContext>) {}
+	#[cfg(feature = "hyper")]
+	fn http_routes() -> Vec<crate::HttpRouteSpec>
+	where
+		Self: Sized,
+	{
+		Vec::new()
+	}
+	#[cfg(feature = "hyper")]
+	async fn handle_http(
+		&mut self,
+		_route: &str,
+		_request: crate::HttpRequest,
+		_ctx: crate::HttpCtx,
+	) -> Option<crate::HttpResponse>
+	where
+		Self: Sized,
+	{
+		None
+	}
 	async fn process(_ctx: ControllerProcessCtx) -> anyhow::Result<()>
 	where
 		Self: Sized,
@@ -879,6 +898,7 @@ fn render_widget(widget: &IrWidget, ctx: &mut EvalContext) -> Item {
 	let mut base = match widget.tag.as_str() {
 		"VStack" => render_container(gui::vstack, &widget.children, ctx),
 		"HStack" => render_container(gui::hstack, &widget.children, ctx),
+		"Form" => render_container(gui::form, &widget.children, ctx),
 		"Text" => gui::text(&text_value(widget, ctx)),
 		"Button" => gui::button(&textual_value(widget, ctx, "text")),
 		"Link" => gui::link(

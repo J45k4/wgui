@@ -46,7 +46,9 @@ pub use dist::*;
 pub use gui::*;
 pub use serde_json;
 #[cfg(feature = "hyper")]
-pub use server::{HttpHandler, HttpRequest, HttpResponse};
+pub use server::{
+	FormData, FromHttpRequest, HttpCtx, HttpHandler, HttpRequest, HttpResponse, HttpRouteSpec, Json,
+};
 #[cfg(feature = "sqlite")]
 pub use sqlite::{
 	apply_sqlite_migrations, configure_sqlite_env_for_project, default_db_path_for_schema,
@@ -70,6 +72,14 @@ type ControllerProcessFactory =
 type PageControllerFuture = Pin<Box<dyn Future<Output = PageMount> + Send>>;
 type PageControllerFactory =
 	Arc<dyn Fn(RouteContext, Option<usize>, Option<String>) -> PageControllerFuture + Send + Sync>;
+#[cfg(feature = "hyper")]
+type HttpControllerFuture = Pin<Box<dyn Future<Output = Option<HttpResponse>> + Send>>;
+#[cfg(feature = "hyper")]
+type HttpControllerFactory = Arc<
+	dyn Fn(RouteContext, Option<String>, String, HttpRequest, HttpCtx) -> HttpControllerFuture
+		+ Send
+		+ Sync,
+>;
 type SsrRenderer = Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>;
 type SsrComponentFactories = Arc<std::sync::RwLock<Vec<(String, ControllerFactory)>>>;
 type SsrPageFactories = Arc<std::sync::RwLock<Vec<(RoutePattern, PageControllerFactory)>>>;
@@ -687,6 +697,8 @@ pub struct Wgui<DB = ()> {
 	#[cfg(feature = "hyper")]
 	http_handler: server::SharedHttpHandler,
 	#[cfg(feature = "hyper")]
+	http_routes: server::SharedHttpRoutes,
+	#[cfg(feature = "hyper")]
 	app_css: server::SharedAppCss,
 	#[cfg(feature = "hyper")]
 	static_mounts: server::SharedStaticMounts,
@@ -701,6 +713,7 @@ impl Wgui<()> {
 		let ssr_components: SsrComponentFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let ssr_pages: SsrPageFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let http_handler = Arc::new(std::sync::RwLock::new(None));
+		let http_routes = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let app_css = Arc::new(std::sync::RwLock::new(None));
 		let static_mounts = Arc::new(std::sync::RwLock::new(Vec::new()));
 
@@ -711,6 +724,7 @@ impl Wgui<()> {
 			let ssr_components = ssr_components.clone();
 			let ssr_pages = ssr_pages.clone();
 			let http_handler = http_handler.clone();
+			let http_routes = http_routes.clone();
 			let app_css = app_css.clone();
 			let static_mounts = static_mounts.clone();
 			let ssr: Option<SsrRenderer> = Some(Arc::new(
@@ -765,6 +779,7 @@ impl Wgui<()> {
 					sessions,
 					ssr,
 					http_handler,
+					http_routes,
 					app_css,
 					static_mounts,
 				)
@@ -786,6 +801,7 @@ impl Wgui<()> {
 			db: Arc::new(()),
 			contexts: HashMap::new(),
 			http_handler,
+			http_routes,
 			app_css,
 			static_mounts,
 		}
@@ -802,6 +818,7 @@ impl Wgui<()> {
 		let ssr_components: SsrComponentFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let ssr_pages: SsrPageFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let http_handler = Arc::new(std::sync::RwLock::new(None));
+		let http_routes = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let app_css = Arc::new(std::sync::RwLock::new(None));
 		let static_mounts = Arc::new(std::sync::RwLock::new(Vec::new()));
 
@@ -810,6 +827,7 @@ impl Wgui<()> {
 			let event_tx = events_tx.clone();
 			let sessions = sessions.clone();
 			let http_handler = http_handler.clone();
+			let http_routes = http_routes.clone();
 			let app_css = app_css.clone();
 			let static_mounts = static_mounts.clone();
 			let ssr: Option<SsrRenderer> = Some(Arc::new(
@@ -825,6 +843,7 @@ impl Wgui<()> {
 					sessions,
 					ssr,
 					http_handler,
+					http_routes,
 					app_css,
 					static_mounts,
 				)
@@ -846,6 +865,7 @@ impl Wgui<()> {
 			db: Arc::new(()),
 			contexts: HashMap::new(),
 			http_handler,
+			http_routes,
 			app_css,
 			static_mounts,
 		}
@@ -859,6 +879,8 @@ impl Wgui<()> {
 		let ssr_pages: SsrPageFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		#[cfg(feature = "hyper")]
 		let http_handler = Arc::new(std::sync::RwLock::new(None));
+		#[cfg(feature = "hyper")]
+		let http_routes = Arc::new(std::sync::RwLock::new(Vec::new()));
 		#[cfg(feature = "hyper")]
 		let app_css = Arc::new(std::sync::RwLock::new(None));
 		#[cfg(feature = "hyper")]
@@ -877,6 +899,8 @@ impl Wgui<()> {
 			contexts: HashMap::new(),
 			#[cfg(feature = "hyper")]
 			http_handler,
+			#[cfg(feature = "hyper")]
+			http_routes,
 			#[cfg(feature = "hyper")]
 			app_css,
 			#[cfg(feature = "hyper")]
@@ -907,10 +931,52 @@ where
 			#[cfg(feature = "hyper")]
 			http_handler: self.http_handler,
 			#[cfg(feature = "hyper")]
+			http_routes: self.http_routes,
+			#[cfg(feature = "hyper")]
 			app_css: self.app_css,
 			#[cfg(feature = "hyper")]
 			static_mounts: self.static_mounts,
 		}
+	}
+
+	#[cfg(feature = "hyper")]
+	fn register_http_routes<C>(&mut self, factory: HttpControllerFactory)
+	where
+		C: crate::wui::runtime::WuiController + Send + 'static,
+	{
+		let mut routes = self.http_routes.write().unwrap();
+		for spec in C::http_routes() {
+			let route_id = spec.id.to_string();
+			let handler_factory = factory.clone();
+			let handler: server::HttpRouteHandler = Arc::new(move |request, ctx| {
+				let handler_factory = handler_factory.clone();
+				let route_id = route_id.clone();
+				Box::pin(async move {
+					let route = RouteContext {
+						path: request.path.clone(),
+						params: ctx.params.clone(),
+						query: request.query.clone(),
+					};
+					match handler_factory(route, ctx.session.clone(), route_id, request, ctx).await
+					{
+						Some(response) => response,
+						None => HttpResponse::new(404, "controller http route not found"),
+					}
+				})
+			});
+			routes.push(server::HttpRoute {
+				method: spec.method.to_string(),
+				pattern: RoutePattern::parse(spec.path),
+				handler,
+			});
+		}
+	}
+
+	#[cfg(feature = "hyper")]
+	fn redirect_http_response(url: String) -> HttpResponse {
+		HttpResponse::new(303, Vec::new())
+			.header("location", url)
+			.header("cache-control", "no-store")
 	}
 
 	#[cfg(feature = "hyper")]
@@ -1214,10 +1280,27 @@ where
 		F: Fn() -> Fut + Send + Sync + 'static,
 		Fut: Future<Output = C> + Send + 'static,
 	{
+		let controller = Arc::new(controller);
+		let factory_controller = controller.clone();
 		let factory: ControllerFactory = Arc::new(move || {
-			let fut = controller();
+			let fut = factory_controller.as_ref()();
 			Box::pin(async move { Box::new(fut.await) as BoxedController })
 		});
+		#[cfg(feature = "hyper")]
+		{
+			let http_controller = controller.clone();
+			let http_factory: HttpControllerFactory =
+				Arc::new(move |route, session, route_id, request, ctx| {
+					let http_controller = http_controller.clone();
+					Box::pin(async move {
+						let mut controller = http_controller.as_ref()().await;
+						controller.set_runtime_context(None, session);
+						controller.set_route_context(Some(route));
+						controller.handle_http(&route_id, request, ctx).await
+					})
+				});
+			self.register_http_routes::<C>(http_factory);
+		}
 		self.ssr_components
 			.write()
 			.unwrap()
@@ -1257,6 +1340,29 @@ where
 		else {
 			panic!("invalid context type for component");
 		};
+
+		#[cfg(feature = "hyper")]
+		{
+			let http_ctx = ctx.clone();
+			let http_factory: HttpControllerFactory =
+				Arc::new(move |route, session, route_id, request, ctx| {
+					let http_ctx = http_ctx.clone();
+					Box::pin(async move {
+						http_ctx.set_current_client(None);
+						http_ctx.set_current_session(session.clone());
+						http_ctx.set_current_route(Some(route.clone()));
+						match C::mount(http_ctx.clone(), route.clone()).await {
+							MountResult::Ready(mut controller) => {
+								controller.set_runtime_context(None, session);
+								controller.set_route_context(Some(route));
+								controller.handle_http(&route_id, request, ctx).await
+							}
+							MountResult::Redirect(url) => Some(Self::redirect_http_response(url)),
+						}
+					})
+				});
+			self.register_http_routes::<C>(http_factory);
+		}
 
 		let factory_ctx = ctx.clone();
 		let factory: ControllerFactory = Arc::new(move || {
@@ -1303,11 +1409,28 @@ where
 		F: Fn() -> Fut + Send + Sync + 'static,
 		Fut: Future<Output = C> + Send + 'static,
 	{
+		let controller = Arc::new(controller);
 		let pattern = RoutePattern::parse(route);
+		let factory_controller = controller.clone();
 		let factory: PageControllerFactory = Arc::new(move |_route, _client_id, _session| {
-			let fut = controller();
+			let fut = factory_controller.as_ref()();
 			Box::pin(async move { PageMount::Ready(Box::new(fut.await) as BoxedController) })
 		});
+		#[cfg(feature = "hyper")]
+		{
+			let http_controller = controller.clone();
+			let http_factory: HttpControllerFactory =
+				Arc::new(move |route, session, route_id, request, ctx| {
+					let http_controller = http_controller.clone();
+					Box::pin(async move {
+						let mut controller = http_controller.as_ref()().await;
+						controller.set_runtime_context(None, session);
+						controller.set_route_context(Some(route));
+						controller.handle_http(&route_id, request, ctx).await
+					})
+				});
+			self.register_http_routes::<C>(http_factory);
+		}
 		self.ssr_pages
 			.write()
 			.unwrap()
@@ -1329,11 +1452,28 @@ where
 		F: Fn(RouteContext) -> Fut + Send + Sync + 'static,
 		Fut: Future<Output = C> + Send + 'static,
 	{
+		let controller = Arc::new(controller);
 		let pattern = RoutePattern::parse(route);
+		let factory_controller = controller.clone();
 		let factory: PageControllerFactory = Arc::new(move |route, _client_id, _session| {
-			let fut = controller(route);
+			let fut = factory_controller.as_ref()(route);
 			Box::pin(async move { PageMount::Ready(Box::new(fut.await) as BoxedController) })
 		});
+		#[cfg(feature = "hyper")]
+		{
+			let http_controller = controller.clone();
+			let http_factory: HttpControllerFactory =
+				Arc::new(move |route, session, route_id, request, ctx| {
+					let http_controller = http_controller.clone();
+					Box::pin(async move {
+						let mut controller = http_controller.as_ref()(route.clone()).await;
+						controller.set_runtime_context(None, session);
+						controller.set_route_context(Some(route));
+						controller.handle_http(&route_id, request, ctx).await
+					})
+				});
+			self.register_http_routes::<C>(http_factory);
+		}
 		self.ssr_pages
 			.write()
 			.unwrap()
@@ -1370,6 +1510,29 @@ where
 		else {
 			panic!("invalid context type for page");
 		};
+
+		#[cfg(feature = "hyper")]
+		{
+			let http_ctx = ctx.clone();
+			let http_factory: HttpControllerFactory =
+				Arc::new(move |route, session, route_id, request, ctx| {
+					let http_ctx = http_ctx.clone();
+					Box::pin(async move {
+						http_ctx.set_current_client(None);
+						http_ctx.set_current_session(session.clone());
+						http_ctx.set_current_route(Some(route.clone()));
+						match C::mount(http_ctx.clone(), route.clone()).await {
+							MountResult::Ready(mut controller) => {
+								controller.set_runtime_context(None, session);
+								controller.set_route_context(Some(route));
+								controller.handle_http(&route_id, request, ctx).await
+							}
+							MountResult::Redirect(url) => Some(Self::redirect_http_response(url)),
+						}
+					})
+				});
+			self.register_http_routes::<C>(http_factory);
+		}
 
 		let pattern = RoutePattern::parse(route);
 		let process_ctx = ctx.clone();

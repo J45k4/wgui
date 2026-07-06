@@ -93,6 +93,12 @@ pub struct ThreeNode {
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ItemPayload {
 	Layout(Layout),
+	Form {
+		action: String,
+		method: String,
+		spacing: u32,
+		body: Vec<Item>,
+	},
 	Text {
 		value: String,
 	},
@@ -241,6 +247,9 @@ pub struct Item {
 	pub padding_bottom: u16,
 	pub overflow: String,
 	pub editable: bool,
+	pub name: String,
+	pub action: String,
+	pub method: String,
 }
 
 pub fn checkbox() -> Item {
@@ -274,6 +283,21 @@ where
 			flex: FlexDirection::Row,
 			..Default::default()
 		}),
+		..Default::default()
+	}
+}
+
+pub fn form<I>(body: I) -> Item
+where
+	I: IntoIterator<Item = Item>,
+{
+	Item {
+		payload: ItemPayload::Form {
+			action: String::new(),
+			method: String::from("post"),
+			spacing: 0,
+			body: body.into_iter().collect(),
+		},
 		..Default::default()
 	}
 }
@@ -683,6 +707,27 @@ impl Item {
 		self
 	}
 
+	pub fn name(mut self, name: impl Into<String>) -> Self {
+		self.name = name.into();
+		self
+	}
+
+	pub fn action(mut self, action: impl Into<String>) -> Self {
+		self.action = action.into();
+		if let ItemPayload::Form { action, .. } = &mut self.payload {
+			*action = self.action.clone();
+		}
+		self
+	}
+
+	pub fn method(mut self, method: impl Into<String>) -> Self {
+		self.method = method.into();
+		if let ItemPayload::Form { method, .. } = &mut self.payload {
+			*method = self.method.clone();
+		}
+		self
+	}
+
 	fn set_button_event<F>(mut self, update: F) -> Self
 	where
 		F: FnOnce(&mut ButtonEvents),
@@ -764,6 +809,12 @@ impl Item {
 		match self.payload {
 			ItemPayload::Layout(ref mut layout) => {
 				layout.spacing = spacing;
+			}
+			ItemPayload::Form {
+				spacing: ref mut form_spacing,
+				..
+			} => {
+				*form_spacing = spacing;
 			}
 			_ => {}
 		}
