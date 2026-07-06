@@ -96,10 +96,11 @@ enum PageMount {
 pub(crate) struct SsrHydrationRoot {
 	pub path: String,
 	pub item: Item,
+	pub title: Option<String>,
 }
 
 pub(crate) enum SsrResponse {
-	Render(Item),
+	Render { item: Item, title: Option<String> },
 	Redirect(String),
 }
 
@@ -770,7 +771,13 @@ impl Wgui<()> {
 							PageMount::Ready(mut controller) => {
 								controller.set_runtime_context(None, session.clone());
 								controller.set_route_context(Some(route.clone()));
-								Some(SsrResponse::Render(controller.render_with_route(&route)))
+								let title = controller
+									.title()
+									.or_else(|| controller.route_title(&route.path));
+								Some(SsrResponse::Render {
+									item: controller.render_with_route(&route),
+									title,
+								})
 							}
 							PageMount::Redirect(url) => Some(SsrResponse::Redirect(url)),
 						};
@@ -791,7 +798,13 @@ impl Wgui<()> {
 					});
 					controller.set_runtime_context(None, session);
 					controller.set_route_context(Some(route.clone()));
-					Some(SsrResponse::Render(controller.render_with_route(&route)))
+					let title = controller
+						.title()
+						.or_else(|| controller.route_title(&route.path));
+					Some(SsrResponse::Render {
+						item: controller.render_with_route(&route),
+						title,
+					})
 				},
 			));
 			tokio::spawn(async move {
@@ -859,7 +872,10 @@ impl Wgui<()> {
 			let ssr_hydration_roots = ssr_hydration_roots.clone();
 			let ssr: Option<SsrRenderer> = Some(Arc::new(
 				move |_route: RouteContext, _session: Option<String>| {
-					Some(SsrResponse::Render((renderer)()))
+					Some(SsrResponse::Render {
+						item: (renderer)(),
+						title: None,
+					})
 				},
 			));
 			tokio::spawn(async move {
@@ -1823,12 +1839,14 @@ where
 				ClientEvent::PathChanged(change) => {
 					let session = handle.session_for_client(client_id).await;
 					let mut initial_root = change.initial_root.clone();
+					let mut hydrated_title: Option<String> = None;
 					#[cfg(feature = "hyper")]
 					if initial_root.is_none() {
 						if let Some(hydration_id) = &change.ssr_hydration_id {
 							let mut roots = self.ssr_hydration_roots.write().await;
 							if let Some(root) = roots.remove(hydration_id) {
 								if root.path == change.path {
+									hydrated_title = root.title;
 									initial_root = Some(root.item);
 								}
 							}
@@ -1866,7 +1884,9 @@ where
 									.title()
 									.or_else(|| controller.route_title(&active_route.path));
 								if let Some(title) = title {
-									handle.set_title(client_id, &title).await;
+									if hydrated_title.as_deref() != Some(title.as_str()) {
+										handle.set_title(client_id, &title).await;
+									}
 								}
 								let mut rendered = item.clone();
 								resolve_custom_component_entries(
@@ -1927,7 +1947,9 @@ where
 								.title()
 								.or_else(|| controller.route_title(&active_route.path));
 							if let Some(title) = title {
-								handle.set_title(client_id, &title).await;
+								if hydrated_title.as_deref() != Some(title.as_str()) {
+									handle.set_title(client_id, &title).await;
+								}
 							}
 							let mut rendered = item.clone();
 							resolve_custom_component_entries(
@@ -1945,7 +1967,9 @@ where
 								.title()
 								.or_else(|| controller.route_title(&active_route.path));
 							if let Some(title) = title {
-								handle.set_title(client_id, &title).await;
+								if hydrated_title.as_deref() != Some(title.as_str()) {
+									handle.set_title(client_id, &title).await;
+								}
 							}
 							let mut rendered = item.clone();
 							resolve_custom_component_entries(

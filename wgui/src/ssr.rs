@@ -13,9 +13,22 @@ pub fn render_document_with_app_css_and_hydration_id(
 	app_css: bool,
 	hydration_id: Option<&str>,
 ) -> String {
+	render_document_with_app_css_hydration_title(item, app_css, hydration_id, None)
+}
+
+pub fn render_document_with_app_css_hydration_title(
+	item: &Item,
+	app_css: bool,
+	hydration_id: Option<&str>,
+	title: Option<&str>,
+) -> String {
 	let mut out = String::new();
 	out.push_str("<html><head>");
-	out.push_str("<title></title>");
+	out.push_str("<title>");
+	if let Some(title) = title {
+		out.push_str(&escape_text(title));
+	}
+	out.push_str("</title>");
 	out.push_str(
 		"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,maximum-scale=1\" />",
 	);

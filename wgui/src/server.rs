@@ -384,6 +384,7 @@ async fn store_ssr_hydration_root(
 	id: String,
 	path: String,
 	item: crate::gui::Item,
+	title: Option<String>,
 ) {
 	let mut roots = roots.write().await;
 	while roots.len() >= MAX_SSR_HYDRATION_ROOTS {
@@ -392,7 +393,7 @@ async fn store_ssr_hydration_root(
 		};
 		roots.remove(&key);
 	}
-	roots.insert(id, SsrHydrationRoot { path, item });
+	roots.insert(id, SsrHydrationRoot { path, item, title });
 }
 
 fn query_map(req: &Request<hyper::body::Incoming>) -> HashMap<String, String> {
@@ -651,19 +652,21 @@ async fn handle_req(
 					query: query_map(&req),
 				};
 				match (renderer)(route, session) {
-					Some(SsrResponse::Render(item)) => {
+					Some(SsrResponse::Render { item, title }) => {
 						let hydration_id = next_ssr_hydration_id();
 						store_ssr_hydration_root(
 							&ctx.ssr_hydration_roots,
 							hydration_id.clone(),
 							req.uri().path().to_string(),
 							item.clone(),
+							title.clone(),
 						)
 						.await;
-						let html = ssr::render_document_with_app_css_and_hydration_id(
+						let html = ssr::render_document_with_app_css_hydration_title(
 							&item,
 							ctx.app_css.read().unwrap().is_some(),
 							Some(&hydration_id),
+							title.as_deref(),
 						);
 						Ok(Response::builder()
 							.header("content-type", "text/html")
