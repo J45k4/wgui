@@ -532,6 +532,7 @@ export type PathChanged = {
     query: {
         [key: string]: string
     }
+	initialRoot?: Item
 }
 
 export type OnSliderChange = {

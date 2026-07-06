@@ -416,6 +416,19 @@ impl WguiHandle {
 		sender.send(Command::ReplaceRoot(item)).unwrap();
 	}
 
+	pub async fn hydrate_root(&self, client_id: usize, item: Item) {
+		log::debug!("hydrate root {:?}", item);
+		let clients = self.clients.read().await;
+		let sender = match clients.get(&client_id) {
+			Some(sender) => sender,
+			None => {
+				println!("client not found");
+				return;
+			}
+		};
+		sender.send(Command::HydrateRoot(item)).unwrap();
+	}
+
 	pub async fn set_title(&self, client_id: usize, title: &str) {
 		let clients = self.clients.read().await;
 		let sender = match clients.get(&client_id) {
@@ -1787,6 +1800,7 @@ where
 				}
 				ClientEvent::PathChanged(change) => {
 					let session = handle.session_for_client(client_id).await;
+					let initial_root = change.initial_root.clone();
 					let selected_page =
 						best_route_index(&self.pages, &change.path, |page| &page.pattern);
 					let selected_page_changed =
@@ -1827,7 +1841,12 @@ where
 									&custom_component_entries,
 								);
 								if selected_page_changed {
-									handle.replace_root(client_id, rendered).await;
+									if let Some(root) = initial_root.clone() {
+										handle.hydrate_root(client_id, root).await;
+										handle.render(client_id, rendered).await;
+									} else {
+										handle.replace_root(client_id, rendered).await;
+									}
 								} else {
 									handle.render(client_id, rendered).await;
 								}
@@ -1859,6 +1878,7 @@ where
 							component.route_path.as_str()
 						});
 
+					let mut hydrated_initial_root = false;
 					let mut rendered_custom_sync: Option<Item> = None;
 					for (index, component) in self.components.iter_mut().enumerate() {
 						if Some(index) != selected_component {
@@ -1899,6 +1919,12 @@ where
 								&mut rendered,
 								&custom_component_entries,
 							);
+							if !hydrated_initial_root {
+								if let Some(root) = initial_root.clone() {
+									handle.hydrate_root(client_id, root).await;
+									hydrated_initial_root = true;
+								}
+							}
 							handle.render(client_id, rendered).await;
 							rendered_custom_sync = Some(item);
 							component.controllers.insert(client_id, controller);

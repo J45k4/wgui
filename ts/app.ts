@@ -145,6 +145,20 @@ const renderBodyRoot = (body: HTMLBodyElement, item: Item, ctx: Context) => {
     }
 }
 
+const takeSsrRoot = (): Item | undefined => {
+	const element = document.getElementById("wgui-ssr-root")
+	if (!element?.textContent) {
+		return undefined
+	}
+	element.remove()
+	try {
+		return JSON.parse(element.textContent) as Item
+	} catch (err) {
+		console.warn("failed to parse SSR root", err)
+		return undefined
+	}
+}
+
 window.onload = () => {
     const res = document.querySelector("body")
 
@@ -160,6 +174,7 @@ window.onload = () => {
 
     const debouncer = new Deboncer()
     let rtc: WebRtcCoordinator | undefined
+	let initialRoot = takeSsrRoot()
 
     const {
         sender
@@ -334,8 +349,17 @@ window.onload = () => {
             sender.send({
                 type: "pathChanged",
                 path: location.pathname,
-                query: query
+                query: query,
+				initialRoot,
             })
+			if (initialRoot) {
+				const ctx: Context = {
+					sender,
+					debouncer,
+				}
+				renderBodyRoot(res, initialRoot, ctx)
+				initialRoot = undefined
+			}
 
             sender.sendNow()
 			rtc.syncElements(res)

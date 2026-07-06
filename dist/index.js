@@ -3005,6 +3005,19 @@ var renderBodyRoot = (body, item, ctx) => {
     }
   }
 };
+var takeSsrRoot = () => {
+  const element = document.getElementById("wgui-ssr-root");
+  if (!element?.textContent) {
+    return;
+  }
+  element.remove();
+  try {
+    return JSON.parse(element.textContent);
+  } catch (err) {
+    console.warn("failed to parse SSR root", err);
+    return;
+  }
+};
 window.onload = () => {
   const res = document.querySelector("body");
   if (!res) {
@@ -3017,6 +3030,7 @@ window.onload = () => {
   res.style.width = "100%";
   const debouncer = new Deboncer;
   let rtc;
+  let initialRoot = takeSsrRoot();
   const {
     sender
   } = connectWebsocket({
@@ -3159,8 +3173,17 @@ window.onload = () => {
       sender2.send({
         type: "pathChanged",
         path: location.pathname,
-        query
+        query,
+        initialRoot
       });
+      if (initialRoot) {
+        const ctx = {
+          sender: sender2,
+          debouncer
+        };
+        renderBodyRoot(res, initialRoot, ctx);
+        initialRoot = undefined;
+      }
       sender2.sendNow();
       rtc.syncElements(res);
     }

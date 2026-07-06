@@ -21,6 +21,11 @@ pub fn render_document_with_app_css(item: &Item, app_css: bool) -> String {
 		"<body style=\"display:flex;flex-direction:row;height:100vh;margin:0;width:100%;\">",
 	);
 	out.push_str(&render_item(item));
+	if let Ok(initial_root) = serde_json::to_string(item) {
+		out.push_str("<script id=\"wgui-ssr-root\" type=\"application/json\">");
+		out.push_str(&escape_script_json(&initial_root));
+		out.push_str("</script>");
+	}
 	out.push_str("</body></html>");
 	out
 }
@@ -598,6 +603,10 @@ fn escape_attr(input: &str) -> String {
 		.replace('>', "&gt;")
 		.replace('"', "&quot;")
 		.replace('\'', "&#39;")
+}
+
+fn escape_script_json(input: &str) -> String {
+	input.replace('<', "\\u003c")
 }
 
 struct StyleBuilder {

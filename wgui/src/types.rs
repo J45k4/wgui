@@ -50,6 +50,8 @@ pub struct OnTextChanged {
 pub struct PathChanged {
 	pub path: String,
 	pub query: HashMap<String, String>,
+	#[serde(default, rename = "initialRoot")]
+	pub initial_root: Option<Item>,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
@@ -345,6 +347,7 @@ pub enum ServerEvent {
 pub enum Command {
 	Render(Item),
 	ReplaceRoot(Item),
+	HydrateRoot(Item),
 	SetTitle(String),
 	PushState(String),
 	Navigate(String),
@@ -383,6 +386,19 @@ mod tests {
 			serde_json::from_str(r#"{"room":"channel:1","target_client_id":9,"payload":"x"}"#)
 				.unwrap();
 		assert_eq!(signal_snake.target_client_id, Some(9));
+	}
+
+	#[test]
+	fn path_changed_deserializes_without_initial_root() {
+		let event: ClientEvent =
+			serde_json::from_str(r#"{"type":"pathChanged","path":"/","query":{}}"#).unwrap();
+		match event {
+			ClientEvent::PathChanged(change) => {
+				assert_eq!(change.path, "/");
+				assert!(change.initial_root.is_none());
+			}
+			_ => panic!("expected PathChanged"),
+		}
 	}
 
 	#[test]
