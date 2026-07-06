@@ -421,6 +421,18 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 					name: "fill",
 					kind: PropKind::Value(ValueType::Bool),
 				},
+				PropSchema {
+					name: "backgroundColor",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "color",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "border",
+					kind: PropKind::Value(ValueType::String),
+				},
 			],
 		}),
 		"Image" => Some(TagSchema {
