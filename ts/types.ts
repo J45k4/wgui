@@ -532,6 +532,7 @@ export type PathChanged = {
     query: {
         [key: string]: string
     }
+	ssrHydrationId?: string
 	initialRoot?: Item
 }
 

@@ -14,7 +14,9 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
@@ -23,11 +25,13 @@ use crate::types::{ClientMessage, Clients};
 use crate::ws::TungsteniteWs;
 use crate::wui::routing::{best_route_index, RoutePattern};
 use crate::wui::runtime::RouteContext;
-use crate::{Sessions, SsrResponse, WguiHandle};
+use crate::{Sessions, SsrHydrationRoot, SsrHydrationRoots, SsrResponse, WguiHandle};
 
 const INDEX_HTML_BYTES: &[u8] = include_bytes!("../../dist/index.html");
 const INDEX_JS_BYTES: &[u8] = include_bytes!("../../dist/index.js");
 const CSS_JS_BYTES: &[u8] = include_bytes!("../../dist/index.css");
+const MAX_SSR_HYDRATION_ROOTS: usize = 128;
+static NEXT_SSR_HYDRATION_ID: AtomicU64 = AtomicU64::new(1);
 
 pub type HttpHandler = Arc<
 	dyn Fn(HttpRequest) -> Pin<Box<dyn Future<Output = Option<HttpResponse>> + Send>> + Send + Sync,
@@ -363,6 +367,32 @@ struct Ctx {
 	http_routes: SharedHttpRoutes,
 	app_css: SharedAppCss,
 	static_mounts: SharedStaticMounts,
+	ssr_hydration_roots: SsrHydrationRoots,
+}
+
+fn next_ssr_hydration_id() -> String {
+	let count = NEXT_SSR_HYDRATION_ID.fetch_add(1, Ordering::Relaxed);
+	let nanos = SystemTime::now()
+		.duration_since(UNIX_EPOCH)
+		.map(|duration| duration.as_nanos())
+		.unwrap_or(0);
+	format!("{nanos:x}-{count:x}")
+}
+
+async fn store_ssr_hydration_root(
+	roots: &SsrHydrationRoots,
+	id: String,
+	path: String,
+	item: crate::gui::Item,
+) {
+	let mut roots = roots.write().await;
+	while roots.len() >= MAX_SSR_HYDRATION_ROOTS {
+		let Some(key) = roots.keys().next().cloned() else {
+			break;
+		};
+		roots.remove(&key);
+	}
+	roots.insert(id, SsrHydrationRoot { path, item });
 }
 
 fn query_map(req: &Request<hyper::body::Incoming>) -> HashMap<String, String> {
@@ -622,9 +652,18 @@ async fn handle_req(
 				};
 				match (renderer)(route, session) {
 					Some(SsrResponse::Render(item)) => {
-						let html = ssr::render_document_with_app_css(
+						let hydration_id = next_ssr_hydration_id();
+						store_ssr_hydration_root(
+							&ctx.ssr_hydration_roots,
+							hydration_id.clone(),
+							req.uri().path().to_string(),
+							item.clone(),
+						)
+						.await;
+						let html = ssr::render_document_with_app_css_and_hydration_id(
 							&item,
 							ctx.app_css.read().unwrap().is_some(),
+							Some(&hydration_id),
 						);
 						Ok(Response::builder()
 							.header("content-type", "text/html")
@@ -665,6 +704,7 @@ pub struct Server {
 	http_routes: SharedHttpRoutes,
 	app_css: SharedAppCss,
 	static_mounts: SharedStaticMounts,
+	ssr_hydration_roots: SsrHydrationRoots,
 }
 
 impl Server {
@@ -678,6 +718,7 @@ impl Server {
 		http_routes: SharedHttpRoutes,
 		app_css: SharedAppCss,
 		static_mounts: SharedStaticMounts,
+		ssr_hydration_roots: SsrHydrationRoots,
 	) -> Self {
 		let listener = TcpListener::bind(addr).await.unwrap();
 		log::info!("listening on http://localhost:{}", addr.port());
@@ -692,6 +733,7 @@ impl Server {
 			http_routes,
 			app_css,
 			static_mounts,
+			ssr_hydration_roots,
 		}
 	}
 
@@ -711,6 +753,7 @@ impl Server {
 								let http_routes = self.http_routes.clone();
 								let app_css = self.app_css.clone();
 								let static_mounts = self.static_mounts.clone();
+								let ssr_hydration_roots = self.ssr_hydration_roots.clone();
 								tokio::spawn(async move {
 									let service = service_fn(move |req| {
 										handle_req(req, Ctx {
@@ -722,6 +765,7 @@ impl Server {
 											http_routes: http_routes.clone(),
 											app_css: app_css.clone(),
 											static_mounts: static_mounts.clone(),
+											ssr_hydration_roots: ssr_hydration_roots.clone(),
 										})
 									});
 

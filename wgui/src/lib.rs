@@ -63,6 +63,7 @@ pub use ws::TungsteniteWs;
 pub use ws::{next_client_id, WsMessage, WsStream};
 
 pub(crate) type Sessions = Arc<RwLock<HashMap<usize, Option<String>>>>;
+pub(crate) type SsrHydrationRoots = Arc<RwLock<HashMap<String, SsrHydrationRoot>>>;
 type BoxedController = Box<dyn crate::wui::runtime::WuiController + Send>;
 type ControllerFuture = Pin<Box<dyn Future<Output = BoxedController> + Send>>;
 type ControllerFactory = Arc<dyn Fn() -> ControllerFuture + Send + Sync>;
@@ -90,6 +91,11 @@ type CustomComponentEntries = HashMap<String, String>;
 enum PageMount {
 	Ready(BoxedController),
 	Redirect(String),
+}
+
+pub(crate) struct SsrHydrationRoot {
+	pub path: String,
+	pub item: Item,
 }
 
 pub(crate) enum SsrResponse {
@@ -715,6 +721,8 @@ pub struct Wgui<DB = ()> {
 	app_css: server::SharedAppCss,
 	#[cfg(feature = "hyper")]
 	static_mounts: server::SharedStaticMounts,
+	#[cfg(feature = "hyper")]
+	ssr_hydration_roots: SsrHydrationRoots,
 }
 
 impl Wgui<()> {
@@ -729,6 +737,7 @@ impl Wgui<()> {
 		let http_routes = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let app_css = Arc::new(std::sync::RwLock::new(None));
 		let static_mounts = Arc::new(std::sync::RwLock::new(Vec::new()));
+		let ssr_hydration_roots = Arc::new(RwLock::new(HashMap::new()));
 
 		{
 			let clients = clients.clone();
@@ -740,6 +749,7 @@ impl Wgui<()> {
 			let http_routes = http_routes.clone();
 			let app_css = app_css.clone();
 			let static_mounts = static_mounts.clone();
+			let ssr_hydration_roots = ssr_hydration_roots.clone();
 			let ssr: Option<SsrRenderer> = Some(Arc::new(
 				move |route: RouteContext, session: Option<String>| {
 					if let Some((factory, route)) = {
@@ -795,6 +805,7 @@ impl Wgui<()> {
 					http_routes,
 					app_css,
 					static_mounts,
+					ssr_hydration_roots,
 				)
 				.await
 				.run()
@@ -817,6 +828,7 @@ impl Wgui<()> {
 			http_routes,
 			app_css,
 			static_mounts,
+			ssr_hydration_roots,
 		}
 	}
 
@@ -834,6 +846,7 @@ impl Wgui<()> {
 		let http_routes = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let app_css = Arc::new(std::sync::RwLock::new(None));
 		let static_mounts = Arc::new(std::sync::RwLock::new(Vec::new()));
+		let ssr_hydration_roots = Arc::new(RwLock::new(HashMap::new()));
 
 		{
 			let clients = clients.clone();
@@ -843,6 +856,7 @@ impl Wgui<()> {
 			let http_routes = http_routes.clone();
 			let app_css = app_css.clone();
 			let static_mounts = static_mounts.clone();
+			let ssr_hydration_roots = ssr_hydration_roots.clone();
 			let ssr: Option<SsrRenderer> = Some(Arc::new(
 				move |_route: RouteContext, _session: Option<String>| {
 					Some(SsrResponse::Render((renderer)()))
@@ -859,6 +873,7 @@ impl Wgui<()> {
 					http_routes,
 					app_css,
 					static_mounts,
+					ssr_hydration_roots,
 				)
 				.await
 				.run()
@@ -881,6 +896,7 @@ impl Wgui<()> {
 			http_routes,
 			app_css,
 			static_mounts,
+			ssr_hydration_roots,
 		}
 	}
 
@@ -898,6 +914,8 @@ impl Wgui<()> {
 		let app_css = Arc::new(std::sync::RwLock::new(None));
 		#[cfg(feature = "hyper")]
 		let static_mounts = Arc::new(std::sync::RwLock::new(Vec::new()));
+		#[cfg(feature = "hyper")]
+		let ssr_hydration_roots = Arc::new(RwLock::new(HashMap::new()));
 
 		Self {
 			events_rx,
@@ -918,6 +936,8 @@ impl Wgui<()> {
 			app_css,
 			#[cfg(feature = "hyper")]
 			static_mounts,
+			#[cfg(feature = "hyper")]
+			ssr_hydration_roots,
 		}
 	}
 }
@@ -949,6 +969,8 @@ where
 			app_css: self.app_css,
 			#[cfg(feature = "hyper")]
 			static_mounts: self.static_mounts,
+			#[cfg(feature = "hyper")]
+			ssr_hydration_roots: self.ssr_hydration_roots,
 		}
 	}
 
@@ -1800,7 +1822,18 @@ where
 				}
 				ClientEvent::PathChanged(change) => {
 					let session = handle.session_for_client(client_id).await;
-					let initial_root = change.initial_root.clone();
+					let mut initial_root = change.initial_root.clone();
+					#[cfg(feature = "hyper")]
+					if initial_root.is_none() {
+						if let Some(hydration_id) = &change.ssr_hydration_id {
+							let mut roots = self.ssr_hydration_roots.write().await;
+							if let Some(root) = roots.remove(hydration_id) {
+								if root.path == change.path {
+									initial_root = Some(root.item);
+								}
+							}
+						}
+					}
 					let selected_page =
 						best_route_index(&self.pages, &change.path, |page| &page.pattern);
 					let selected_page_changed =

@@ -5,12 +5,25 @@ pub fn render_document(item: &Item) -> String {
 }
 
 pub fn render_document_with_app_css(item: &Item, app_css: bool) -> String {
+	render_document_with_app_css_and_hydration_id(item, app_css, None)
+}
+
+pub fn render_document_with_app_css_and_hydration_id(
+	item: &Item,
+	app_css: bool,
+	hydration_id: Option<&str>,
+) -> String {
 	let mut out = String::new();
 	out.push_str("<html><head>");
 	out.push_str("<title></title>");
 	out.push_str(
 		"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,maximum-scale=1\" />",
 	);
+	if let Some(hydration_id) = hydration_id {
+		out.push_str("<meta name=\"wgui-ssr-id\" content=\"");
+		out.push_str(&escape_attr(hydration_id));
+		out.push_str("\">");
+	}
 	out.push_str("<link rel=\"stylesheet\" href=\"/index.css\"></link>");
 	if app_css {
 		out.push_str("<link rel=\"stylesheet\" href=\"/app.css\"></link>");

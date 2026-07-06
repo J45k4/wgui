@@ -3018,6 +3018,15 @@ var takeSsrRoot = () => {
     return;
   }
 };
+var takeSsrHydrationId = () => {
+  const element = document.querySelector('meta[name="wgui-ssr-id"]');
+  if (!(element instanceof HTMLMetaElement)) {
+    return;
+  }
+  const id = element.content;
+  element.remove();
+  return id || undefined;
+};
 window.onload = () => {
   const res = document.querySelector("body");
   if (!res) {
@@ -3031,6 +3040,7 @@ window.onload = () => {
   const debouncer = new Deboncer;
   let rtc;
   let initialRoot = takeSsrRoot();
+  let ssrHydrationId = takeSsrHydrationId();
   const {
     sender
   } = connectWebsocket({
@@ -3174,7 +3184,7 @@ window.onload = () => {
         type: "pathChanged",
         path: location.pathname,
         query,
-        initialRoot
+        ssrHydrationId
       });
       if (initialRoot) {
         const ctx = {
@@ -3184,6 +3194,7 @@ window.onload = () => {
         renderBodyRoot(res, initialRoot, ctx);
         initialRoot = undefined;
       }
+      ssrHydrationId = undefined;
       sender2.sendNow();
       rtc.syncElements(res);
     }

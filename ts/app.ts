@@ -159,6 +159,16 @@ const takeSsrRoot = (): Item | undefined => {
 	}
 }
 
+const takeSsrHydrationId = (): string | undefined => {
+	const element = document.querySelector('meta[name="wgui-ssr-id"]')
+	if (!(element instanceof HTMLMetaElement)) {
+		return undefined
+	}
+	const id = element.content
+	element.remove()
+	return id || undefined
+}
+
 window.onload = () => {
     const res = document.querySelector("body")
 
@@ -175,6 +185,7 @@ window.onload = () => {
     const debouncer = new Deboncer()
     let rtc: WebRtcCoordinator | undefined
 	let initialRoot = takeSsrRoot()
+	let ssrHydrationId = takeSsrHydrationId()
 
     const {
         sender
@@ -350,7 +361,7 @@ window.onload = () => {
                 type: "pathChanged",
                 path: location.pathname,
                 query: query,
-				initialRoot,
+				ssrHydrationId,
             })
 			if (initialRoot) {
 				const ctx: Context = {
@@ -360,6 +371,7 @@ window.onload = () => {
 				renderBodyRoot(res, initialRoot, ctx)
 				initialRoot = undefined
 			}
+			ssrHydrationId = undefined
 
             sender.sendNow()
 			rtc.syncElements(res)

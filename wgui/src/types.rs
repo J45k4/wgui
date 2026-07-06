@@ -50,6 +50,8 @@ pub struct OnTextChanged {
 pub struct PathChanged {
 	pub path: String,
 	pub query: HashMap<String, String>,
+	#[serde(default, rename = "ssrHydrationId")]
+	pub ssr_hydration_id: Option<String>,
 	#[serde(default, rename = "initialRoot")]
 	pub initial_root: Option<Item>,
 }
@@ -395,6 +397,22 @@ mod tests {
 		match event {
 			ClientEvent::PathChanged(change) => {
 				assert_eq!(change.path, "/");
+				assert!(change.ssr_hydration_id.is_none());
+				assert!(change.initial_root.is_none());
+			}
+			_ => panic!("expected PathChanged"),
+		}
+	}
+
+	#[test]
+	fn path_changed_deserializes_ssr_hydration_id() {
+		let event: ClientEvent = serde_json::from_str(
+			r#"{"type":"pathChanged","path":"/","query":{},"ssrHydrationId":"abc"}"#,
+		)
+		.unwrap();
+		match event {
+			ClientEvent::PathChanged(change) => {
+				assert_eq!(change.ssr_hydration_id.as_deref(), Some("abc"));
 				assert!(change.initial_root.is_none());
 			}
 			_ => panic!("expected PathChanged"),
