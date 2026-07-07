@@ -54,7 +54,7 @@ var setState = (element, state) => {
 };
 var controllerContext = (item, payload, ctx) => ({
   id: item.id,
-  inx: item.inx || undefined,
+  inx: item.inx ?? undefined,
   name: payload.name,
   emit: (name, eventPayload) => {
     const id = payload.events?.[name] ?? item.id;
@@ -64,7 +64,7 @@ var controllerContext = (item, payload, ctx) => ({
     ctx.sender.send({
       type: "onCustom",
       id,
-      inx: item.inx || undefined,
+      inx: item.inx ?? undefined,
       name,
       payload: eventPayload ?? null
     });
@@ -125,7 +125,7 @@ var mountCustomComponent = (element, item, payload, ctx) => {
   const existing = getState(element);
   if (existing?.key === key) {
     existing.id = item.id;
-    existing.inx = item.inx || undefined;
+    existing.inx = item.inx ?? undefined;
     existing.props = payload.props;
     if (existing.controller?.setProps) {
       Promise.resolve(existing.controller.setProps(payload.props)).catch((err) => {
@@ -138,7 +138,7 @@ var mountCustomComponent = (element, item, payload, ctx) => {
   const state = {
     key,
     id: item.id,
-    inx: item.inx || undefined,
+    inx: item.inx ?? undefined,
     props: payload.props,
     pendingData: [],
     cancelled: false
@@ -1297,7 +1297,7 @@ var sendButtonEvent = (type, id, item, ctx) => {
   ctx.sender.send({
     type,
     id,
-    inx: item.inx || undefined
+    inx: item.inx ?? undefined
   });
   ctx.sender.sendNow();
 };

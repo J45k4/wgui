@@ -148,7 +148,7 @@ const sendButtonEvent = (
 	ctx.sender.send({
 		type,
 		id,
-		inx: item.inx || undefined,
+		inx: item.inx ?? undefined,
 	})
 	ctx.sender.sendNow()
 }

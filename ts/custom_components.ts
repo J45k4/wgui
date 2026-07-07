@@ -63,7 +63,7 @@ const setState = (element: HTMLElement, state: CustomState | undefined) => {
 
 const controllerContext = (item: Item, payload: CustomPayload, ctx: Context): ControllerContext => ({
 	id: item.id,
-	inx: item.inx || undefined,
+	inx: item.inx ?? undefined,
 	name: payload.name,
 	emit: (name: string, eventPayload?: unknown) => {
 		const id = payload.events?.[name] ?? item.id
@@ -73,7 +73,7 @@ const controllerContext = (item: Item, payload: CustomPayload, ctx: Context): Co
 		ctx.sender.send({
 			type: "onCustom",
 			id,
-			inx: item.inx || undefined,
+			inx: item.inx ?? undefined,
 			name,
 			payload: eventPayload ?? null,
 		})
@@ -147,7 +147,7 @@ export const mountCustomComponent = (element: HTMLElement, item: Item, payload: 
 
 	if (existing?.key === key) {
 		existing.id = item.id
-		existing.inx = item.inx || undefined
+		existing.inx = item.inx ?? undefined
 		existing.props = payload.props
 		if (existing.controller?.setProps) {
 			Promise.resolve(existing.controller.setProps(payload.props)).catch((err) => {
@@ -162,7 +162,7 @@ export const mountCustomComponent = (element: HTMLElement, item: Item, payload: 
 	const state: CustomState = {
 		key,
 		id: item.id,
-		inx: item.inx || undefined,
+		inx: item.inx ?? undefined,
 		props: payload.props,
 		pendingData: [],
 		cancelled: false,
