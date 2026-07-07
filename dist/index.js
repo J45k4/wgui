@@ -1222,6 +1222,23 @@ var clearModalState = (element, item) => {
   element.style.zIndex = "";
   element.style.pointerEvents = "";
 };
+var applyModalOverlayStyles = (overlay, open) => {
+  overlay.style.position = "fixed";
+  overlay.style.left = "0";
+  overlay.style.top = "0";
+  overlay.style.width = "100vw";
+  overlay.style.height = "100vh";
+  overlay.style.display = open ? "flex" : "none";
+  overlay.style.alignItems = "center";
+  overlay.style.justifyContent = "center";
+  overlay.style.padding = "32px";
+  overlay.style.boxSizing = "border-box";
+  overlay.style.backgroundColor = "rgba(0, 0, 0, 0.45)";
+  overlay.style.backdropFilter = "blur(2px)";
+  overlay.style.zIndex = "1000";
+  overlay.style.pointerEvents = open ? "auto" : "none";
+  overlay.setAttribute("aria-hidden", open ? "false" : "true");
+};
 var fileToDataUrl = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader;
   reader.onload = () => resolve(reader.result || "");
@@ -2022,21 +2039,7 @@ var renderPayload = (item, ctx, old) => {
       if (old)
         old.replaceWith(overlay);
     }
-    overlay.style.position = "fixed";
-    overlay.style.left = "0";
-    overlay.style.top = "0";
-    overlay.style.width = "100vw";
-    overlay.style.height = "100vh";
-    overlay.style.display = payload.open ? "flex" : "none";
-    overlay.style.alignItems = "center";
-    overlay.style.justifyContent = "center";
-    overlay.style.padding = "32px";
-    overlay.style.boxSizing = "border-box";
-    overlay.style.backgroundColor = "rgba(0, 0, 0, 0.45)";
-    overlay.style.backdropFilter = "blur(2px)";
-    overlay.style.zIndex = "1000";
-    overlay.style.pointerEvents = payload.open ? "auto" : "none";
-    overlay.setAttribute("aria-hidden", payload.open ? "false" : "true");
+    applyModalOverlayStyles(overlay, payload.open);
     if (old instanceof HTMLDivElement && old.dataset.modal === "overlay") {
       reconcileChildren(overlay, payload.body, ctx);
     } else {

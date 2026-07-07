@@ -661,3 +661,22 @@ impl StyleBuilder {
 		}
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::render_item;
+	use crate::gui::{modal, text};
+
+	#[test]
+	fn modal_defaults_to_centered_overlay() {
+		let html = render_item(&modal([text("Dialog")]));
+
+		assert!(html.contains("data-modal=\"overlay\""));
+		assert!(html.contains("position:fixed"));
+		assert!(html.contains("width:100vw"));
+		assert!(html.contains("height:100vh"));
+		assert!(html.contains("display:flex"));
+		assert!(html.contains("align-items:center"));
+		assert!(html.contains("justify-content:center"));
+	}
+}
