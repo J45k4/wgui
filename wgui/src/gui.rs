@@ -898,6 +898,7 @@ impl Item {
 
 	pub fn input_type(mut self, t: &str) -> Self {
 		let sanitized = match t {
+			"hidden" => "hidden",
 			"password" => "password",
 			_ => "text",
 		};
@@ -1142,5 +1143,12 @@ mod tests {
 
 		assert_eq!(value["payload"]["inputType"], "password");
 		assert!(value["payload"].get("input_type").is_none());
+	}
+
+	#[test]
+	fn text_input_accepts_hidden_input_type() {
+		let value = serde_json::to_value(text_input().input_type("hidden")).unwrap();
+
+		assert_eq!(value["payload"]["inputType"], "hidden");
 	}
 }
