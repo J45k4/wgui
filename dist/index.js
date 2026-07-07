@@ -2123,6 +2123,9 @@ var renderItem = (item, ctx, old) => {
   if (!element) {
     return;
   }
+  if (item.payload.type === "modal") {
+    return element;
+  }
   clearModalState(element, item);
   element.style.width = item.fill ? "100%" : item.width ? item.width + "px" : "";
   if (element instanceof HTMLElement && item.payload.type === "layout" && (item.payload.horizontalResize || item.payload.horizontal_resize || item.payload.hresize) && element.dataset.wguiResizedWidth) {
@@ -2198,7 +2201,7 @@ var renderItem = (item, ctx, old) => {
       element.style.overflow = "";
     }
   }
-  if (item.payload.type !== "modal" && !(element instanceof HTMLInputElement) && !(element instanceof HTMLSelectElement) && !(element instanceof HTMLTextAreaElement)) {
+  if (!(element instanceof HTMLInputElement) && !(element instanceof HTMLSelectElement) && !(element instanceof HTMLTextAreaElement)) {
     bindAutoClick(element, item, ctx);
   }
   return element;

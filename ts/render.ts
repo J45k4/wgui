@@ -1013,6 +1013,10 @@ export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 		return
 	}
 
+	if (item.payload.type === "modal") {
+		return element
+	}
+
 	clearModalState(element, item)
 
 	element.style.width = item.fill ? "100%" : item.width ? item.width + "px" : ""
@@ -1090,7 +1094,6 @@ export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 		}
 	}
 	if (
-		item.payload.type !== "modal" &&
 		!(element instanceof HTMLInputElement) &&
 		!(element instanceof HTMLSelectElement) &&
 		!(element instanceof HTMLTextAreaElement)
