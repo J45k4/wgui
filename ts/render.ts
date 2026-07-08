@@ -1162,6 +1162,7 @@ export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 		element.style.wordBreak = ""
 	}
 	element.style.textAlign = item.textAlign || ""
+	element.style.whiteSpace = item.whiteSpace || ""
 	element.style.cursor = item.cursor || ""
 	element.style.margin = ""
 	element.style.marginLeft = ""

@@ -1269,6 +1269,7 @@ fn apply_string_prop(item: Item, name: &str, value: &str) -> Item {
 		"placeholder" => item.placeholder(value),
 		"type" => item.input_type(value),
 		"textAlign" => item.text_align(value),
+		"whiteSpace" => item.white_space(value),
 		"cursor" => item.cursor(value),
 		"overflow" => item.overflow(value),
 		"backgroundColor" => item.background_color(value),

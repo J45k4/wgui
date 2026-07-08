@@ -313,6 +313,7 @@ export type Item = {
 	breakWords?: boolean
 	fill?: boolean
 	textAlign?: string
+	whiteSpace?: string
 	cursor?: string
 	margin?: number
 	padding?: number
@@ -389,6 +390,7 @@ export type PropKey =
 	| "Overflow"
 	| "BreakWords"
 	| "Fill"
+	| "WhiteSpace"
 
 export type PropValue = {
     String?: string

@@ -125,6 +125,14 @@ mod tests {
 	}
 
 	#[test]
+	fn compiles_white_space_prop() {
+		let src = r#"<Text value="row" whiteSpace="pre-wrap" />"#;
+		let generated = compile(src, "white_space").expect("compile should succeed");
+
+		assert!(generated.code.contains(".white_space(\"pre-wrap\")"));
+	}
+
+	#[test]
 	fn reports_unknown_tag() {
 		let src = "<UnknownTag />";
 		let result = compile(src, "bad");

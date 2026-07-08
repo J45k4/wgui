@@ -250,6 +250,7 @@ pub struct Item {
 	pub max_width: u32,
 	pub grow: u32,
 	pub text_align: String,
+	pub white_space: String,
 	pub margin: u16,
 	pub margin_left: u16,
 	pub margin_right: u16,
@@ -1025,6 +1026,11 @@ impl Item {
 
 	pub fn text_align(mut self, a: &str) -> Self {
 		self.text_align = a.to_string();
+		self
+	}
+
+	pub fn white_space(mut self, value: &str) -> Self {
+		self.white_space = value.to_string();
 		self
 	}
 

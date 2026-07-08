@@ -250,6 +250,12 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 			value: Value::String(new.overflow.clone()),
 		});
 	}
+	if old.white_space != new.white_space {
+		sets.push(SetProp {
+			key: PropKey::WhiteSpace,
+			value: Value::String(new.white_space.clone()),
+		});
+	}
 
 	if sets.len() > 0 {
 		changes.push(ClientAction::SetProp {

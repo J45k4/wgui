@@ -118,6 +118,10 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 					kind: PropKind::Value(ValueType::String),
 				},
 				PropSchema {
+					name: "whiteSpace",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
 					name: "color",
 					kind: PropKind::Value(ValueType::String),
 				},
@@ -782,6 +786,10 @@ fn layout_props() -> &'static [PropSchema] {
 		},
 		PropSchema {
 			name: "textAlign",
+			kind: PropKind::Value(ValueType::String),
+		},
+		PropSchema {
+			name: "whiteSpace",
 			kind: PropKind::Value(ValueType::String),
 		},
 		PropSchema {

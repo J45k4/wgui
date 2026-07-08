@@ -81,6 +81,9 @@ const applySetProp = (element: Element, set: SetPropSet) => {
         case "Overflow":
             element.style.overflow = value
             break
+        case "WhiteSpace":
+            element.style.whiteSpace = value
+            break
         case "BreakWords":
             element.style.overflowWrap = value === "0" ? "" : "anywhere"
             element.style.wordBreak = value === "0" ? "" : "break-word"

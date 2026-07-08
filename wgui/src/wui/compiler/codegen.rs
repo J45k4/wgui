@@ -654,6 +654,7 @@ fn prop_method(name: &str) -> String {
 		"maxHeight" => "max_height".to_string(),
 		"grow" => "grow".to_string(),
 		"textAlign" => "text_align".to_string(),
+		"whiteSpace" => "white_space".to_string(),
 		"cursor" => "cursor".to_string(),
 		"breakWords" => "break_words".to_string(),
 		"fill" => "fill".to_string(),
@@ -764,6 +765,7 @@ fn is_string_prop(name: &str) -> bool {
 	matches!(
 		name,
 		"textAlign"
+			| "whiteSpace"
 			| "cursor"
 			| "overflow"
 			| "placeholder"

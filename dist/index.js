@@ -2247,6 +2247,7 @@ var renderItem = (item, ctx, old) => {
     element.style.wordBreak = "";
   }
   element.style.textAlign = item.textAlign || "";
+  element.style.whiteSpace = item.whiteSpace || "";
   element.style.cursor = item.cursor || "";
   element.style.margin = "";
   element.style.marginLeft = "";
@@ -3052,6 +3053,9 @@ var applySetProp = (element, set) => {
       break;
     case "Overflow":
       element.style.overflow = value;
+      break;
+    case "WhiteSpace":
+      element.style.whiteSpace = value;
       break;
     case "BreakWords":
       element.style.overflowWrap = value === "0" ? "" : "anywhere";

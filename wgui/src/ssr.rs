@@ -650,6 +650,9 @@ fn apply_item_styles(item: &Item, style: &mut StyleBuilder) {
 	if !item.overflow.is_empty() {
 		style.push("overflow", &item.overflow);
 	}
+	if !item.white_space.is_empty() {
+		style.push("white-space", &item.white_space);
+	}
 }
 
 fn collect_item_attrs(item: &Item) -> Vec<(String, String)> {

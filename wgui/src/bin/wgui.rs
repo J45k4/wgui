@@ -1112,6 +1112,7 @@ fn apply_set_prop(item: &mut Item, set: SetProp) {
 		(PropKey::MaxHeight, Value::Number(value)) => item.max_height = value,
 		(PropKey::Padding, Value::Number(value)) => item.padding = value as u16,
 		(PropKey::Overflow, Value::String(value)) => item.overflow = value,
+		(PropKey::WhiteSpace, Value::String(value)) => item.white_space = value,
 		(PropKey::BreakWords, Value::Number(value)) => item.break_words = value != 0,
 		(PropKey::Fill, Value::Number(value)) => item.fill = value != 0,
 		_ => {}
