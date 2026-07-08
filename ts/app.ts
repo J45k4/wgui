@@ -1,7 +1,7 @@
 import { Deboncer } from "./debouncer.ts";
 import { disposeCustomComponentTree, sendCustomData } from "./custom_components.ts";
 import { getPathItem } from "./path.ts";
-import { renderItem } from "./render.ts";
+import { renderItem, setConnectionStatus } from "./render.ts";
 import { applyThreePatch } from "./three_host.ts";
 import { Context, Item, PropValue, SetPropSet, SrvMessage } from "./types.ts";
 import { WebRtcCoordinator } from "./webrtc.ts";
@@ -373,9 +373,10 @@ window.onload = () => {
 			}
 			ssrHydrationId = undefined
 
-            sender.sendNow()
+			sender.sendNow()
 			rtc.syncElements(res)
-        }
+		},
+		onConnectionChange: setConnectionStatus,
     })
 
     window.addEventListener("popstate", (evet) => {

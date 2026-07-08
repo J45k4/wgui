@@ -112,6 +112,7 @@ pub enum EventKind {
 	TextChanged,
 	SliderChange,
 	Select,
+	ScrollNearBottom,
 	Custom(String),
 }
 

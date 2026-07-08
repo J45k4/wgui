@@ -74,6 +74,12 @@ pub struct OnSelect {
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+pub struct OnScrollNearBottom {
+	pub id: u32,
+	pub inx: Option<u32>,
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnCustom {
 	pub id: u32,
@@ -145,6 +151,7 @@ pub enum ClientEvent {
 	OnTextChanged(OnTextChanged),
 	OnSliderChange(OnSliderChange),
 	OnSelect(OnSelect),
+	OnScrollNearBottom(OnScrollNearBottom),
 	OnCustom(OnCustom),
 	WebRtcJoin(WebRtcJoin),
 	WebRtcLeave(WebRtcLeave),

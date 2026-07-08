@@ -42,6 +42,14 @@ pub struct Layout {
 	pub vresize: bool,
 	pub hresize: bool,
 	pub pos: Option<Pos>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub events: Option<LayoutEvents>,
+}
+
+#[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayoutEvents {
+	pub scroll_near_bottom: Option<u32>,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
@@ -185,6 +193,13 @@ pub enum ItemPayload {
 	Modal {
 		body: Vec<Item>,
 		open: bool,
+	},
+	ConnectionStatus {
+		connected: bool,
+		flex: FlexDirection,
+		spacing: u32,
+		wrap: bool,
+		body: Vec<Item>,
 	},
 	ThreeView {
 		root: ThreeNode,
@@ -370,6 +385,38 @@ where
 		payload: ItemPayload::Modal {
 			body: body.into_iter().collect(),
 			open: true,
+		},
+		..Default::default()
+	}
+}
+
+pub fn connected<I>(body: I) -> Item
+where
+	I: IntoIterator<Item = Item>,
+{
+	Item {
+		payload: ItemPayload::ConnectionStatus {
+			connected: true,
+			flex: FlexDirection::Column,
+			spacing: 0,
+			wrap: false,
+			body: body.into_iter().collect(),
+		},
+		..Default::default()
+	}
+}
+
+pub fn disconnected<I>(body: I) -> Item
+where
+	I: IntoIterator<Item = Item>,
+{
+	Item {
+		payload: ItemPayload::ConnectionStatus {
+			connected: false,
+			flex: FlexDirection::Column,
+			spacing: 0,
+			wrap: false,
+			body: body.into_iter().collect(),
 		},
 		..Default::default()
 	}
@@ -700,6 +747,10 @@ impl Item {
 		self.set_button_event(|events| events.repeat_interval = Some(interval))
 	}
 
+	pub fn on_scroll_near_bottom(self, id: u32) -> Self {
+		self.set_layout_event(|events| events.scroll_near_bottom = Some(id))
+	}
+
 	pub fn custom_event(mut self, name: impl Into<String>, id: u32) -> Self {
 		if let ItemPayload::Custom { events, .. } = &mut self.payload {
 			events.insert(name.into(), id);
@@ -734,6 +785,16 @@ impl Item {
 	{
 		if let ItemPayload::Button { events, .. } = &mut self.payload {
 			update(events.get_or_insert_with(ButtonEvents::default));
+		}
+		self
+	}
+
+	fn set_layout_event<F>(mut self, update: F) -> Self
+	where
+		F: FnOnce(&mut LayoutEvents),
+	{
+		if let ItemPayload::Layout(layout) = &mut self.payload {
+			update(layout.events.get_or_insert_with(LayoutEvents::default));
 		}
 		self
 	}
@@ -815,6 +876,12 @@ impl Item {
 				..
 			} => {
 				*form_spacing = spacing;
+			}
+			ItemPayload::ConnectionStatus {
+				spacing: ref mut status_spacing,
+				..
+			} => {
+				*status_spacing = spacing;
 			}
 			_ => {}
 		}
@@ -985,6 +1052,12 @@ impl Item {
 		match self.payload {
 			ItemPayload::Layout(ref mut layout) => {
 				layout.wrap = w;
+			}
+			ItemPayload::ConnectionStatus {
+				wrap: ref mut status_wrap,
+				..
+			} => {
+				*status_wrap = w;
 			}
 			_ => {}
 		}

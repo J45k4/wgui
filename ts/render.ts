@@ -13,6 +13,22 @@ const renderChildren = (element: HTMLElement, items: Item[], ctx: Context) => {
 	}
 }
 
+const connectionStatusElements = () =>
+	document.querySelectorAll<HTMLElement>("[data-wgui-connection-status]")
+
+const applyConnectionStatus = (element: HTMLElement) => {
+	const connected = document.documentElement.dataset.wguiSocketConnected === "true"
+	const wantsConnected = element.dataset.wguiConnectionStatus === "connected"
+	element.style.display = connected === wantsConnected ? element.dataset.wguiConnectionDisplay ?? "" : "none"
+}
+
+export const setConnectionStatus = (connected: boolean) => {
+	document.documentElement.dataset.wguiSocketConnected = connected ? "true" : "false"
+	for (const element of connectionStatusElements()) {
+		applyConnectionStatus(element)
+	}
+}
+
 const reconcileChildren = (element: HTMLElement, items: Item[], ctx: Context) => {
 	for (let i = 0; i < items.length; i++) {
 		const child = renderItem(items[i], ctx, element.children.item(i))
@@ -260,6 +276,59 @@ const bindAutoClick = (element: HTMLElement, item: Item, ctx: Context) => {
 	}
 }
 
+type LayoutScrollState = {
+	nearBottom: boolean
+	lastSentAt: number
+}
+
+const layoutScrollStates = new WeakMap<HTMLElement, LayoutScrollState>()
+const scrollNearBottomThreshold = 240
+const scrollNearBottomThrottleMs = 250
+
+const configureLayoutEvents = (
+	element: HTMLElement,
+	item: Item,
+	payload: Extract<ItemPayload, { type: "layout" }>,
+	ctx: Context,
+) => {
+	const id = payload.events?.scrollNearBottom
+	if (!id) {
+		element.onscroll = null
+		layoutScrollStates.delete(element)
+		return
+	}
+	let state = layoutScrollStates.get(element)
+	if (!state) {
+		state = { nearBottom: false, lastSentAt: 0 }
+		layoutScrollStates.set(element, state)
+	} else {
+		state.nearBottom = false
+	}
+	element.onscroll = () => {
+		const remaining = element.scrollHeight - element.scrollTop - element.clientHeight
+		const isNearBottom = remaining <= scrollNearBottomThreshold
+		if (!isNearBottom) {
+			state!.nearBottom = false
+			return
+		}
+		if (state!.nearBottom) {
+			return
+		}
+		const now = Date.now()
+		if (now - state!.lastSentAt < scrollNearBottomThrottleMs) {
+			return
+		}
+		state!.nearBottom = true
+		state!.lastSentAt = now
+		ctx.sender.send({
+			type: "onScrollNearBottom",
+			id,
+			inx: item.inx ?? undefined,
+		})
+		ctx.sender.sendNow()
+	}
+}
+
 const bindSliderControlTracking = (slider: HTMLInputElement) => {
 	if (slider.dataset.wguiSliderTracking === "1") {
 		return
@@ -455,6 +524,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 				document.addEventListener("mouseup", onUp)
 			}
 		}
+		configureLayoutEvents(element, item, payload, ctx)
 		return element
 	}
 
@@ -954,6 +1024,25 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		}
 
 		return overlay
+	}
+
+	if (payload.type === "connectionStatus") {
+		let element: HTMLDivElement
+		if (old instanceof HTMLDivElement && old.dataset.wguiConnectionStatus) {
+			element = old
+			reconcileChildren(element, payload.body, ctx)
+		} else {
+			element = document.createElement("div")
+			if (old) old.replaceWith(element)
+			renderChildren(element, payload.body, ctx)
+		}
+		element.dataset.wguiConnectionStatus = payload.connected ? "connected" : "disconnected"
+		element.dataset.wguiConnectionDisplay = "flex"
+		element.style.flexDirection = payload.flex ?? "column"
+		element.style.gap = payload.spacing ? `${payload.spacing}px` : ""
+		element.style.flexWrap = payload.wrap ? "wrap" : ""
+		applyConnectionStatus(element)
+		return element
 	}
 
 	if (payload.type === "flaotingLayout") {

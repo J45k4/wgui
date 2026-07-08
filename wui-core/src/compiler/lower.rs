@@ -289,7 +289,11 @@ fn lower_widget(
 
 	for (action, kind, arg, span) in event_props {
 		let payload = match &kind {
-			EventKind::Click | EventKind::Press | EventKind::Release | EventKind::Repeat => {
+			EventKind::Click
+			| EventKind::Press
+			| EventKind::Release
+			| EventKind::Repeat
+			| EventKind::ScrollNearBottom => {
 				if arg.is_some() {
 					ActionPayload::U32
 				} else {
@@ -372,6 +376,7 @@ fn kind_name(kind: &EventKind) -> String {
 		EventKind::TextChanged => "onTextChanged".to_string(),
 		EventKind::SliderChange => "onSliderChange".to_string(),
 		EventKind::Select => "onSelect".to_string(),
+		EventKind::ScrollNearBottom => "onScrollNearBottom".to_string(),
 		EventKind::Custom(name) => name.clone(),
 	}
 }

@@ -170,6 +170,11 @@ fn resolve_custom_component_entries(item: &mut Item, entries: &CustomComponentEn
 				resolve_custom_component_entries(child, entries);
 			}
 		}
+		ItemPayload::ConnectionStatus { body, .. } => {
+			for child in body {
+				resolve_custom_component_entries(child, entries);
+			}
+		}
 		_ => {}
 	}
 }
@@ -201,6 +206,11 @@ fn collect_rendered_custom_components(item: &Item, out: &mut Vec<RenderedCustomC
 			collect_rendered_custom_components(item, out);
 		}
 		ItemPayload::Modal { body, .. } => {
+			for child in body {
+				collect_rendered_custom_components(child, out);
+			}
+		}
+		ItemPayload::ConnectionStatus { body, .. } => {
 			for child in body {
 				collect_rendered_custom_components(child, out);
 			}

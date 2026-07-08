@@ -3,17 +3,19 @@ import { MessageToSrv, SrvMessage } from "./types.ts";
 
 type OnMessage = (sender: MessageSender, msgs: SrvMessage[]) => void
 type OnOpen = (sender: MessageSender) => void
+type OnConnectionChange = (connected: boolean) => void
 
 export const connectWebsocket = (args: {
     onMessage: OnMessage
     onOpen: OnOpen
+    onConnectionChange?: OnConnectionChange
 }) => {
     let ws: WebSocket | undefined
     const sessionStorageKey = "wgui.sid"
     let inMemorySid: string | undefined
 
     const sender = new MessageSender((msgs: MessageToSrv[]) => {
-        if (!ws) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
             return
         }
 
@@ -46,6 +48,7 @@ export const connectWebsocket = (args: {
     }
 
     const createConnection = () => {
+        args.onConnectionChange?.(false)
         const href = window.location.href
         const url = new URL(href)
         const wsProtocol = url.protocol === "https:" ? "wss" : "ws"
@@ -60,16 +63,19 @@ export const connectWebsocket = (args: {
         }
     
         ws.onopen = () => {
+            args.onConnectionChange?.(true)
             args.onOpen(sender)
         }
     
         ws.onclose = () => {
+            args.onConnectionChange?.(false)
             setTimeout(() => {
                 createConnection()
             }, 1000)
         }
 
         ws.onerror = (e) => {
+            args.onConnectionChange?.(false)
             console.error("error", e)
         }
     }

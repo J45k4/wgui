@@ -60,6 +60,8 @@ Supported expression forms:
 - `<Scope name="list"> ... </Scope>` prefixes action names
 - `<Page route="/todo" title="Todo" state="TodoState" />`
 - `<Import src="partials/header.wui" />` inlines another template file
+- `<Disconnected> ... </Disconnected>` renders its children only while the browser websocket is down
+- `<Connected> ... </Connected>` renders its children only while the browser websocket is up
 
 Rules:
 
@@ -87,6 +89,7 @@ The compiler/runtime turns those into action IDs and can decode `ClientEvent` in
 Core tags and common props:
 
 - `VStack`, `HStack`: `spacing`, `padding*`, `margin*`, `backgroundColor`, `border`, `width`, `height`, `minWidth`, `maxWidth`, `minHeight`, `maxHeight`, `grow`, `textAlign`, `cursor`, `wrap`, `overflow`
+- `Connected`, `Disconnected`: same layout and style props as `VStack`
 - `Text`: `value`, `textAlign`, `color`
 - `Button`: `text`, `onClick`, `arg`
 - `TextInput`: `value`, `bind:value`, `placeholder`, `onTextChanged`

@@ -111,6 +111,20 @@ mod tests {
 	}
 
 	#[test]
+	fn compiles_layout_scroll_near_bottom_event() {
+		let src = r#"
+<VStack overflow="scroll" onScrollNearBottom="LoadMore">
+	<Text value="row" />
+</VStack>
+"#;
+		let generated = compile(src, "scroll").expect("compile should succeed");
+
+		assert!(generated.code.contains("LoadMore"));
+		assert!(generated.code.contains("wgui::ClientEvent::OnScrollNearBottom"));
+		assert!(generated.code.contains(".on_scroll_near_bottom("));
+	}
+
+	#[test]
 	fn reports_unknown_tag() {
 		let src = "<UnknownTag />";
 		let result = compile(src, "bad");

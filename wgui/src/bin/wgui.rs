@@ -186,6 +186,7 @@ enum ControllerEventKind {
 	TextChanged,
 	SliderChange,
 	Select,
+	ScrollNearBottom,
 }
 
 #[derive(Args, Debug)]
@@ -1077,6 +1078,7 @@ fn item_children_mut(item: &mut Item) -> Option<&mut Vec<Item>> {
 		| ItemPayload::Tbody { items }
 		| ItemPayload::Tr { items } => Some(items),
 		ItemPayload::Modal { body, .. } => Some(body),
+		ItemPayload::ConnectionStatus { body, .. } => Some(body),
 		_ => None,
 	}
 }
@@ -1411,6 +1413,13 @@ fn controller_event_json(
 			}
 			Ok(event)
 		}
+		ControllerEventKind::ScrollNearBottom => {
+			let mut event = json!({ "type": "onScrollNearBottom", "id": id });
+			if let Some(arg) = arg {
+				event["inx"] = json!(arg);
+			}
+			Ok(event)
+		}
 		ControllerEventKind::TextChanged => Ok(json!({
 			"type": "onTextChanged",
 			"id": id,
@@ -1444,6 +1453,7 @@ fn controller_event_kind_from_event(kind: &EventKind) -> Option<ControllerEventK
 		EventKind::TextChanged => Some(ControllerEventKind::TextChanged),
 		EventKind::SliderChange => Some(ControllerEventKind::SliderChange),
 		EventKind::Select => Some(ControllerEventKind::Select),
+		EventKind::ScrollNearBottom => Some(ControllerEventKind::ScrollNearBottom),
 		EventKind::Custom(_) => None,
 	}
 }
@@ -1457,6 +1467,7 @@ fn event_kind_name(kind: &EventKind) -> String {
 		EventKind::TextChanged => "text-changed".to_string(),
 		EventKind::SliderChange => "slider-change".to_string(),
 		EventKind::Select => "select".to_string(),
+		EventKind::ScrollNearBottom => "scroll-near-bottom".to_string(),
 		EventKind::Custom(name) => format!("custom:{name}"),
 	}
 }

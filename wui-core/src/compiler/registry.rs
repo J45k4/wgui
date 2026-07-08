@@ -82,6 +82,14 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 				},
 			],
 		}),
+		"Connected" => Some(TagSchema {
+			name: "Connected",
+			props: layout_props(),
+		}),
+		"Disconnected" => Some(TagSchema {
+			name: "Disconnected",
+			props: layout_props(),
+		}),
 		"Text" => Some(TagSchema {
 			name: "Text",
 			props: &[
@@ -795,6 +803,10 @@ fn layout_props() -> &'static [PropSchema] {
 		PropSchema {
 			name: "overflow",
 			kind: PropKind::Value(ValueType::String),
+		},
+		PropSchema {
+			name: "onScrollNearBottom",
+			kind: PropKind::Event(EventKind::ScrollNearBottom),
 		},
 	]
 }

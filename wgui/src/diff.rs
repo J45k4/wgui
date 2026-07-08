@@ -115,6 +115,32 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 				}
 			}
 		}
+		(
+			ItemPayload::ConnectionStatus {
+				connected: old_connected,
+				spacing: old_spacing,
+				wrap: old_wrap,
+				body: old_body,
+				..
+			},
+			ItemPayload::ConnectionStatus {
+				connected: new_connected,
+				spacing: new_spacing,
+				wrap: new_wrap,
+				body: new_body,
+				..
+			},
+		) => {
+			if old_connected != new_connected || old_spacing != new_spacing || old_wrap != new_wrap
+			{
+				changes.push(ClientAction::Replace(Replace {
+					path: path.clone(),
+					item: new.clone(),
+				}));
+				return;
+			}
+			diff_children(changes, old_body, new_body, path.clone());
+		}
 		_ => {
 			if old != new {
 				log::trace!("{:?} old and new are different", path);
@@ -269,6 +295,49 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 	//         }
 	//     }
 	// }
+}
+
+fn diff_children(
+	changes: &mut Vec<ClientAction>,
+	old_body: &Vec<Item>,
+	new_body: &Vec<Item>,
+	path: ItemPath,
+) {
+	let edits = get_minimum_edits(old_body, new_body);
+	for edit in edits {
+		match edit {
+			EditOperation::InsertFirst(item) => {
+				changes.push(ClientAction::AddFront(AddFront {
+					path: path.clone(),
+					item,
+				}));
+			}
+			EditOperation::InsertAfter(index, item) => {
+				changes.push(ClientAction::InsertAt(InsertAt {
+					path: path.clone(),
+					inx: index,
+					item,
+				}));
+			}
+			EditOperation::RemoveAt(index) => {
+				changes.push(ClientAction::RemoveInx(RemoveInx {
+					path: path.clone(),
+					inx: index,
+				}));
+			}
+			EditOperation::ReplaceAt(i, item) => {
+				let mut child_path = path.clone();
+				child_path.push(i);
+				inner_diff(changes, &old_body[i], &item, child_path);
+			}
+			EditOperation::InsertBack(item) => {
+				changes.push(ClientAction::AddBack(AddBack {
+					path: path.clone(),
+					item,
+				}));
+			}
+		}
+	}
 }
 
 #[derive(Clone)]

@@ -796,5 +796,9 @@ fn layout_props() -> &'static [PropSchema] {
 			name: "overflow",
 			kind: PropKind::Value(ValueType::String),
 		},
+		PropSchema {
+			name: "onScrollNearBottom",
+			kind: PropKind::Event(EventKind::ScrollNearBottom),
+		},
 	]
 }

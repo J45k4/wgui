@@ -1190,6 +1190,18 @@ var renderChildren = (element, items, ctx) => {
     }
   }
 };
+var connectionStatusElements = () => document.querySelectorAll("[data-wgui-connection-status]");
+var applyConnectionStatus = (element) => {
+  const connected = document.documentElement.dataset.wguiSocketConnected === "true";
+  const wantsConnected = element.dataset.wguiConnectionStatus === "connected";
+  element.style.display = connected === wantsConnected ? element.dataset.wguiConnectionDisplay ?? "" : "none";
+};
+var setConnectionStatus = (connected) => {
+  document.documentElement.dataset.wguiSocketConnected = connected ? "true" : "false";
+  for (const element of connectionStatusElements()) {
+    applyConnectionStatus(element);
+  }
+};
 var reconcileChildren = (element, items, ctx) => {
   for (let i = 0;i < items.length; i++) {
     const child = renderItem(items[i], ctx, element.children.item(i));
@@ -1403,6 +1415,47 @@ var bindAutoClick = (element, item, ctx) => {
     delete element.dataset.wguiAutoClick;
   }
 };
+var layoutScrollStates = new WeakMap;
+var scrollNearBottomThreshold = 240;
+var scrollNearBottomThrottleMs = 250;
+var configureLayoutEvents = (element, item, payload, ctx) => {
+  const id = payload.events?.scrollNearBottom;
+  if (!id) {
+    element.onscroll = null;
+    layoutScrollStates.delete(element);
+    return;
+  }
+  let state = layoutScrollStates.get(element);
+  if (!state) {
+    state = { nearBottom: false, lastSentAt: 0 };
+    layoutScrollStates.set(element, state);
+  } else {
+    state.nearBottom = false;
+  }
+  element.onscroll = () => {
+    const remaining = element.scrollHeight - element.scrollTop - element.clientHeight;
+    const isNearBottom = remaining <= scrollNearBottomThreshold;
+    if (!isNearBottom) {
+      state.nearBottom = false;
+      return;
+    }
+    if (state.nearBottom) {
+      return;
+    }
+    const now = Date.now();
+    if (now - state.lastSentAt < scrollNearBottomThrottleMs) {
+      return;
+    }
+    state.nearBottom = true;
+    state.lastSentAt = now;
+    ctx.sender.send({
+      type: "onScrollNearBottom",
+      id,
+      inx: item.inx ?? undefined
+    });
+    ctx.sender.sendNow();
+  };
+};
 var bindSliderControlTracking = (slider) => {
   if (slider.dataset.wguiSliderTracking === "1") {
     return;
@@ -1576,6 +1629,7 @@ var renderPayload = (item, ctx, old) => {
         document.addEventListener("mouseup", onUp);
       };
     }
+    configureLayoutEvents(element, item, payload, ctx);
     return element;
   }
   if (payload.type === "form") {
@@ -2066,6 +2120,25 @@ var renderPayload = (item, ctx, old) => {
       overlay.onclick = null;
     }
     return overlay;
+  }
+  if (payload.type === "connectionStatus") {
+    let element;
+    if (old instanceof HTMLDivElement && old.dataset.wguiConnectionStatus) {
+      element = old;
+      reconcileChildren(element, payload.body, ctx);
+    } else {
+      element = document.createElement("div");
+      if (old)
+        old.replaceWith(element);
+      renderChildren(element, payload.body, ctx);
+    }
+    element.dataset.wguiConnectionStatus = payload.connected ? "connected" : "disconnected";
+    element.dataset.wguiConnectionDisplay = "flex";
+    element.style.flexDirection = payload.flex ?? "column";
+    element.style.gap = payload.spacing ? `${payload.spacing}px` : "";
+    element.style.flexWrap = payload.wrap ? "wrap" : "";
+    applyConnectionStatus(element);
+    return element;
   }
   if (payload.type === "flaotingLayout") {
     let element;
@@ -2821,7 +2894,7 @@ var connectWebsocket = (args) => {
   const sessionStorageKey = "wgui.sid";
   let inMemorySid;
   const sender = new MessageSender((msgs) => {
-    if (!ws) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
       return;
     }
     ws.send(JSON.stringify(msgs));
@@ -2850,6 +2923,7 @@ var connectWebsocket = (args) => {
     return sid;
   };
   const createConnection = () => {
+    args.onConnectionChange?.(false);
     const href = window.location.href;
     const url = new URL(href);
     const wsProtocol = url.protocol === "https:" ? "wss" : "ws";
@@ -2862,14 +2936,17 @@ var connectWebsocket = (args) => {
       args.onMessage(sender, messages);
     };
     ws.onopen = () => {
+      args.onConnectionChange?.(true);
       args.onOpen(sender);
     };
     ws.onclose = () => {
+      args.onConnectionChange?.(false);
       setTimeout(() => {
         createConnection();
       }, 1000);
     };
     ws.onerror = (e) => {
+      args.onConnectionChange?.(false);
       console.error("error", e);
     };
   };
@@ -3203,7 +3280,8 @@ window.onload = () => {
       ssrHydrationId = undefined;
       sender2.sendNow();
       rtc.syncElements(res);
-    }
+    },
+    onConnectionChange: setConnectionStatus
   });
   window.addEventListener("popstate", (evet) => {
     clearModalOverlays(res);

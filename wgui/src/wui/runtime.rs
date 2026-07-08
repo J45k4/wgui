@@ -710,8 +710,11 @@ fn string_map_to_wui_value(map: &HashMap<String, String>) -> WuiValue {
 
 fn decode_action(action: &ActionDef, event: &crate::types::ClientEvent) -> Option<RuntimeAction> {
 	match &action.kind {
-		EventKind::Click | EventKind::Press | EventKind::Release | EventKind::Repeat => match event
-		{
+		EventKind::Click
+		| EventKind::Press
+		| EventKind::Release
+		| EventKind::Repeat
+		| EventKind::ScrollNearBottom => match event {
 			crate::types::ClientEvent::OnClick(ev) if ev.id == action.id => match action.payload {
 				ActionPayload::None => Some(RuntimeAction::Click {
 					name: action.name.clone(),
@@ -758,6 +761,19 @@ fn decode_action(action: &ActionDef, event: &crate::types::ClientEvent) -> Optio
 				}),
 				_ => None,
 			},
+			crate::types::ClientEvent::OnScrollNearBottom(ev) if ev.id == action.id => {
+				match action.payload {
+					ActionPayload::None => Some(RuntimeAction::Click {
+						name: action.name.clone(),
+						arg: None,
+					}),
+					ActionPayload::U32 => ev.inx.map(|arg| RuntimeAction::Click {
+						name: action.name.clone(),
+						arg: Some(arg),
+					}),
+					_ => None,
+				}
+			}
 			_ => None,
 		},
 		EventKind::TextChanged => match event {
@@ -899,6 +915,8 @@ fn render_widget(widget: &IrWidget, ctx: &mut EvalContext) -> Item {
 		"VStack" => render_container(gui::vstack, &widget.children, ctx),
 		"HStack" => render_container(gui::hstack, &widget.children, ctx),
 		"Form" => render_container(gui::form, &widget.children, ctx),
+		"Connected" => render_container(gui::connected, &widget.children, ctx),
+		"Disconnected" => render_container(gui::disconnected, &widget.children, ctx),
 		"Text" => gui::text(&text_value(widget, ctx)),
 		"Button" => gui::button(&textual_value(widget, ctx, "text")),
 		"Link" => gui::link(
@@ -1175,6 +1193,8 @@ fn apply_prop(item: Item, prop: &IrProp, ctx: &mut EvalContext) -> Item {
 			let id = action_id(action);
 			let mut item = if matches!(&item.payload, gui::ItemPayload::Button { .. }) {
 				apply_button_event(item, name, id)
+			} else if matches!(&item.payload, gui::ItemPayload::Layout(_)) {
+				apply_layout_event(item, name, id)
 			} else if matches!(&item.payload, gui::ItemPayload::Custom { .. }) {
 				item.custom_event(name, id)
 			} else {
@@ -1213,6 +1233,17 @@ fn apply_button_event(mut item: Item, name: &str, id: u32) -> Item {
 		"onRelease" => events.release = Some(id),
 		"onRepeat" => events.repeat = Some(id),
 		_ => {}
+	}
+	item
+}
+
+fn apply_layout_event(mut item: Item, name: &str, id: u32) -> Item {
+	let gui::ItemPayload::Layout(layout) = &mut item.payload else {
+		return item;
+	};
+	let events = layout.events.get_or_insert_with(gui::LayoutEvents::default);
+	if name == "onScrollNearBottom" {
+		events.scroll_near_bottom = Some(id);
 	}
 	item
 }
@@ -1484,6 +1515,11 @@ mod tests {
 					text_values(child, out);
 				}
 			}
+			ItemPayload::ConnectionStatus { body, .. } => {
+				for child in body {
+					text_values(child, out);
+				}
+			}
 			_ => {}
 		}
 	}
@@ -1654,6 +1690,57 @@ mod tests {
 				events: HashMap::new(),
 			}
 		);
+	}
+
+	#[test]
+	fn connection_status_widgets_render_children_and_flags() {
+		let template = Template::parse(
+			r#"
+			<Disconnected padding=6 spacing=4><Text value="Offline" /></Disconnected>
+			<Connected><Text value="Online" /></Connected>
+			"#,
+			"test",
+		)
+		.expect("parse template");
+		let rendered = template.render(&WuiValue::Null);
+
+		let ItemPayload::Layout(layout) = rendered.payload else {
+			panic!("expected wrapper layout");
+		};
+		assert_eq!(layout.body.len(), 2);
+		match &layout.body[0].payload {
+			ItemPayload::ConnectionStatus {
+				connected,
+				spacing,
+				body,
+				..
+			} => {
+				assert!(!connected);
+				assert_eq!(*spacing, 4);
+				assert_eq!(layout.body[0].padding, 6);
+				assert_eq!(
+					body[0].payload,
+					ItemPayload::Text {
+						value: "Offline".to_string()
+					}
+				);
+			}
+			other => panic!("expected disconnected status, got {other:?}"),
+		}
+		match &layout.body[1].payload {
+			ItemPayload::ConnectionStatus {
+				connected, body, ..
+			} => {
+				assert!(*connected);
+				assert_eq!(
+					body[0].payload,
+					ItemPayload::Text {
+						value: "Online".to_string()
+					}
+				);
+			}
+			other => panic!("expected connected status, got {other:?}"),
+		}
 	}
 
 	#[test]

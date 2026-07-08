@@ -52,7 +52,12 @@ export type Layout = {
 	horizontal_resize?: boolean
 	vresize?: boolean
 	hresize?: boolean
+	events?: LayoutEvents
     body: Item[]
+}
+
+export type LayoutEvents = {
+	scrollNearBottom?: number
 }
 
 export type Form = {
@@ -178,6 +183,15 @@ export type Modal = {
 	body: Item[]
 }
 
+export type ConnectionStatus = {
+	type: "connectionStatus"
+	connected: boolean
+	flex?: FlexDirection
+	spacing?: number
+	wrap?: boolean
+	body: Item[]
+}
+
 export type None = {
 	type: "none"
 }
@@ -280,6 +294,7 @@ export type ItemPayload = Text |
  	FolderPicker |
  	FloatingLayout |
  	Modal |
+	ConnectionStatus |
  	None 
 
 export type Item = {
@@ -550,6 +565,12 @@ export type OnSelect = {
 	value: string
 }
 
+export type OnScrollNearBottom = {
+	type: "onScrollNearBottom"
+	id: number
+	inx?: number
+}
+
 export type OnCustom = {
 	type: "onCustom"
 	id: number
@@ -592,6 +613,7 @@ export type MessageToSrv = OnClick |
 	PathChanged |
 	OnSliderChange |
 	OnSelect |
+	OnScrollNearBottom |
 	OnCustom |
 	WebRtcJoin |
 	WebRtcLeave |

@@ -118,6 +118,13 @@ pub fn render_item(item: &Item) -> String {
 			height,
 		} => render_floating_layout(item, *x, *y, *width, *height),
 		ItemPayload::Modal { body, open } => render_modal(item, body, *open),
+		ItemPayload::ConnectionStatus {
+			connected,
+			flex,
+			spacing,
+			wrap,
+			body,
+		} => render_connection_status(item, *connected, flex, *spacing, *wrap, body),
 		ItemPayload::ThreeView { .. } => render_three_view(item),
 		ItemPayload::Custom { name, .. } => render_custom(item, name),
 		ItemPayload::None => String::new(),
@@ -442,6 +449,47 @@ fn render_modal(item: &Item, body: &[Item], open: bool) -> String {
 			},
 		),
 	]);
+	render_element("div", &[], style, &attrs, &children)
+}
+
+fn render_connection_status(
+	item: &Item,
+	connected: bool,
+	flex: &FlexDirection,
+	spacing: u32,
+	wrap: bool,
+	body: &[Item],
+) -> String {
+	let mut style = StyleBuilder::new();
+	if connected {
+		style.push("display", "none");
+	} else {
+		style.push("display", "flex");
+	}
+	style.push(
+		"flex-direction",
+		match flex {
+			FlexDirection::Row => "row",
+			FlexDirection::Column => "column",
+		},
+	);
+	if spacing > 0 {
+		style.push("gap", &format!("{spacing}px"));
+	}
+	if wrap {
+		style.push("flex-wrap", "wrap");
+	}
+	apply_item_styles(item, &mut style);
+	let children = render_children(body);
+	let mut attrs = collect_item_attrs(item);
+	attrs.push((
+		"data-wgui-connection-status".to_string(),
+		if connected {
+			"connected".to_string()
+		} else {
+			"disconnected".to_string()
+		},
+	));
 	render_element("div", &[], style, &attrs, &children)
 }
 

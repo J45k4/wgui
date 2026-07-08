@@ -183,7 +183,11 @@ fn decode_arm(action: &ActionDef) -> String {
 	let variant = action_variant(&action.name);
 	let id = action.id;
 	match &action.kind {
-		EventKind::Click | EventKind::Press | EventKind::Release | EventKind::Repeat => match action.payload {
+		EventKind::Click
+		| EventKind::Press
+		| EventKind::Release
+		| EventKind::Repeat
+		| EventKind::ScrollNearBottom => match action.payload {
 			ActionPayload::None => format!(
 				"\t\twgui::ClientEvent::{}(ev) if ev.id == {id} => Some(Action::{variant}),\n",
 				client_event_variant(&action.kind)
@@ -225,6 +229,7 @@ fn client_event_variant(kind: &EventKind) -> &'static str {
 		EventKind::TextChanged => "OnTextChanged",
 		EventKind::SliderChange => "OnSliderChange",
 		EventKind::Select => "OnSelect",
+		EventKind::ScrollNearBottom => "OnScrollNearBottom",
 		EventKind::Custom(_) => "OnCustom",
 	}
 }
@@ -676,6 +681,7 @@ fn event_method(name: &str) -> Option<&'static str> {
 		"onPress" => Some("on_press"),
 		"onRelease" => Some("on_release"),
 		"onRepeat" => Some("on_repeat"),
+		"onScrollNearBottom" => Some("on_scroll_near_bottom"),
 		_ => None,
 	}
 }
