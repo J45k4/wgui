@@ -538,8 +538,13 @@ export type OnTextChange = {
 
 export type OnKeyDown = {
     type: "onKeyDown"
-    id: string
-    name: string
+    id?: string
+    keycode: string
+}
+
+export type OnKeyUp = {
+    type: "onKeyUp"
+    id?: string
     keycode: string
 }
 
@@ -611,7 +616,8 @@ export type MessageToSrv = OnClick |
 	OnRelease |
 	OnRepeat |
     OnTextChange | 
-    OnKeyDown | 
+    OnKeyDown |
+    OnKeyUp |
 	PathChanged |
 	OnSliderChange |
 	OnSelect |

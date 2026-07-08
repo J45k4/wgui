@@ -172,6 +172,21 @@ const takeSsrHydrationId = (): string | undefined => {
 	return id || undefined
 }
 
+const shouldIgnoreKeyboardEvent = (event: KeyboardEvent): boolean => {
+    const target = event.target
+    if (!(target instanceof HTMLElement)) {
+        return false
+    }
+    const tag = target.tagName.toLowerCase()
+    return tag === "input" || tag === "textarea" || target.isContentEditable
+}
+
+const shouldPreventDefaultKey = (event: KeyboardEvent): boolean =>
+    event.code === "ArrowUp" ||
+    event.code === "ArrowDown" ||
+    event.code === "ArrowLeft" ||
+    event.code === "ArrowRight"
+
 window.onload = () => {
     const res = document.querySelector("body")
 
@@ -189,6 +204,7 @@ window.onload = () => {
     let rtc: WebRtcCoordinator | undefined
 	let initialRoot = takeSsrRoot()
 	let ssrHydrationId = takeSsrHydrationId()
+    const activeKeyboardKeys = new Set<string>()
 
     const {
         sender
@@ -380,6 +396,52 @@ window.onload = () => {
 			rtc.syncElements(res)
 		},
 		onConnectionChange: setConnectionStatus,
+    })
+
+    window.addEventListener("keydown", (event) => {
+        if (event.repeat || shouldIgnoreKeyboardEvent(event)) {
+            return
+        }
+        if (shouldPreventDefaultKey(event)) {
+            event.preventDefault()
+        }
+        const keycode = event.code || event.key
+        activeKeyboardKeys.add(keycode)
+        sender.send({
+            type: "onKeyDown",
+            keycode,
+        })
+        sender.sendNow()
+    })
+
+    window.addEventListener("keyup", (event) => {
+        const keycode = event.code || event.key
+        if (shouldIgnoreKeyboardEvent(event) && !activeKeyboardKeys.has(keycode)) {
+            return
+        }
+        if (shouldPreventDefaultKey(event)) {
+            event.preventDefault()
+        }
+        activeKeyboardKeys.delete(keycode)
+        sender.send({
+            type: "onKeyUp",
+            keycode,
+        })
+        sender.sendNow()
+    })
+
+    window.addEventListener("blur", () => {
+        if (activeKeyboardKeys.size === 0) {
+            return
+        }
+        for (const keycode of activeKeyboardKeys) {
+            sender.send({
+                type: "onKeyUp",
+                keycode,
+            })
+        }
+        activeKeyboardKeys.clear()
+        sender.sendNow()
     })
 
     window.addEventListener("popstate", (evet) => {

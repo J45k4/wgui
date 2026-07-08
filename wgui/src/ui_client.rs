@@ -21,6 +21,8 @@ fn event_kind_name(event: &ClientEvent) -> &'static str {
 		ClientEvent::OnPress(_) => "OnPress",
 		ClientEvent::OnRelease(_) => "OnRelease",
 		ClientEvent::OnRepeat(_) => "OnRepeat",
+		ClientEvent::OnKeyDown(_) => "OnKeyDown",
+		ClientEvent::OnKeyUp(_) => "OnKeyUp",
 		ClientEvent::OnTextChanged(_) => "OnTextChanged",
 		ClientEvent::OnSliderChange(_) => "OnSliderChange",
 		ClientEvent::OnSelect(_) => "OnSelect",

@@ -40,6 +40,12 @@ pub struct OnKeyDown {
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+pub struct OnKeyUp {
+	pub id: Option<String>,
+	pub keycode: String,
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OnTextChanged {
 	pub id: u32,
 	pub inx: Option<u32>,
@@ -148,6 +154,8 @@ pub enum ClientEvent {
 	OnPress(OnPress),
 	OnRelease(OnRelease),
 	OnRepeat(OnRepeat),
+	OnKeyDown(OnKeyDown),
+	OnKeyUp(OnKeyUp),
 	OnTextChanged(OnTextChanged),
 	OnSliderChange(OnSliderChange),
 	OnSelect(OnSelect),
