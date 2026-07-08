@@ -62,6 +62,9 @@ const clearModalState = (element: HTMLElement, item: Item) => {
 	element.style.backdropFilter = ""
 	element.style.zIndex = ""
 	element.style.pointerEvents = ""
+	element.style.overscrollBehavior = ""
+	element.onwheel = null
+	element.ontouchmove = null
 }
 
 const applyModalOverlayStyles = (overlay: HTMLDivElement, open: boolean) => {
@@ -79,7 +82,23 @@ const applyModalOverlayStyles = (overlay: HTMLDivElement, open: boolean) => {
 	overlay.style.backdropFilter = "blur(2px)"
 	overlay.style.zIndex = "1000"
 	overlay.style.pointerEvents = open ? "auto" : "none"
+	overlay.style.overscrollBehavior = "contain"
 	overlay.setAttribute("aria-hidden", open ? "false" : "true")
+}
+
+const bindModalScrollBarrier = (overlay: HTMLDivElement) => {
+	overlay.onwheel = (event: WheelEvent) => {
+		event.stopPropagation()
+		if (event.target === overlay) {
+			event.preventDefault()
+		}
+	}
+	overlay.ontouchmove = (event: TouchEvent) => {
+		event.stopPropagation()
+		if (event.target === overlay) {
+			event.preventDefault()
+		}
+	}
 }
 
 const fileToDataUrl = (file: File): Promise<string> =>
@@ -1005,8 +1024,10 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			if (child instanceof HTMLElement) {
 				child.style.maxWidth = "calc(100vw - 64px)"
 				child.style.maxHeight = "calc(100vh - 64px)"
+				child.style.overscrollBehavior = "contain"
 			}
 		}
+		bindModalScrollBarrier(overlay)
 
 		if (item.id) {
 			overlay.onclick = (event: MouseEvent) => {

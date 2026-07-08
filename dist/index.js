@@ -1233,6 +1233,9 @@ var clearModalState = (element, item) => {
   element.style.backdropFilter = "";
   element.style.zIndex = "";
   element.style.pointerEvents = "";
+  element.style.overscrollBehavior = "";
+  element.onwheel = null;
+  element.ontouchmove = null;
 };
 var applyModalOverlayStyles = (overlay, open) => {
   overlay.style.position = "fixed";
@@ -1249,7 +1252,22 @@ var applyModalOverlayStyles = (overlay, open) => {
   overlay.style.backdropFilter = "blur(2px)";
   overlay.style.zIndex = "1000";
   overlay.style.pointerEvents = open ? "auto" : "none";
+  overlay.style.overscrollBehavior = "contain";
   overlay.setAttribute("aria-hidden", open ? "false" : "true");
+};
+var bindModalScrollBarrier = (overlay) => {
+  overlay.onwheel = (event) => {
+    event.stopPropagation();
+    if (event.target === overlay) {
+      event.preventDefault();
+    }
+  };
+  overlay.ontouchmove = (event) => {
+    event.stopPropagation();
+    if (event.target === overlay) {
+      event.preventDefault();
+    }
+  };
 };
 var fileToDataUrl = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader;
@@ -2103,8 +2121,10 @@ var renderPayload = (item, ctx, old) => {
       if (child instanceof HTMLElement) {
         child.style.maxWidth = "calc(100vw - 64px)";
         child.style.maxHeight = "calc(100vh - 64px)";
+        child.style.overscrollBehavior = "contain";
       }
     }
+    bindModalScrollBarrier(overlay);
     if (item.id) {
       overlay.onclick = (event) => {
         if (event.target === overlay) {
