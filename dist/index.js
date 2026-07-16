@@ -1244,16 +1244,16 @@ var clearModalState = (element, item) => {
   element.onwheel = null;
   element.ontouchmove = null;
 };
-var applyModalOverlayStyles = (overlay, open) => {
+var applyModalOverlayStyles = (overlay, open, fillsViewport, padding) => {
   overlay.style.position = "fixed";
   overlay.style.left = "0";
   overlay.style.top = "0";
   overlay.style.width = "100vw";
   overlay.style.height = "100vh";
   overlay.style.display = open ? "flex" : "none";
-  overlay.style.alignItems = "center";
+  overlay.style.alignItems = fillsViewport ? "stretch" : "center";
   overlay.style.justifyContent = "center";
-  overlay.style.padding = "32px";
+  overlay.style.padding = `${padding}px`;
   overlay.style.boxSizing = "border-box";
   overlay.style.backgroundColor = "rgba(0, 0, 0, 0.45)";
   overlay.style.backdropFilter = "blur(2px)";
@@ -2118,16 +2118,18 @@ var renderPayload = (item, ctx, old) => {
       if (old)
         old.replaceWith(overlay);
     }
-    applyModalOverlayStyles(overlay, payload.open);
+    const fillsViewport = payload.body.some((child) => child.fill);
+    applyModalOverlayStyles(overlay, payload.open, fillsViewport, item.padding || 32);
     if (old instanceof HTMLDivElement && old.dataset.modal === "overlay") {
       reconcileChildren(overlay, payload.body, ctx);
     } else {
       renderChildren(overlay, payload.body, ctx);
     }
-    for (const child of overlay.children) {
+    for (const [index, child] of Array.from(overlay.children).entries()) {
       if (child instanceof HTMLElement) {
-        child.style.maxWidth = "calc(100vw - 64px)";
-        child.style.maxHeight = "calc(100vh - 64px)";
+        const fillsViewport2 = !!payload.body[index]?.fill;
+        child.style.maxWidth = fillsViewport2 ? "none" : "calc(100vw - 64px)";
+        child.style.maxHeight = fillsViewport2 ? "none" : "calc(100vh - 64px)";
         child.style.overscrollBehavior = "contain";
       }
     }

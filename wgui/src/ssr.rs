@@ -418,6 +418,7 @@ fn render_floating_layout(item: &Item, x: u32, y: u32, width: u32, height: u32) 
 }
 
 fn render_modal(item: &Item, body: &[Item], open: bool) -> String {
+	let fills_viewport = body.iter().any(|child| child.fill);
 	let mut style = StyleBuilder::new();
 	style.push("position", "fixed");
 	style.push("left", "0");
@@ -425,7 +426,10 @@ fn render_modal(item: &Item, body: &[Item], open: bool) -> String {
 	style.push("width", "100vw");
 	style.push("height", "100vh");
 	style.push("display", if open { "flex" } else { "none" });
-	style.push("align-items", "center");
+	style.push(
+		"align-items",
+		if fills_viewport { "stretch" } else { "center" },
+	);
 	style.push("justify-content", "center");
 	style.push("padding", "32px");
 	style.push("box-sizing", "border-box");
@@ -716,7 +720,7 @@ impl StyleBuilder {
 #[cfg(test)]
 mod tests {
 	use super::render_item;
-	use crate::gui::{modal, text};
+	use crate::gui::{modal, text, vstack};
 
 	#[test]
 	fn modal_defaults_to_centered_overlay() {
@@ -729,5 +733,13 @@ mod tests {
 		assert!(html.contains("display:flex"));
 		assert!(html.contains("align-items:center"));
 		assert!(html.contains("justify-content:center"));
+	}
+
+	#[test]
+	fn modal_stretches_fill_child() {
+		let html = render_item(&modal([vstack([text("Dialog")]).fill(true)]));
+
+		assert!(html.contains("align-items:stretch"));
+		assert!(html.contains("width:100%"));
 	}
 }
