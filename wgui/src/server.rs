@@ -11,6 +11,7 @@ use hyper_util::rt::TokioIo;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::future::Future;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -31,6 +32,10 @@ const INDEX_HTML_BYTES: &[u8] = include_bytes!("../../dist/index.html");
 const INDEX_JS_BYTES: &[u8] = include_bytes!("../../dist/index.js");
 const CSS_JS_BYTES: &[u8] = include_bytes!("../../dist/index.css");
 const MAX_SSR_HYDRATION_ROOTS: usize = 128;
+const STATIC_ASSET_VERSION_PARAM: &str = "wgui-v";
+const IMMUTABLE_STATIC_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
+const DEFAULT_STATIC_CACHE_CONTROL: &str = "public, max-age=86400";
+const UNVERSIONED_STATIC_CACHE_CONTROL: &str = "no-store";
 static NEXT_SSR_HYDRATION_ID: AtomicU64 = AtomicU64::new(1);
 
 pub type HttpHandler = Arc<
@@ -72,16 +77,39 @@ impl HttpRouteSpec {
 
 #[derive(Clone)]
 pub(crate) enum StaticMount {
-	File { route: String, file: PathBuf },
-	Dir { prefix: String, dir: PathBuf },
+	File {
+		route: String,
+		file: PathBuf,
+		version: Option<String>,
+	},
+	Dir {
+		prefix: String,
+		dir: PathBuf,
+	},
 }
 
 impl StaticMount {
-	pub(crate) fn file(route: String, file: PathBuf) -> Self {
-		Self::File {
-			route: normalize_mount_route(route),
-			file,
-		}
+	pub(crate) fn file(route: String, file: PathBuf) -> (Self, StaticAsset) {
+		let route = normalize_mount_route(route);
+		let version = match static_file_version(&file) {
+			Ok(version) => Some(version),
+			Err(error) => {
+				log::warn!(
+					"unable to fingerprint mounted static file '{}': {error}",
+					file.display()
+				);
+				None
+			}
+		};
+		let asset = StaticAsset::new(&route, version.as_deref());
+		(
+			Self::File {
+				route,
+				file,
+				version,
+			},
+			asset,
+		)
 	}
 
 	pub(crate) fn dir(prefix: String, dir: PathBuf) -> Self {
@@ -89,6 +117,25 @@ impl StaticMount {
 			prefix: normalize_mount_route(prefix),
 			dir,
 		}
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StaticAsset {
+	url: String,
+}
+
+impl StaticAsset {
+	fn new(route: &str, version: Option<&str>) -> Self {
+		let url = version.map_or_else(
+			|| route.to_string(),
+			|version| format!("{route}?{STATIC_ASSET_VERSION_PARAM}={version}"),
+		);
+		Self { url }
+	}
+
+	pub fn url(&self) -> &str {
+		&self.url
 	}
 }
 
@@ -244,6 +291,13 @@ fn normalize_mount_route(route: String) -> String {
 	}
 }
 
+fn static_file_version(path: &Path) -> std::io::Result<String> {
+	let bytes = std::fs::read(path)?;
+	let mut hasher = DefaultHasher::new();
+	bytes.hash(&mut hasher);
+	Ok(format!("{:016x}", hasher.finish()))
+}
+
 fn relative_static_path(base: &Path, relative: &str) -> Option<PathBuf> {
 	let mut out = base.to_path_buf();
 	if relative.is_empty() {
@@ -294,11 +348,11 @@ fn sanitize_fs_path(uri_path: &str) -> Option<PathBuf> {
 	Some(out)
 }
 
-async fn read_static_file(path: &Path) -> Response<HttpBody> {
+async fn read_static_file(path: &Path, cache_control: &'static str) -> Response<HttpBody> {
 	match tokio::fs::read(path).await {
 		Ok(bytes) => Response::builder()
 			.header("content-type", content_type_for(path))
-			.header("cache-control", "public, max-age=86400")
+			.header("cache-control", cache_control)
 			.body(full_body(bytes))
 			.unwrap(),
 		Err(_) => Response::builder()
@@ -310,14 +364,25 @@ async fn read_static_file(path: &Path) -> Response<HttpBody> {
 
 async fn static_mount_response(
 	uri_path: &str,
+	requested_version: Option<&str>,
 	mounts: &SharedStaticMounts,
 ) -> Option<Response<HttpBody>> {
 	let mounts = mounts.read().unwrap().clone();
 	for mount in mounts {
 		match mount {
-			StaticMount::File { route, file } => {
+			StaticMount::File {
+				route,
+				file,
+				version,
+			} => {
 				if uri_path == route {
-					return Some(read_static_file(&file).await);
+					let cache_control =
+						if version.as_deref() == requested_version && version.is_some() {
+							IMMUTABLE_STATIC_CACHE_CONTROL
+						} else {
+							UNVERSIONED_STATIC_CACHE_CONTROL
+						};
+					return Some(read_static_file(&file, cache_control).await);
 				}
 			}
 			StaticMount::Dir { prefix, dir } => {
@@ -338,7 +403,7 @@ async fn static_mount_response(
 							.unwrap(),
 					);
 				};
-				return Some(read_static_file(&file).await);
+				return Some(read_static_file(&file, DEFAULT_STATIC_CACHE_CONTROL).await);
 			}
 		}
 	}
@@ -572,7 +637,17 @@ async fn handle_req(
 		}
 	}
 
-	if let Some(response) = static_mount_response(req.uri().path(), &ctx.static_mounts).await {
+	let requested_static_version = query_map(&req)
+		.get(STATIC_ASSET_VERSION_PARAM)
+		.map(String::as_str)
+		.map(str::to_owned);
+	if let Some(response) = static_mount_response(
+		req.uri().path(),
+		requested_static_version.as_deref(),
+		&ctx.static_mounts,
+	)
+	.await
+	{
 		return Ok(response);
 	}
 
@@ -788,5 +863,84 @@ impl Server {
 				}
 			}
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn temporary_static_file(contents: &[u8]) -> PathBuf {
+		let unique = SystemTime::now()
+			.duration_since(UNIX_EPOCH)
+			.unwrap()
+			.as_nanos();
+		let path = std::env::temp_dir().join(format!(
+			"wgui-static-asset-{}-{unique}.js",
+			std::process::id()
+		));
+		std::fs::write(&path, contents).unwrap();
+		path
+	}
+
+	fn cache_control(response: &Response<HttpBody>) -> &str {
+		response
+			.headers()
+			.get("cache-control")
+			.unwrap()
+			.to_str()
+			.unwrap()
+	}
+
+	#[test]
+	fn static_asset_url_uses_content_fingerprint() {
+		let path = temporary_static_file(b"export default 1");
+		let (_, first) = StaticMount::file("component.js".to_string(), path.clone());
+		let (_, repeated) = StaticMount::file("/component.js".to_string(), path.clone());
+
+		assert_eq!(first, repeated);
+		assert!(first.url().starts_with("/component.js?wgui-v="));
+
+		std::fs::write(&path, b"export default 2").unwrap();
+		let (_, changed) = StaticMount::file("/component.js".to_string(), path.clone());
+		assert_ne!(first, changed);
+
+		std::fs::remove_file(path).unwrap();
+	}
+
+	#[test]
+	fn unreadable_static_asset_keeps_unversioned_route() {
+		let path = std::env::temp_dir().join("wgui-static-asset-does-not-exist.js");
+		let (_, asset) = StaticMount::file("missing.js".to_string(), path);
+
+		assert_eq!(asset.url(), "/missing.js");
+	}
+
+	#[tokio::test]
+	async fn fingerprinted_static_request_is_immutable() {
+		let path = temporary_static_file(b"export default 1");
+		let (mount, asset) = StaticMount::file("/component.js".to_string(), path.clone());
+		let version = asset.url().split_once('=').unwrap().1;
+		let mounts = Arc::new(RwLock::new(vec![mount]));
+
+		let response = static_mount_response("/component.js", Some(version), &mounts)
+			.await
+			.unwrap();
+		assert_eq!(cache_control(&response), IMMUTABLE_STATIC_CACHE_CONTROL);
+
+		let unversioned = static_mount_response("/component.js", None, &mounts)
+			.await
+			.unwrap();
+		assert_eq!(
+			cache_control(&unversioned),
+			UNVERSIONED_STATIC_CACHE_CONTROL
+		);
+
+		let mismatched = static_mount_response("/component.js", Some("old"), &mounts)
+			.await
+			.unwrap();
+		assert_eq!(cache_control(&mismatched), UNVERSIONED_STATIC_CACHE_CONTROL);
+
+		std::fs::remove_file(path).unwrap();
 	}
 }

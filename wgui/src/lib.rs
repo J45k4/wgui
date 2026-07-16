@@ -47,7 +47,8 @@ pub use gui::*;
 pub use serde_json;
 #[cfg(feature = "hyper")]
 pub use server::{
-	FormData, FromHttpRequest, HttpCtx, HttpHandler, HttpRequest, HttpResponse, HttpRouteSpec, Json,
+	FormData, FromHttpRequest, HttpCtx, HttpHandler, HttpRequest, HttpResponse, HttpRouteSpec,
+	Json, StaticAsset,
 };
 #[cfg(feature = "sqlite")]
 pub use sqlite::{
@@ -1056,11 +1057,14 @@ where
 	}
 
 	#[cfg(feature = "hyper")]
-	pub fn mount_static_file(&self, route: impl Into<String>, file: impl Into<PathBuf>) {
-		self.static_mounts
-			.write()
-			.unwrap()
-			.push(server::StaticMount::file(route.into(), file.into()));
+	pub fn mount_static_file(
+		&self,
+		route: impl Into<String>,
+		file: impl Into<PathBuf>,
+	) -> StaticAsset {
+		let (mount, asset) = server::StaticMount::file(route.into(), file.into());
+		self.static_mounts.write().unwrap().push(mount);
+		asset
 	}
 
 	#[cfg(feature = "hyper")]

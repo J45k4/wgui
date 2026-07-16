@@ -45,7 +45,13 @@ const componentKey = (payload: CustomPayload): string => `${payload.name}\n${pay
 
 const loadModule = (entry: string): Promise<ComponentModule> => {
 	if (!modules.has(entry)) {
-		modules.set(entry, import(entry) as Promise<ComponentModule>)
+		const promise = (import(entry) as Promise<ComponentModule>).catch((err) => {
+			if (modules.get(entry) === promise) {
+				modules.delete(entry)
+			}
+			throw err
+		})
+		modules.set(entry, promise)
 	}
 	return modules.get(entry)!
 }
@@ -192,8 +198,9 @@ export const mountCustomComponent = (element: HTMLElement, item: Item, payload: 
 		})
 		.catch((err) => {
 			console.error(`wgui custom component ${payload.name} failed`, err)
-			if (!state.cancelled) {
+			if (!state.cancelled && getState(element) === state) {
 				element.textContent = `Failed to load component ${payload.name}`
+				setState(element, undefined)
 			}
 		})
 }

@@ -40,7 +40,13 @@ var componentKey = (payload) => `${payload.name}
 ${payload.entry}`;
 var loadModule = (entry) => {
   if (!modules.has(entry)) {
-    modules.set(entry, import(entry));
+    const promise = import(entry).catch((err) => {
+      if (modules.get(entry) === promise) {
+        modules.delete(entry);
+      }
+      throw err;
+    });
+    modules.set(entry, promise);
   }
   return modules.get(entry);
 };
@@ -165,8 +171,9 @@ var mountCustomComponent = (element, item, payload, ctx) => {
     });
   }).catch((err) => {
     console.error(`wgui custom component ${payload.name} failed`, err);
-    if (!state.cancelled) {
+    if (!state.cancelled && getState(element) === state) {
       element.textContent = `Failed to load component ${payload.name}`;
+      setState(element, undefined);
     }
   });
 };
