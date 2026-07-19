@@ -9,6 +9,7 @@ pub struct Schema {
 pub struct TableSchema {
 	pub name: String,
 	pub columns: Vec<ColumnSchema>,
+	pub indexes: Vec<IndexSchema>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,9 +19,17 @@ pub struct ColumnSchema {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexSchema {
+	pub name: String,
+	pub columns: Vec<String>,
+	pub unique: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DiffOp {
 	CreateTable { table: TableSchema },
 	AddColumn { table: String, column: ColumnSchema },
+	CreateIndex { table: String, index: IndexSchema },
 }
 
 pub fn diff_schemas(current: &Schema, target: &Schema) -> Vec<DiffOp> {
@@ -55,6 +64,28 @@ pub fn diff_schemas(current: &Schema, target: &Schema) -> Vec<DiffOp> {
 		}
 	}
 
+	for table in &target.tables {
+		let existing_indexes = current_map
+			.get(table.name.as_str())
+			.map(|existing| {
+				existing
+					.indexes
+					.iter()
+					.map(|index| (index.name.as_str(), index))
+					.collect::<HashMap<_, _>>()
+			})
+			.unwrap_or_default();
+		for index in &table.indexes {
+			if existing_indexes.contains_key(index.name.as_str()) {
+				continue;
+			}
+			ops.push(DiffOp::CreateIndex {
+				table: table.name.clone(),
+				index: index.clone(),
+			});
+		}
+	}
+
 	ops
 }
 
@@ -72,6 +103,7 @@ mod tests {
 					name: "body".to_string(),
 					rust_type: "String".to_string(),
 				}],
+				indexes: vec![],
 			}],
 		};
 
@@ -89,6 +121,7 @@ mod tests {
 					name: "body".to_string(),
 					rust_type: "String".to_string(),
 				}],
+				indexes: vec![],
 			}],
 		};
 		let target = Schema {
@@ -104,6 +137,7 @@ mod tests {
 						rust_type: "String".to_string(),
 					},
 				],
+				indexes: vec![],
 			}],
 		};
 
@@ -116,5 +150,28 @@ mod tests {
 			}
 			_ => panic!("expected add column"),
 		}
+	}
+
+	#[test]
+	fn creates_indexes_missing_from_current_schema() {
+		let current = Schema { tables: vec![] };
+		let target = Schema {
+			tables: vec![TableSchema {
+				name: "Message".to_string(),
+				columns: vec![],
+				indexes: vec![IndexSchema {
+					name: "idx_message_author_time".to_string(),
+					columns: vec!["author".to_string(), "time".to_string()],
+					unique: false,
+				}],
+			}],
+		};
+
+		let ops = diff_schemas(&current, &target);
+		assert!(matches!(
+			ops.as_slice(),
+			[DiffOp::CreateTable { .. }, DiffOp::CreateIndex { table, index }]
+				if table == "Message" && index.unique == false
+		));
 	}
 }

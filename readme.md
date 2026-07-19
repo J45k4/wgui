@@ -59,6 +59,35 @@ cargo run -p wgui -- check path/to/project
 cargo run -p wgui -- check path/to/template.wui
 ```
 
+## Database schemas and migrations
+
+Projects can configure `schema`, `db`, `migrations_dir`, and `env_file` in `wgui.toml`. The
+schema defaults to `schema.wdb`; SQLite migration commands use the configured database path (or
+`DATABASE_URL` / `WGUI_DATABASE_URL` from the environment file for `migrate dev`).
+
+Model-level indexes in `schema.wdb` support ordered single-column or composite keys:
+
+```wdb
+model Message {
+  channel_id: Int
+  time: DateTime
+  endpoint: String
+
+  @@index([channel_id, time])
+  @@unique([endpoint])
+}
+```
+
+WGUI generates deterministic SQLite index names and only adds missing indexes; removing an
+attribute does not drop an existing index. Generate or inspect migrations with:
+
+```
+cargo run -p wgui --features sqlite -- migrations diff
+cargo run -p wgui --features sqlite -- migrations create add_message_indexes
+cargo run -p wgui --features sqlite -- migrations compare --from old.wdb --to schema.wdb
+cargo run -p wgui --features sqlite -- migrate dev --name add_message_indexes
+```
+
 ## LSP
 
 See `docs/lsp.md` for setting up the `wui-lsp` server in Zed or other editors.

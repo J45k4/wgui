@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Result};
+use std::collections::HashSet;
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,23 +102,141 @@ pub fn parse_schema(input: &str) -> Result<SchemaAst> {
 	Ok(SchemaAst { models })
 }
 
-pub fn to_diff_schema(schema: &SchemaAst) -> crate::schema_diff::Schema {
+pub fn to_diff_schema(schema: &SchemaAst) -> Result<crate::schema_diff::Schema> {
 	let tables = schema
 		.models
 		.iter()
-		.map(|model| crate::schema_diff::TableSchema {
-			name: model.name.clone(),
-			columns: model
-				.fields
-				.iter()
-				.map(|field| crate::schema_diff::ColumnSchema {
-					name: field.name.clone(),
-					rust_type: type_to_string(&field.ty),
-				})
-				.collect(),
+		.map(|model| {
+			Ok(crate::schema_diff::TableSchema {
+				name: model.name.clone(),
+				columns: model
+					.fields
+					.iter()
+					.map(|field| crate::schema_diff::ColumnSchema {
+						name: field.name.clone(),
+						rust_type: type_to_string(&field.ty),
+					})
+					.collect(),
+				indexes: model_indexes(model)?,
+			})
 		})
-		.collect();
-	crate::schema_diff::Schema { tables }
+		.collect::<Result<Vec<_>>>()?;
+	Ok(crate::schema_diff::Schema { tables })
+}
+
+pub fn model_indexes(model: &ModelAst) -> Result<Vec<crate::schema_diff::IndexSchema>> {
+	let mut indexes = Vec::new();
+	let mut seen = HashSet::new();
+
+	for attr in &model.attributes {
+		let unique = match attr.name.as_str() {
+			"index" => false,
+			"unique" => true,
+			_ => continue,
+		};
+		let columns = parse_index_columns(model, attr)?;
+		let key = format!("{unique}:{}", columns.join("\u{1f}"));
+		if !seen.insert(key) {
+			return Err(anyhow!(
+				"model `{}` declares the same {} more than once",
+				model.name,
+				if unique { "unique index" } else { "index" }
+			));
+		}
+		indexes.push(crate::schema_diff::IndexSchema {
+			name: generated_index_name(&model.name, &columns, unique),
+			columns,
+			unique,
+		});
+	}
+
+	Ok(indexes)
+}
+
+fn parse_index_columns(model: &ModelAst, attr: &AttributeAst) -> Result<Vec<String>> {
+	let Some(args) = attr.args.as_deref() else {
+		return Err(anyhow!(
+			"model `{}`: @@{} requires a field list such as @@{}([field])",
+			model.name,
+			attr.name,
+			attr.name
+		));
+	};
+	let args = args.trim();
+	let Some(list) = args
+		.strip_prefix('[')
+		.and_then(|value| value.strip_suffix(']'))
+	else {
+		return Err(anyhow!(
+			"model `{}`: @@{} expects a bracketed field list",
+			model.name,
+			attr.name
+		));
+	};
+	if list.trim().is_empty() {
+		return Err(anyhow!(
+			"model `{}`: @@{} requires at least one field",
+			model.name,
+			attr.name
+		));
+	}
+	let mut columns = Vec::new();
+	let mut seen = HashSet::new();
+	for raw_column in list.split(',') {
+		let column = raw_column.trim();
+		if column.is_empty() {
+			return Err(anyhow!(
+				"model `{}`: @@{} field list cannot contain an empty field",
+				model.name,
+				attr.name
+			));
+		}
+		if !seen.insert(column) {
+			return Err(anyhow!(
+				"model `{}`: @@{} field list repeats `{column}`",
+				model.name,
+				attr.name
+			));
+		}
+		if column != "id" {
+			let Some(field) = model.fields.iter().find(|field| field.name == column) else {
+				return Err(anyhow!(
+					"model `{}`: @@{} references unknown field `{column}`",
+					model.name,
+					attr.name
+				));
+			};
+			if field
+				.attributes
+				.iter()
+				.any(|attribute| attribute.name == "relation")
+			{
+				return Err(anyhow!(
+					"model `{}`: @@{} cannot index relation field `{column}`",
+					model.name,
+					attr.name
+				));
+			}
+		}
+		columns.push(column.to_string());
+	}
+	if columns.is_empty() {
+		return Err(anyhow!(
+			"model `{}`: @@{} requires at least one field",
+			model.name,
+			attr.name
+		));
+	}
+	Ok(columns)
+}
+
+pub fn generated_index_name(table: &str, columns: &[String], unique: bool) -> String {
+	let prefix = if unique { "uidx" } else { "idx" };
+	let mut name = format!("{prefix}_t{}_{}", table.len(), table);
+	for column in columns {
+		name.push_str(&format!("_c{}_{}", column.len(), column));
+	}
+	name
 }
 
 fn parse_field(line: &str, line_no: usize) -> Result<FieldAst> {
@@ -345,5 +464,89 @@ model Membership {
 		assert_eq!(attrs.len(), 1);
 		assert_eq!(attrs[0].name, "index");
 		assert_eq!(attrs[0].args.as_deref(), Some("[id]"));
+	}
+
+	#[test]
+	fn converts_composite_indexes_and_unique_constraints() {
+		let schema = parse_schema(
+			r#"
+model Message {
+  channel_id: Int
+  time: DateTime
+  endpoint: String
+  @@index([channel_id, time])
+  @@unique([endpoint])
+}
+"#,
+		)
+		.expect("parse schema");
+		let diff = to_diff_schema(&schema).expect("convert schema");
+		let indexes = &diff.tables[0].indexes;
+		assert_eq!(indexes.len(), 2);
+		assert_eq!(
+			indexes[0].columns,
+			vec!["channel_id".to_string(), "time".to_string()]
+		);
+		assert!(!indexes[0].unique);
+		assert!(indexes[1].unique);
+		assert_ne!(indexes[0].name, indexes[1].name);
+	}
+
+	#[test]
+	fn rejects_invalid_index_declarations() {
+		let schema = parse_schema(
+			r#"
+model Message {
+  channel_id: Int
+  relation: Channel @relation(channel_id)
+  @@index([missing])
+}
+"#,
+		)
+		.expect("parse schema");
+		let err = to_diff_schema(&schema).expect_err("unknown index field should fail");
+		assert!(err.to_string().contains("unknown field `missing`"));
+
+		let schema = parse_schema(
+			r#"
+model Message {
+  channel_id: Int
+  relation: Channel @relation(channel_id)
+  @@unique([relation])
+}
+"#,
+		)
+		.expect("parse schema");
+		let err = to_diff_schema(&schema).expect_err("relation index should fail");
+		assert!(err
+			.to_string()
+			.contains("cannot index relation field `relation`"));
+
+		let schema = parse_schema(
+			r#"
+model Message {
+  channel_id: Int
+  @@index([])
+}
+"#,
+		)
+		.expect("parse schema");
+		let err = to_diff_schema(&schema).expect_err("empty index should fail");
+		assert!(err.to_string().contains("requires at least one field"));
+
+		let schema = parse_schema(
+			r#"
+model Message {
+  channel_id: Int
+  @@index([channel_id])
+  @@index([channel_id])
+}
+"#,
+		)
+		.expect("parse schema");
+		let err = to_diff_schema(&schema).expect_err("duplicate index should fail");
+		assert!(err
+			.to_string()
+			.contains("declares the same index more than once"));
 	}
 }

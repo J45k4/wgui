@@ -1,6 +1,6 @@
 use crate::schema_diff::{
-	diff_schemas, ColumnSchema as DiffColumnSchema, DiffOp, Schema as DiffSchema,
-	TableSchema as DiffTableSchema,
+	diff_schemas, ColumnSchema as DiffColumnSchema, DiffOp, IndexSchema as DiffIndexSchema,
+	Schema as DiffSchema, TableSchema as DiffTableSchema,
 };
 use crate::table::HasId;
 use crate::wdb::{AttributeAst, TypeAst};
@@ -301,6 +301,20 @@ fn load_dynamic_schema<P: AsRef<Path>>(schema_path: P) -> Result<DiffSchema> {
 	let mut tables = Vec::with_capacity(parsed.models.len());
 	for model in parsed.models {
 		let model_name = sql_identifier(&model.name)?;
+		let indexes = crate::wdb::model_indexes(&model)?
+			.into_iter()
+			.map(|index| {
+				Ok(DiffIndexSchema {
+					name: sql_identifier(&index.name)?,
+					columns: index
+						.columns
+						.iter()
+						.map(|column| sql_identifier(column))
+						.collect::<Result<Vec<_>>>()?,
+					unique: index.unique,
+				})
+			})
+			.collect::<Result<Vec<_>>>()?;
 		let mut columns = Vec::with_capacity(model.fields.len());
 		for field in model.fields {
 			if field.name == "id" {
@@ -318,6 +332,7 @@ fn load_dynamic_schema<P: AsRef<Path>>(schema_path: P) -> Result<DiffSchema> {
 		tables.push(DiffTableSchema {
 			name: model_name,
 			columns,
+			indexes,
 		});
 	}
 	Ok(DiffSchema { tables })
@@ -662,6 +677,7 @@ fn schema_diff_statements_for_schema(
 
 	let current = current_schema_for_target(conn, target)?;
 	let ops = diff_schemas(&current, target);
+	let mut index_statements = Vec::new();
 	for op in ops {
 		match op {
 			DiffOp::CreateTable { table } => {
@@ -683,6 +699,19 @@ fn schema_diff_statements_for_schema(
 					sql_affinity(&column.rust_type)
 				));
 			}
+			DiffOp::CreateIndex { table, index } => {
+				let unique = if index.unique { "UNIQUE " } else { "" };
+				let columns = index
+					.columns
+					.iter()
+					.map(|column| format!("\"{column}\""))
+					.collect::<Vec<_>>()
+					.join(", ");
+				index_statements.push(format!(
+					"CREATE {unique}INDEX IF NOT EXISTS \"{}\" ON \"{table}\" ({columns})",
+					index.name
+				));
+			}
 		}
 	}
 
@@ -697,6 +726,7 @@ fn schema_diff_statements_for_schema(
 			}
 		}
 	}
+	statements.extend(index_statements);
 
 	Ok(statements)
 }
@@ -719,6 +749,7 @@ fn target_schema_from_wdb<S: WdbSchema>() -> Result<DiffSchema> {
 		tables.push(DiffTableSchema {
 			name: table,
 			columns,
+			indexes: vec![],
 		});
 	}
 	Ok(DiffSchema { tables })
@@ -731,6 +762,7 @@ fn current_schema_for_target(conn: &Connection, target: &DiffSchema) -> Result<D
 			continue;
 		}
 		let existing = table_columns(conn, &table.name)?;
+		let indexes = table_indexes(conn, &table.name)?;
 		let mut columns = Vec::new();
 		for col in &table.columns {
 			if existing.contains_key(&col.name) {
@@ -740,6 +772,7 @@ fn current_schema_for_target(conn: &Connection, target: &DiffSchema) -> Result<D
 		tables.push(DiffTableSchema {
 			name: table.name.clone(),
 			columns,
+			indexes,
 		});
 	}
 	Ok(DiffSchema { tables })
@@ -776,6 +809,42 @@ fn table_columns(conn: &Connection, table: &str) -> Result<HashMap<String, Strin
 		out.insert(name, ty);
 	}
 	Ok(out)
+}
+
+fn table_indexes(conn: &Connection, table: &str) -> Result<Vec<DiffIndexSchema>> {
+	let pragma = format!("PRAGMA index_list(\"{table}\")");
+	let mut stmt = conn
+		.prepare(&pragma)
+		.with_context(|| format!("failed to inspect sqlite indexes for {table}"))?;
+	let iter = stmt
+		.query_map([], |row| {
+			Ok((row.get::<_, String>(1)?, row.get::<_, i64>(2)? != 0))
+		})
+		.with_context(|| format!("failed reading sqlite indexes for {table}"))?;
+	let mut indexes = Vec::new();
+	for item in iter {
+		let (name, unique) =
+			item.with_context(|| format!("failed parsing sqlite index for {table}"))?;
+		let pragma = format!("PRAGMA index_info({})", quoted_sql_identifier(&name));
+		let mut index_stmt = conn
+			.prepare(&pragma)
+			.with_context(|| format!("failed to inspect sqlite index {name}"))?;
+		let columns = index_stmt
+			.query_map([], |row| row.get::<_, String>(2))
+			.with_context(|| format!("failed reading sqlite index columns for {name}"))?
+			.collect::<std::result::Result<Vec<_>, _>>()
+			.with_context(|| format!("failed parsing sqlite index columns for {name}"))?;
+		indexes.push(DiffIndexSchema {
+			name,
+			columns,
+			unique,
+		});
+	}
+	Ok(indexes)
+}
+
+fn quoted_sql_identifier(identifier: &str) -> String {
+	format!("\"{}\"", identifier.replace('\"', "\"\""))
 }
 
 fn render_migration_sql(name: &str, statements: &[String]) -> String {
@@ -1319,6 +1388,79 @@ mod tests {
 	}
 
 	#[test]
+	fn schema_file_diff_creates_indexes_and_is_idempotent() {
+		let db_path = temp_db_path("schema_file_indexes");
+		let schema_path = temp_schema_path("schema_file_indexes");
+		fs::write(
+			&schema_path,
+			r#"
+model Message {
+  id: Int @id
+  channel_id: Int
+  time: DateTime
+  endpoint: String
+  @@index([channel_id, time])
+  @@unique([endpoint])
+}
+"#,
+		)
+		.expect("write schema");
+
+		let sql = schema_diff_sql_from_schema_file(&schema_path, &db_path)
+			.expect("schema diff")
+			.expect("migration sql");
+		assert!(sql.contains("CREATE INDEX IF NOT EXISTS"));
+		assert!(sql.contains("CREATE UNIQUE INDEX IF NOT EXISTS"));
+
+		let conn = Connection::open(&db_path).expect("open sqlite");
+		conn.execute_batch(&sql).expect("apply generated migration");
+		let indexes = table_indexes(&conn, "Message").expect("inspect indexes");
+		assert!(indexes.iter().any(|index| {
+			!index.unique && index.columns == vec!["channel_id".to_string(), "time".to_string()]
+		}));
+		assert!(indexes
+			.iter()
+			.any(|index| index.unique && index.columns == vec!["endpoint".to_string()]));
+		drop(conn);
+
+		let repeat =
+			schema_diff_sql_from_schema_file(&schema_path, &db_path).expect("repeat schema diff");
+		assert_eq!(repeat, None);
+
+		let _ = fs::remove_file(db_path);
+		let _ = fs::remove_file(schema_path);
+	}
+
+	#[test]
+	fn schema_file_diff_leaves_undeclared_indexes_untouched() {
+		let db_path = temp_db_path("schema_file_index_removal");
+		let schema_path = temp_schema_path("schema_file_index_removal");
+		let conn = Connection::open(&db_path).expect("open sqlite");
+		conn.execute_batch(
+			"CREATE TABLE \"Message\" (id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT);\
+CREATE INDEX \"manual_message_body\" ON \"Message\" (\"body\");",
+		)
+		.expect("create database");
+		drop(conn);
+		fs::write(
+			&schema_path,
+			r#"
+model Message {
+  id: Int @id
+  body: String
+}
+"#,
+		)
+		.expect("write schema");
+
+		let sql = schema_diff_sql_from_schema_file(&schema_path, &db_path).expect("schema diff");
+		assert_eq!(sql, None);
+
+		let _ = fs::remove_file(db_path);
+		let _ = fs::remove_file(schema_path);
+	}
+
+	#[test]
 	fn apply_sqlite_migrations_creates_tables_and_records_rows() {
 		let db_path = temp_db_path("apply_sqlite_migrations_creates_tables");
 		let migrations_dir = temp_migrations_dir("apply_sqlite_migrations_creates_tables");
@@ -1403,6 +1545,14 @@ mod tests {
 		let dir = std::env::temp_dir().join(format!("wgui_{label}_{ts}_migrations"));
 		fs::create_dir_all(&dir).expect("create temp migrations dir");
 		dir
+	}
+
+	fn temp_schema_path(label: &str) -> PathBuf {
+		let ts = SystemTime::now()
+			.duration_since(UNIX_EPOCH)
+			.expect("clock")
+			.as_nanos();
+		std::env::temp_dir().join(format!("wgui_{label}_{ts}.wdb"))
 	}
 
 	#[test]

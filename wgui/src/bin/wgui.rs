@@ -1675,8 +1675,10 @@ fn compare_schemas(args: CompareArgs) -> Result<(), String> {
 		.map_err(|e| format!("failed reading --from schema: {e}"))?;
 	let to_schema =
 		wdb::parse_schema_file(&args.to).map_err(|e| format!("failed reading --to schema: {e}"))?;
-	let from_diff = wdb::to_diff_schema(&from_schema);
-	let to_diff = wdb::to_diff_schema(&to_schema);
+	let from_diff = wdb::to_diff_schema(&from_schema)
+		.map_err(|e| format!("failed converting --from schema: {e}"))?;
+	let to_diff = wdb::to_diff_schema(&to_schema)
+		.map_err(|e| format!("failed converting --to schema: {e}"))?;
 	let ops = diff_schemas(&from_diff, &to_diff);
 
 	if ops.is_empty() {
@@ -1691,6 +1693,15 @@ fn compare_schemas(args: CompareArgs) -> Result<(), String> {
 			}
 			wgui::schema_diff::DiffOp::AddColumn { table, column } => {
 				println!("add column {}.{}: {}", table, column.name, column.rust_type);
+			}
+			wgui::schema_diff::DiffOp::CreateIndex { table, index } => {
+				let kind = if index.unique { "unique " } else { "" };
+				println!(
+					"create {kind}index {} on {} ({})",
+					index.name,
+					table,
+					index.columns.join(", ")
+				);
 			}
 		}
 	}
