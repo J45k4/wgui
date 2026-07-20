@@ -42,8 +42,6 @@ async fn main() {
 
 - Todo list app (interactive text input + checkbox): `cargo run -p todo`
 - Component showcase (text input, date picker, select, slider, modal, table): `cargo run -p allcomponents`
-- Three.js scene demo (procedural + STL geometry): `cargo run -p three_demo`
-- URDF viewer (STL meshes + joint sliders): `cargo run -p urdf -- assets/puppyarm/puppyarm.urdf`
 - WUI template examples: `cargo run -p todo_wui` and `cargo run -p puppychat`
 
 ## WUI templates

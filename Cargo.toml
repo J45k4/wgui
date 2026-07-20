@@ -8,7 +8,5 @@ members = [
     "examples/allcomponents",
     "examples/puppychat",
     "examples/todo",
-    "examples/todo_wui",
-    "examples/three_demo",
-    "examples/urdf"
+    "examples/todo_wui"
 ]

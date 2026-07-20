@@ -221,46 +221,6 @@ export type Audio = {
 	controls: boolean
 }
 
-export type ThreeKind =
-	| "scene"
-	| "group"
-	| "mesh"
-	| "perspectiveCamera"
-	| "orthographicCamera"
-	| "boxGeometry"
-	| "sphereGeometry"
-	| "cylinderGeometry"
-	| "stlGeometry"
-	| "meshStandardMaterial"
-	| "meshBasicMaterial"
-	| "ambientLight"
-	| "directionalLight"
-	| "pointLight"
-
-export type ThreePropValue =
-	| { type: "number"; value: number }
-	| { type: "bool"; value: boolean }
-	| { type: "string"; value: string }
-	| { type: "vec3"; x: number; y: number; z: number }
-	| { type: "color"; r: number; g: number; b: number; a?: number }
-
-export type ThreeProp = {
-	key: string
-	value: ThreePropValue
-}
-
-export type ThreeNode = {
-	id: number
-	kind: ThreeKind
-	props: ThreeProp[]
-	children: ThreeNode[]
-}
-
-export type ThreeView = {
-	type: "threeView"
-	root: ThreeNode
-}
-
 export type Custom = {
 	type: "custom"
 	name: string
@@ -289,7 +249,6 @@ export type ItemPayload = Text |
  	Image |
 	Video |
 	Audio |
-	ThreeView |
 	Custom |
  	FolderPicker |
  	FloatingLayout |
@@ -430,20 +389,6 @@ export type SetProp = {
     sets: SetPropSet[]
 }
 
-export type ThreeOp =
-	| { type: "create"; id: number; kind: ThreeKind; props: ThreeProp[] }
-	| { type: "attach"; parentId: number; childId: number }
-	| { type: "detach"; parentId: number; childId: number }
-	| { type: "setProp"; id: number; key: string; value: ThreePropValue }
-	| { type: "unsetProp"; id: number; key: string }
-	| { type: "delete"; id: number }
-
-export type ThreePatch = {
-	type: "threePatch"
-	path: number[]
-	ops: ThreeOp[]
-}
-
 export type SetTitle = {
     type: "setTitle"
     title: string
@@ -497,7 +442,6 @@ export type SrvMessage = Replace |
 	ReplaceState |
     SetQuery |
 	SetProp |
-	ThreePatch |
     SetTitle |
 	WebRtcRoomState |
 	WebRtcSignal |

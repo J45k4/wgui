@@ -1080,7 +1080,6 @@ fn apply_client_action(snapshot: &mut SessionSnapshot, action: ClientAction) {
 			snapshot.url = Some(replace.url);
 		}
 		ClientAction::SetQuery(_)
-		| ClientAction::ThreePatch { .. }
 		| ClientAction::WebRtcRoomState { .. }
 		| ClientAction::WebRtcSignal { .. }
 		| ClientAction::WebPushEnable { .. }

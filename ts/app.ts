@@ -2,7 +2,6 @@ import { Deboncer } from "./debouncer.ts";
 import { disposeCustomComponentTree, sendCustomData } from "./custom_components.ts";
 import { getPathItem } from "./path.ts";
 import { renderItem, setConnectionStatus } from "./render.ts";
-import { applyThreePatch } from "./three_host.ts";
 import { Context, Item, PropValue, SetPropSet, SrvMessage } from "./types.ts";
 import { WebRtcCoordinator } from "./webrtc.ts";
 import { disableWebPush, enableWebPush } from "./web_push.ts";
@@ -268,14 +267,6 @@ window.onload = () => {
 
 				if (message.type === "webRtcRoomState" || message.type === "webRtcSignal") {
 					rtc.handleServerMessage(message)
-					continue
-				}
-
-				if (message.type === "threePatch") {
-					const target = bodyPathItem(res, message.path)
-					if (target) {
-						applyThreePatch(target, message.ops)
-					}
 					continue
 				}
 

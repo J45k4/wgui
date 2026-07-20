@@ -1,6 +1,5 @@
 import { ButtonEvents, Context, Item, ItemPayload } from "./types.ts";
 import { disposeCustomComponentTree, mountCustomComponent } from "./custom_components.ts";
-import { applyThreeTree, disposeThreeHost } from "./three_host.ts";
 
 
 
@@ -1084,22 +1083,6 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		return element
 	}
 
-	if (payload.type === "threeView") {
-		let canvas: HTMLCanvasElement
-		if (old instanceof HTMLCanvasElement) {
-			canvas = old
-		} else {
-			canvas = document.createElement("canvas")
-			if (old) old.replaceWith(canvas)
-		}
-		canvas.dataset.wguiThree = "true"
-		canvas.style.display = "block"
-		canvas.style.width = "100%"
-		canvas.style.height = "100%"
-		applyThreeTree(canvas, payload.root)
-		return canvas
-	}
-
 	if (payload.type === "custom") {
 		let element: HTMLDivElement
 		if (old instanceof HTMLDivElement && old.dataset.wguiCustom === "true") {
@@ -1117,9 +1100,6 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 }
 
 export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
-	if (old instanceof HTMLCanvasElement && item.payload.type !== "threeView") {
-		disposeThreeHost(old)
-	}
 	if (old instanceof HTMLElement && old.dataset.wguiCustom === "true" && item.payload.type !== "custom") {
 		disposeCustomComponentTree(old)
 	}

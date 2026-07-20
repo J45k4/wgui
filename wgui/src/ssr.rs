@@ -125,7 +125,6 @@ pub fn render_item(item: &Item) -> String {
 			wrap,
 			body,
 		} => render_connection_status(item, *connected, flex, *spacing, *wrap, body),
-		ItemPayload::ThreeView { .. } => render_three_view(item),
 		ItemPayload::Custom { name, .. } => render_custom(item, name),
 		ItemPayload::None => String::new(),
 	}
@@ -495,18 +494,6 @@ fn render_connection_status(
 		},
 	));
 	render_element("div", &[], style, &attrs, &children)
-}
-
-fn render_three_view(item: &Item) -> String {
-	let mut style = StyleBuilder::new();
-	style.push("display", "block");
-	style.push("width", "100%");
-	style.push("height", "100%");
-	apply_item_styles(item, &mut style);
-	let classes = Vec::new();
-	let mut attrs = collect_item_attrs(item);
-	attrs.push(("data-wgui-three".to_string(), "true".to_string()));
-	render_element("canvas", &classes, style, &attrs, "")
 }
 
 fn render_children(items: &[Item]) -> String {
