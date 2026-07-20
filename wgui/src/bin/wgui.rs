@@ -20,7 +20,10 @@ use wgui::{schema_diff::diff_schemas, wdb};
 use wgui::{ClientAction, Item, ItemPayload, PropKey, SetProp, Value};
 
 #[cfg(feature = "sqlite")]
-use wgui::{schema_diff_sql_from_schema_file, write_schema_migration_from_schema_file};
+use wgui::{
+	push_schema_from_schema_file, schema_diff_sql_from_schema_file,
+	write_schema_migration_from_schema_file,
+};
 
 #[derive(Parser, Debug)]
 #[command(name = "wgui")]
@@ -39,6 +42,10 @@ enum TopCommand {
 	Migrate {
 		#[command(subcommand)]
 		command: MigrateCommand,
+	},
+	Db {
+		#[command(subcommand)]
+		command: DbCommand,
 	},
 	Controllers {
 		#[command(subcommand)]
@@ -63,6 +70,11 @@ enum MigrationsCommand {
 #[derive(Subcommand, Debug)]
 enum MigrateCommand {
 	Dev(MigrateDevArgs),
+}
+
+#[derive(Subcommand, Debug)]
+enum DbCommand {
+	Push(DbPushArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -128,6 +140,16 @@ struct MigrateDevArgs {
 	env_file: Option<PathBuf>,
 	#[arg(default_value = ".")]
 	project_dir: PathBuf,
+}
+
+#[derive(Args, Debug)]
+struct DbPushArgs {
+	#[arg(long)]
+	schema: Option<PathBuf>,
+	#[arg(long)]
+	db: Option<PathBuf>,
+	#[arg(long)]
+	accept_data_loss: bool,
 }
 
 #[derive(Args, Debug)]
@@ -263,6 +285,7 @@ fn run() -> Result<(), String> {
 	match cli.command {
 		TopCommand::Migrations { command } => run_migrations(command),
 		TopCommand::Migrate { command } => run_migrate(command),
+		TopCommand::Db { command } => run_db(command),
 		TopCommand::Controllers { command } => run_controllers(command),
 		TopCommand::Session { command } => run_session(command),
 		TopCommand::Generate(args) => run_generate(args),
@@ -282,6 +305,12 @@ fn run_migrations(command: MigrationsCommand) -> Result<(), String> {
 fn run_migrate(command: MigrateCommand) -> Result<(), String> {
 	match command {
 		MigrateCommand::Dev(args) => migrate_dev(args),
+	}
+}
+
+fn run_db(command: DbCommand) -> Result<(), String> {
+	match command {
+		DbCommand::Push(args) => db_push(args),
 	}
 }
 
@@ -1624,6 +1653,39 @@ fn diff_migration(args: DiffArgs) -> Result<(), String> {
 			println!("{sql}");
 		} else {
 			println!("no schema changes");
+		}
+		Ok(())
+	}
+}
+
+fn db_push(args: DbPushArgs) -> Result<(), String> {
+	let project_dir = resolve_project_dir(std::path::Path::new("."))?;
+	let config = load_wgui_config(&project_dir)?;
+	let schema_path = resolve_path_with_default(
+		args.schema,
+		config.schema,
+		PathBuf::from("schema.wdb"),
+		&project_dir,
+	);
+	let db_path =
+		resolve_path_with_default(args.db, config.db, PathBuf::from("wgui.db"), &project_dir);
+
+	#[cfg(not(feature = "sqlite"))]
+	{
+		let _ = (&schema_path, &db_path, args.accept_data_loss);
+		Err("`wgui db push` requires the `sqlite` feature".to_string())
+	}
+	#[cfg(feature = "sqlite")]
+	{
+		let report = push_schema_from_schema_file(&schema_path, &db_path, args.accept_data_loss)
+			.map_err(|e| format!("failed pushing schema: {e}"))?;
+		if report.operations.is_empty() {
+			println!("database is up to date");
+		} else {
+			for operation in report.operations {
+				println!("{operation}");
+			}
+			println!("schema pushed directly; no migration created");
 		}
 		Ok(())
 	}

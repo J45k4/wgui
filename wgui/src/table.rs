@@ -75,4 +75,40 @@ where
 			.find(|row| row.id() == id)
 			.cloned()
 	}
+
+	pub async fn delete(&self, id: u32) -> bool {
+		let mut rows = self.rows.lock().unwrap();
+		let original_len = rows.len();
+		rows.retain(|row| row.id() != id);
+		rows.len() != original_len
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[derive(Clone)]
+	struct Row(u32);
+
+	impl HasId for Row {
+		fn id(&self) -> u32 {
+			self.0
+		}
+
+		fn set_id(&mut self, id: u32) {
+			self.0 = id;
+		}
+	}
+
+	#[tokio::test]
+	async fn delete_removes_only_the_requested_row() {
+		let table = Table::with_ids(vec![Row(1), Row(2)]);
+		assert!(table.delete(1).await);
+		assert!(!table.delete(9).await);
+		assert_eq!(
+			table.snapshot().iter().map(HasId::id).collect::<Vec<_>>(),
+			vec![2]
+		);
+	}
 }

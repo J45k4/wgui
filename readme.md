@@ -88,6 +88,18 @@ cargo run -p wgui --features sqlite -- migrations compare --from old.wdb --to sc
 cargo run -p wgui --features sqlite -- migrate dev --name add_message_indexes
 ```
 
+For local prototyping, apply `schema.wdb` directly without creating or recording a migration:
+
+```
+cargo run -p wgui --features sqlite -- db push
+```
+
+`db push` adds missing tables, columns, and indexes. To reconcile removed tables, columns,
+indexes, or changed column types, review the reported operations and rerun with
+`--accept-data-loss`. It only removes tables managed by a previous `db push` run; unrelated
+tables and migration history are preserved. Do not mix `db push` with pending SQL migrations for
+the same database.
+
 ## LSP
 
 See `docs/lsp.md` for setting up the `wui-lsp` server in Zed or other editors.

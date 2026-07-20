@@ -7,11 +7,11 @@ use crate::wdb::{AttributeAst, TypeAst};
 use crate::wui::runtime::{WdbModel, WdbModelSchema, WdbSchema};
 use anyhow::{anyhow, Context, Result};
 use rusqlite::types::{Value as SqlValue, ValueRef};
-use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension, TransactionBehavior};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -29,6 +29,13 @@ pub struct SQLiteDB<S: WdbSchema> {
 }
 
 pub type SQLLiteDB<S> = SQLiteDB<S>;
+
+const DB_PUSH_TABLES_TABLE: &str = "_wgui_db_push_tables";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SchemaPushReport {
+	pub operations: Vec<String>,
+}
 
 pub trait SchemaMigrations: WdbSchema {
 	fn migration_sql<P: AsRef<Path>>(db_path: P) -> Result<Option<String>>
@@ -106,6 +113,59 @@ where
 		return Ok(None);
 	}
 	Ok(Some(render_migration_sql("auto_schema_diff", &statements)))
+}
+
+pub fn push_schema_from_schema_file<P, Q>(
+	schema_path: P,
+	db_path: Q,
+	accept_data_loss: bool,
+) -> Result<SchemaPushReport>
+where
+	P: AsRef<Path>,
+	Q: AsRef<Path>,
+{
+	let target = load_dynamic_schema(schema_path)?;
+	let mut conn =
+		Connection::open(db_path).context("failed to open sqlite database for schema push")?;
+	let tracked = db_push_tracked_tables(&conn)?;
+	let plan = schema_push_plan(&conn, &target, &tracked)?;
+	if !plan.data_loss.is_empty() && !accept_data_loss {
+		return Err(anyhow!(
+			"db push requires --accept-data-loss for:\n{}",
+			plan.data_loss
+				.iter()
+				.map(|operation| format!("- {operation}"))
+				.collect::<Vec<_>>()
+				.join("\n")
+		));
+	}
+
+	let tx = conn
+		.transaction_with_behavior(TransactionBehavior::Immediate)
+		.context("failed to start sqlite schema push transaction")?;
+	tx.execute_batch(&format!(
+		"CREATE TABLE IF NOT EXISTS \"{DB_PUSH_TABLES_TABLE}\" (table_name TEXT PRIMARY KEY)"
+	))
+	.context("failed creating db push metadata table")?;
+	for statement in &plan.statements {
+		tx.execute_batch(statement)
+			.with_context(|| format!("failed applying db push statement `{statement}`"))?;
+	}
+	tx.execute(&format!("DELETE FROM \"{DB_PUSH_TABLES_TABLE}\""), [])
+		.context("failed updating db push metadata")?;
+	for table in &target.tables {
+		tx.execute(
+			&format!("INSERT INTO \"{DB_PUSH_TABLES_TABLE}\" (table_name) VALUES (?1)"),
+			params![table.name],
+		)
+		.context("failed recording db push table ownership")?;
+	}
+	tx.commit()
+		.context("failed committing sqlite schema push")?;
+
+	Ok(SchemaPushReport {
+		operations: plan.operations,
+	})
 }
 
 pub fn write_schema_migration_from_schema_file<P, Q, R>(
@@ -400,6 +460,8 @@ impl<S: WdbSchema> SQLiteDB<S> {
 impl SqliteDb {
 	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
 		let conn = Connection::open(path).context("failed to open sqlite database")?;
+		conn.pragma_update(None, "foreign_keys", "ON")
+			.context("failed enabling sqlite foreign keys")?;
 		Ok(Self {
 			conn: Arc::new(Mutex::new(conn)),
 		})
@@ -407,6 +469,8 @@ impl SqliteDb {
 
 	pub fn in_memory() -> Result<Self> {
 		let conn = Connection::open_in_memory().context("failed to open in-memory sqlite db")?;
+		conn.pragma_update(None, "foreign_keys", "ON")
+			.context("failed enabling sqlite foreign keys")?;
 		Ok(Self {
 			conn: Arc::new(Mutex::new(conn)),
 		})
@@ -471,6 +535,14 @@ pub struct SqliteTable<T> {
 	_marker: PhantomData<T>,
 }
 
+impl<T> std::fmt::Debug for SqliteTable<T> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("SqliteTable")
+			.field("table_name", &self.table_name)
+			.finish_non_exhaustive()
+	}
+}
+
 impl<T> SqliteTable<T>
 where
 	T: WdbModel + Clone + Serialize + DeserializeOwned,
@@ -524,11 +596,11 @@ where
 			.context("failed to start sqlite transaction")?;
 		tx.execute(&delete_sql, [])
 			.with_context(|| format!("failed to clear table {}", self.table_name))?;
-		drop(tx);
-		drop(conn);
 		for row in rows {
-			self.insert_sync(row)?;
+			self.insert_with_connection(&tx, row)?;
 		}
+		tx.commit()
+			.with_context(|| format!("failed to commit replacing table {}", self.table_name))?;
 		Ok(())
 	}
 
@@ -537,12 +609,16 @@ where
 	}
 
 	pub fn insert_sync(&self, row: T) -> Result<()> {
+		let conn = self.conn.lock().unwrap();
+		self.insert_with_connection(&conn, row)
+	}
+
+	fn insert_with_connection(&self, conn: &Connection, row: T) -> Result<()> {
 		let schema = T::schema();
 		let cols = model_columns(&schema)?;
 		let object = to_object(&row)?;
 		if cols.is_empty() {
 			let sql = format!("INSERT INTO \"{}\" DEFAULT VALUES", self.table_name);
-			let conn = self.conn.lock().unwrap();
 			conn.execute(&sql, [])
 				.with_context(|| format!("failed to insert row into {}", self.table_name))?;
 			return Ok(());
@@ -565,7 +641,6 @@ where
 			.iter()
 			.map(|(name, rust_type)| json_to_sql_value(object.get(name), rust_type))
 			.collect::<Vec<_>>();
-		let conn = self.conn.lock().unwrap();
 		conn.execute(&sql, params_from_iter(values))
 			.with_context(|| format!("failed to insert row into {}", self.table_name))?;
 		Ok(())
@@ -619,6 +694,15 @@ where
 		Ok(Some(row_to_model::<T>(row, &schema, &cols, has_model_id)?))
 	}
 
+	pub async fn delete(&self, id: u32) -> Result<bool> {
+		let sql = format!("DELETE FROM \"{}\" WHERE id = ?1", self.table_name);
+		let conn = self.conn.lock().unwrap();
+		let affected = conn
+			.execute(&sql, params![id])
+			.with_context(|| format!("failed deleting row from {}", self.table_name))?;
+		Ok(affected > 0)
+	}
+
 	pub async fn save(&self, mut row: T) -> Result<T> {
 		let schema = T::schema();
 		let cols = model_columns(&schema)?;
@@ -667,6 +751,239 @@ where
 fn schema_diff_statements<S: WdbSchema>(conn: &Connection) -> Result<Vec<String>> {
 	let target = target_schema_from_wdb::<S>()?;
 	schema_diff_statements_for_schema(conn, &target)
+}
+
+struct SchemaPushPlan {
+	statements: Vec<String>,
+	operations: Vec<String>,
+	data_loss: Vec<String>,
+}
+
+fn schema_push_plan(
+	conn: &Connection,
+	target: &DiffSchema,
+	tracked_tables: &HashSet<String>,
+) -> Result<SchemaPushPlan> {
+	let target_tables = target
+		.tables
+		.iter()
+		.map(|table| (table.name.as_str(), table))
+		.collect::<HashMap<_, _>>();
+	let mut table_statements = Vec::new();
+	let mut index_drop_statements = Vec::new();
+	let mut index_create_statements = Vec::new();
+	let mut operations = Vec::new();
+	let mut data_loss = Vec::new();
+
+	for table in tracked_tables {
+		if target_tables.contains_key(table.as_str()) || !table_exists(conn, table)? {
+			continue;
+		}
+		let operation = format!("drop table {table}");
+		data_loss.push(operation.clone());
+		operations.push(operation);
+		table_statements.push(format!("DROP TABLE {}", quoted_sql_identifier(table)));
+	}
+
+	for table in &target.tables {
+		if !table_exists(conn, &table.name)? {
+			operations.push(format!("create table {}", table.name));
+			table_statements.push(create_table_sql(table));
+			for index in &table.indexes {
+				operations.push(format!("create index {}", index.name));
+				index_create_statements.push(create_index_sql(&table.name, index));
+			}
+			continue;
+		}
+
+		let current_columns = table_column_affinities(conn, &table.name)?;
+		let target_columns = target_column_affinities(table);
+		let removed_columns = current_columns
+			.keys()
+			.filter(|column| !target_columns.contains_key(column.as_str()))
+			.cloned()
+			.collect::<Vec<_>>();
+		let changed_columns = target_columns
+			.iter()
+			.filter_map(|(name, affinity)| {
+				current_columns
+					.get(name)
+					.filter(|current| *current != affinity)
+					.map(|_| name.clone())
+			})
+			.collect::<Vec<_>>();
+		let requires_rebuild = !removed_columns.is_empty()
+			|| !changed_columns.is_empty()
+			|| !current_columns.contains_key("id");
+
+		if requires_rebuild {
+			let operation = format!("rebuild table {}", table.name);
+			data_loss.push(operation.clone());
+			operations.push(operation);
+			table_statements.extend(rebuild_table_sql(&table.name, table, &current_columns));
+			for index in &table.indexes {
+				operations.push(format!("create index {}", index.name));
+				index_create_statements.push(create_index_sql(&table.name, index));
+			}
+			continue;
+		}
+
+		for column in &table.columns {
+			if current_columns.contains_key(&column.name) {
+				continue;
+			}
+			operations.push(format!("add column {}.{}", table.name, column.name));
+			table_statements.push(format!(
+				"ALTER TABLE {} ADD COLUMN {} {}",
+				quoted_sql_identifier(&table.name),
+				quoted_sql_identifier(&column.name),
+				sql_affinity(&column.rust_type)
+			));
+		}
+
+		let current_indexes = table_indexes(conn, &table.name)?
+			.into_iter()
+			.map(|index| (index.name.clone(), index))
+			.collect::<HashMap<_, _>>();
+		let target_indexes = table
+			.indexes
+			.iter()
+			.map(|index| (index.name.as_str(), index))
+			.collect::<HashMap<_, _>>();
+		for (name, index) in &current_indexes {
+			let same = target_indexes
+				.get(name.as_str())
+				.map(|target| target.columns == index.columns && target.unique == index.unique)
+				.unwrap_or(false);
+			if same {
+				continue;
+			}
+			let operation = format!("drop index {name}");
+			data_loss.push(operation.clone());
+			operations.push(operation);
+			index_drop_statements.push(format!("DROP INDEX {}", quoted_sql_identifier(name)));
+		}
+		for index in &table.indexes {
+			let same = current_indexes
+				.get(&index.name)
+				.map(|current| current.columns == index.columns && current.unique == index.unique)
+				.unwrap_or(false);
+			if same {
+				continue;
+			}
+			operations.push(format!("create index {}", index.name));
+			index_create_statements.push(create_index_sql(&table.name, index));
+		}
+	}
+
+	table_statements.extend(index_drop_statements);
+	table_statements.extend(index_create_statements);
+	Ok(SchemaPushPlan {
+		statements: table_statements,
+		operations,
+		data_loss,
+	})
+}
+
+fn create_table_sql(table: &DiffTableSchema) -> String {
+	let columns = table
+		.columns
+		.iter()
+		.map(|column| {
+			format!(
+				", {} {}",
+				quoted_sql_identifier(&column.name),
+				sql_affinity(&column.rust_type)
+			)
+		})
+		.collect::<String>();
+	format!(
+		"CREATE TABLE {} (id INTEGER PRIMARY KEY AUTOINCREMENT{columns})",
+		quoted_sql_identifier(&table.name)
+	)
+}
+
+fn create_index_sql(table: &str, index: &DiffIndexSchema) -> String {
+	let unique = if index.unique { "UNIQUE " } else { "" };
+	let columns = index
+		.columns
+		.iter()
+		.map(|column| quoted_sql_identifier(column))
+		.collect::<Vec<_>>()
+		.join(", ");
+	format!(
+		"CREATE {unique}INDEX {} ON {} ({columns})",
+		quoted_sql_identifier(&index.name),
+		quoted_sql_identifier(table)
+	)
+}
+
+fn rebuild_table_sql(
+	table_name: &str,
+	table: &DiffTableSchema,
+	current_columns: &HashMap<String, String>,
+) -> Vec<String> {
+	let temporary_name = format!("_wgui_db_push_{}_new", table_name);
+	let target_columns = target_column_affinities(table);
+	let shared_columns = target_columns
+		.keys()
+		.filter(|column| current_columns.contains_key(column.as_str()))
+		.cloned()
+		.collect::<Vec<_>>();
+	let mut statements = vec![create_table_sql_with_name(table, &temporary_name)];
+	if !shared_columns.is_empty() {
+		let columns = shared_columns
+			.iter()
+			.map(|column| quoted_sql_identifier(column))
+			.collect::<Vec<_>>()
+			.join(", ");
+		statements.push(format!(
+			"INSERT INTO {} ({columns}) SELECT {columns} FROM {}",
+			quoted_sql_identifier(&temporary_name),
+			quoted_sql_identifier(table_name)
+		));
+	}
+	statements.push(format!("DROP TABLE {}", quoted_sql_identifier(table_name)));
+	statements.push(format!(
+		"ALTER TABLE {} RENAME TO {}",
+		quoted_sql_identifier(&temporary_name),
+		quoted_sql_identifier(table_name)
+	));
+	statements
+}
+
+fn create_table_sql_with_name(table: &DiffTableSchema, name: &str) -> String {
+	let mut table = table.clone();
+	table.name = name.to_string();
+	create_table_sql(&table)
+}
+
+fn target_column_affinities(table: &DiffTableSchema) -> HashMap<String, String> {
+	let mut columns = HashMap::from([("id".to_string(), "INTEGER".to_string())]);
+	for column in &table.columns {
+		columns.insert(
+			column.name.clone(),
+			sql_affinity(&column.rust_type).to_string(),
+		);
+	}
+	columns
+}
+
+fn db_push_tracked_tables(conn: &Connection) -> Result<HashSet<String>> {
+	if !table_exists(conn, DB_PUSH_TABLES_TABLE)? {
+		return Ok(HashSet::new());
+	}
+	let mut stmt = conn
+		.prepare(&format!(
+			"SELECT table_name FROM \"{DB_PUSH_TABLES_TABLE}\""
+		))
+		.context("failed reading db push metadata")?;
+	let tables = stmt
+		.query_map([], |row| row.get::<_, String>(0))
+		.context("failed listing db push tables")?
+		.collect::<std::result::Result<HashSet<_>, _>>()
+		.context("failed parsing db push table metadata")?;
+	Ok(tables)
 }
 
 fn schema_diff_statements_for_schema(
@@ -811,6 +1128,28 @@ fn table_columns(conn: &Connection, table: &str) -> Result<HashMap<String, Strin
 	Ok(out)
 }
 
+fn table_column_affinities(conn: &Connection, table: &str) -> Result<HashMap<String, String>> {
+	Ok(table_columns(conn, table)?
+		.into_iter()
+		.map(|(name, ty)| (name, sqlite_affinity(&ty).to_string()))
+		.collect())
+}
+
+fn sqlite_affinity(ty: &str) -> &'static str {
+	let ty = ty.trim().to_ascii_uppercase();
+	if ty.contains("INT") {
+		"INTEGER"
+	} else if ty.contains("CHAR") || ty.contains("CLOB") || ty.contains("TEXT") {
+		"TEXT"
+	} else if ty.contains("BLOB") || ty.is_empty() {
+		"BLOB"
+	} else if ty.contains("REAL") || ty.contains("FLOA") || ty.contains("DOUB") {
+		"REAL"
+	} else {
+		"NUMERIC"
+	}
+}
+
 fn table_indexes(conn: &Connection, table: &str) -> Result<Vec<DiffIndexSchema>> {
 	let pragma = format!("PRAGMA index_list(\"{table}\")");
 	let mut stmt = conn
@@ -818,13 +1157,20 @@ fn table_indexes(conn: &Connection, table: &str) -> Result<Vec<DiffIndexSchema>>
 		.with_context(|| format!("failed to inspect sqlite indexes for {table}"))?;
 	let iter = stmt
 		.query_map([], |row| {
-			Ok((row.get::<_, String>(1)?, row.get::<_, i64>(2)? != 0))
+			Ok((
+				row.get::<_, String>(1)?,
+				row.get::<_, i64>(2)? != 0,
+				row.get::<_, String>(3)?,
+			))
 		})
 		.with_context(|| format!("failed reading sqlite indexes for {table}"))?;
 	let mut indexes = Vec::new();
 	for item in iter {
-		let (name, unique) =
+		let (name, unique, origin) =
 			item.with_context(|| format!("failed parsing sqlite index for {table}"))?;
+		if origin != "c" {
+			continue;
+		}
 		let pragma = format!("PRAGMA index_info({})", quoted_sql_identifier(&name));
 		let mut index_stmt = conn
 			.prepare(&pragma)
@@ -1053,7 +1399,7 @@ fn sql_to_json_value(value: ValueRef<'_>, rust_type: &str) -> Result<JsonValue> 
 		(_, ValueRef::Blob(_)) => {
 			return Err(anyhow!(
 				"blob sqlite values are not supported in model decoding"
-			))
+			));
 		}
 		_ => JsonValue::Null,
 	};
@@ -1240,7 +1586,7 @@ mod tests {
 	use std::fs;
 	use std::path::PathBuf;
 
-	#[derive(Clone, serde::Serialize, serde::Deserialize)]
+	#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 	struct SqliteTodo {
 		id: u32,
 		title: String,
@@ -1305,6 +1651,75 @@ mod tests {
 		let fetched = table.find(saved.id).await.expect("find todo").expect("row");
 		assert_eq!(fetched.title, "first");
 		assert!(fetched.done);
+	}
+
+	#[tokio::test]
+	async fn sqlite_table_can_replace_and_delete() {
+		let db = SqliteDb::in_memory().expect("sqlite in-memory db");
+		{
+			let conn = db.conn.lock().unwrap();
+			conn.execute(
+				"CREATE TABLE \"SqliteTodo\" (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, done INTEGER)",
+				[],
+			)
+			.expect("create todo table");
+		}
+		let table = db.table::<SqliteTodo>().expect("todo table");
+		table
+			.insert_sync(SqliteTodo {
+				id: 0,
+				title: "old".to_string(),
+				done: false,
+			})
+			.expect("insert old row");
+		table
+			.replace_sync(vec![SqliteTodo {
+				id: 0,
+				title: "replacement".to_string(),
+				done: true,
+			}])
+			.expect("replace rows");
+		let rows = table.snapshot_sync().expect("snapshot replacement");
+		assert_eq!(rows.len(), 1);
+		assert_eq!(rows[0].title, "replacement");
+		assert!(table.delete(rows[0].id).await.expect("delete row"));
+		assert!(table.snapshot_sync().expect("empty snapshot").is_empty());
+	}
+
+	#[test]
+	fn sqlite_connections_enable_foreign_keys() {
+		let db = SqliteDb::in_memory().expect("sqlite db");
+		let conn = db.conn.lock().unwrap();
+		let enabled: i64 = conn
+			.query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+			.expect("query foreign key pragma");
+		assert_eq!(enabled, 1);
+	}
+
+	#[tokio::test]
+	async fn db_open_uses_explicit_database_and_migrations_paths() {
+		let db_path = temp_db_path("db_open_explicit_path");
+		let migrations_dir = temp_migrations_dir("db_open_explicit_path");
+		fs::write(
+			migrations_dir.join("0001_todos.sql"),
+			"CREATE TABLE \"SqliteTodo\" (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, done INTEGER);",
+		)
+		.expect("write migration");
+		let db =
+			crate::Db::<SqliteTodoSchema>::open(&db_path, &migrations_dir).expect("open custom db");
+		let table = db.table::<SqliteTodo>();
+		let saved = table
+			.save(SqliteTodo {
+				id: 0,
+				title: "persisted".to_owned(),
+				done: true,
+			})
+			.await;
+		assert_eq!(saved.id, 1);
+		drop(table);
+		drop(db);
+		let _ = fs::remove_file(db_path);
+		let _ = fs::remove_dir_all(migrations_dir);
 	}
 
 	#[test]
@@ -1455,6 +1870,193 @@ model Message {
 
 		let sql = schema_diff_sql_from_schema_file(&schema_path, &db_path).expect("schema diff");
 		assert_eq!(sql, None);
+
+		let _ = fs::remove_file(db_path);
+		let _ = fs::remove_file(schema_path);
+	}
+
+	#[test]
+	fn db_push_applies_schema_without_migration_history() {
+		let db_path = temp_db_path("db_push_applies_schema");
+		let schema_path = temp_schema_path("db_push_applies_schema");
+		fs::write(
+			&schema_path,
+			r#"
+model Message {
+  id: Int @id
+  channel_id: Int
+  endpoint: String
+  @@index([channel_id])
+  @@unique([endpoint])
+}
+"#,
+		)
+		.expect("write schema");
+
+		let report =
+			push_schema_from_schema_file(&schema_path, &db_path, false).expect("push schema");
+		assert!(report
+			.operations
+			.iter()
+			.any(|op| op == "create table Message"));
+		let conn = Connection::open(&db_path).expect("open sqlite");
+		assert!(table_exists(&conn, "Message").expect("message table exists"));
+		assert!(table_exists(&conn, DB_PUSH_TABLES_TABLE).expect("metadata table exists"));
+		assert!(!table_exists(&conn, "_wgui_migrations").expect("migration table absent"));
+		assert_eq!(
+			table_indexes(&conn, "Message")
+				.expect("message indexes")
+				.len(),
+			2
+		);
+		drop(conn);
+
+		let repeat =
+			push_schema_from_schema_file(&schema_path, &db_path, false).expect("repeat push");
+		assert!(repeat.operations.is_empty());
+
+		let _ = fs::remove_file(db_path);
+		let _ = fs::remove_file(schema_path);
+	}
+
+	#[test]
+	fn db_push_requires_confirmation_and_rebuilds_changed_tables() {
+		let db_path = temp_db_path("db_push_rebuild");
+		let schema_path = temp_schema_path("db_push_rebuild");
+		fs::write(
+			&schema_path,
+			r#"
+model Message {
+  id: Int @id
+  body: String
+  legacy: String
+}
+"#,
+		)
+		.expect("write initial schema");
+		push_schema_from_schema_file(&schema_path, &db_path, false).expect("push initial schema");
+		let conn = Connection::open(&db_path).expect("open sqlite");
+		conn.execute(
+			"INSERT INTO \"Message\" (\"body\", \"legacy\") VALUES ('42', 'discard')",
+			[],
+		)
+		.expect("insert row");
+		drop(conn);
+
+		fs::write(
+			&schema_path,
+			r#"
+model Message {
+  id: Int @id
+  body: Int
+}
+"#,
+		)
+		.expect("write changed schema");
+		let err = push_schema_from_schema_file(&schema_path, &db_path, false)
+			.expect_err("rebuild should require confirmation");
+		assert!(err.to_string().contains("--accept-data-loss"));
+		assert!(err.to_string().contains("rebuild table Message"));
+
+		let report =
+			push_schema_from_schema_file(&schema_path, &db_path, true).expect("confirmed push");
+		assert!(report
+			.operations
+			.iter()
+			.any(|op| op == "rebuild table Message"));
+		let conn = Connection::open(&db_path).expect("open rebuilt sqlite");
+		let columns = table_column_affinities(&conn, "Message").expect("read columns");
+		assert_eq!(columns.get("body").map(String::as_str), Some("INTEGER"));
+		assert!(!columns.contains_key("legacy"));
+		let body: i64 = conn
+			.query_row("SELECT body FROM \"Message\"", [], |row| row.get(0))
+			.expect("read preserved row");
+		assert_eq!(body, 42);
+
+		let _ = fs::remove_file(db_path);
+		let _ = fs::remove_file(schema_path);
+	}
+
+	#[test]
+	fn db_push_drops_only_previously_managed_tables() {
+		let db_path = temp_db_path("db_push_table_ownership");
+		let schema_path = temp_schema_path("db_push_table_ownership");
+		fs::write(
+			&schema_path,
+			r#"
+model Managed {
+  id: Int @id
+  body: String
+}
+"#,
+		)
+		.expect("write managed schema");
+		push_schema_from_schema_file(&schema_path, &db_path, false).expect("push managed schema");
+		let conn = Connection::open(&db_path).expect("open sqlite");
+		conn.execute("CREATE TABLE \"Untracked\" (value TEXT)", [])
+			.expect("create untracked table");
+		drop(conn);
+
+		fs::write(
+			&schema_path,
+			r#"
+model Replacement {
+  id: Int @id
+  body: String
+}
+"#,
+		)
+		.expect("write replacement schema");
+		let err = push_schema_from_schema_file(&schema_path, &db_path, false)
+			.expect_err("dropping managed table needs confirmation");
+		assert!(err.to_string().contains("drop table Managed"));
+		push_schema_from_schema_file(&schema_path, &db_path, true)
+			.expect("confirmed replacement push");
+		let conn = Connection::open(&db_path).expect("open replaced sqlite");
+		assert!(!table_exists(&conn, "Managed").expect("managed removed"));
+		assert!(table_exists(&conn, "Replacement").expect("replacement created"));
+		assert!(table_exists(&conn, "Untracked").expect("untracked preserved"));
+
+		let _ = fs::remove_file(db_path);
+		let _ = fs::remove_file(schema_path);
+	}
+
+	#[test]
+	fn db_push_requires_confirmation_to_remove_indexes() {
+		let db_path = temp_db_path("db_push_index_removal");
+		let schema_path = temp_schema_path("db_push_index_removal");
+		fs::write(
+			&schema_path,
+			r#"
+model Message {
+  id: Int @id
+  body: String
+  @@index([body])
+}
+"#,
+		)
+		.expect("write indexed schema");
+		push_schema_from_schema_file(&schema_path, &db_path, false).expect("push indexed schema");
+		fs::write(
+			&schema_path,
+			r#"
+model Message {
+  id: Int @id
+  body: String
+}
+"#,
+		)
+		.expect("write unindexed schema");
+
+		let err = push_schema_from_schema_file(&schema_path, &db_path, false)
+			.expect_err("index removal should require confirmation");
+		assert!(err.to_string().contains("drop index"));
+		push_schema_from_schema_file(&schema_path, &db_path, true)
+			.expect("confirmed index removal");
+		let conn = Connection::open(&db_path).expect("open sqlite");
+		assert!(table_indexes(&conn, "Message")
+			.expect("message indexes")
+			.is_empty());
 
 		let _ = fs::remove_file(db_path);
 		let _ = fs::remove_file(schema_path);

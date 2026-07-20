@@ -3,8 +3,9 @@ use crate::table::Table;
 use crate::wui::runtime::{WdbModel, WdbSchema};
 #[cfg(feature = "sqlite")]
 use crate::{SQLLiteDB, SqliteTable};
+use std::path::Path;
 #[cfg(feature = "sqlite")]
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 pub struct DbTable<T> {
 	#[cfg(feature = "sqlite")]
@@ -148,6 +149,17 @@ where
 			self.inner.find(id).await
 		}
 	}
+
+	pub async fn delete(&self, id: u32) -> bool {
+		#[cfg(feature = "sqlite")]
+		{
+			self.inner.delete(id).await.expect("sqlite delete failed")
+		}
+		#[cfg(not(feature = "sqlite"))]
+		{
+			self.inner.delete(id).await
+		}
+	}
 }
 
 impl<T> WdbModel for DbTable<T>
@@ -160,6 +172,28 @@ where
 }
 
 impl<S: WdbSchema> Db<S> {
+	pub fn open<P: AsRef<Path>, Q: AsRef<Path>>(
+		database_path: P,
+		migrations_path: Q,
+	) -> anyhow::Result<Self> {
+		#[cfg(feature = "sqlite")]
+		{
+			crate::apply_sqlite_migrations(&database_path, migrations_path)?;
+			return Ok(Self {
+				sqlite: SQLLiteDB::<S>::open(database_path)?,
+				_schema: std::marker::PhantomData,
+			});
+		}
+		#[cfg(not(feature = "sqlite"))]
+		{
+			let _ = database_path;
+			let _ = migrations_path;
+			Ok(Self {
+				_schema: std::marker::PhantomData,
+			})
+		}
+	}
+
 	pub fn new() -> Self {
 		#[cfg(feature = "sqlite")]
 		{
