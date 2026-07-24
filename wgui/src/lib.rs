@@ -114,7 +114,7 @@ type HttpControllerFactory = Arc<
 		+ Send
 		+ Sync,
 >;
-type SsrRenderer = Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>;
+pub(crate) type SsrRenderer = Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>;
 type SsrComponentFactories = Arc<std::sync::RwLock<Vec<(String, ControllerFactory)>>>;
 type SsrPageFactories = Arc<std::sync::RwLock<Vec<(RoutePattern, PageControllerFactory)>>>;
 type BoxedCustomComponentController = Box<dyn CustomComponentController>;
@@ -977,7 +977,7 @@ impl Wgui<()> {
 				},
 			));
 			tokio::spawn(async move {
-				Server::new(
+				Server::new(server::ServerConfig {
 					addr,
 					event_tx,
 					clients,
@@ -988,7 +988,7 @@ impl Wgui<()> {
 					app_css,
 					static_mounts,
 					ssr_hydration_roots,
-				)
+				})
 				.await
 				.run()
 				.await;
@@ -1053,7 +1053,7 @@ impl Wgui<()> {
 				},
 			));
 			tokio::spawn(async move {
-				Server::new(
+				Server::new(server::ServerConfig {
 					addr,
 					event_tx,
 					clients,
@@ -1064,7 +1064,7 @@ impl Wgui<()> {
 					app_css,
 					static_mounts,
 					ssr_hydration_roots,
-				)
+				})
 				.await
 				.run()
 				.await;

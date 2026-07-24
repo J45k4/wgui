@@ -26,7 +26,7 @@ use crate::types::{ClientMessage, Clients};
 use crate::ws::TungsteniteWs;
 use crate::wui::routing::{best_route_index, RoutePattern};
 use crate::wui::runtime::RouteContext;
-use crate::{Sessions, SsrHydrationRoot, SsrHydrationRoots, SsrResponse, WguiHandle};
+use crate::{Sessions, SsrHydrationRoot, SsrHydrationRoots, SsrRenderer, SsrResponse, WguiHandle};
 
 const INDEX_HTML_BYTES: &[u8] = include_bytes!("../../dist/index.html");
 const INDEX_JS_BYTES: &[u8] = include_bytes!("../../dist/index.js");
@@ -427,7 +427,7 @@ struct Ctx {
 	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	clients: Clients,
 	sessions: Sessions,
-	ssr: Option<Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>>,
+	ssr: Option<SsrRenderer>,
 	http_handler: SharedHttpHandler,
 	http_routes: SharedHttpRoutes,
 	app_css: SharedAppCss,
@@ -775,7 +775,7 @@ pub struct Server {
 	event_tx: mpsc::UnboundedSender<ClientMessage>,
 	clients: Clients,
 	sessions: Sessions,
-	ssr: Option<Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>>,
+	ssr: Option<SsrRenderer>,
 	http_handler: SharedHttpHandler,
 	http_routes: SharedHttpRoutes,
 	app_css: SharedAppCss,
@@ -783,19 +783,33 @@ pub struct Server {
 	ssr_hydration_roots: SsrHydrationRoots,
 }
 
+pub(crate) struct ServerConfig {
+	pub(crate) addr: SocketAddr,
+	pub(crate) event_tx: mpsc::UnboundedSender<ClientMessage>,
+	pub(crate) clients: Clients,
+	pub(crate) sessions: Sessions,
+	pub(crate) ssr: Option<SsrRenderer>,
+	pub(crate) http_handler: SharedHttpHandler,
+	pub(crate) http_routes: SharedHttpRoutes,
+	pub(crate) app_css: SharedAppCss,
+	pub(crate) static_mounts: SharedStaticMounts,
+	pub(crate) ssr_hydration_roots: SsrHydrationRoots,
+}
+
 impl Server {
-	pub async fn new(
-		addr: SocketAddr,
-		event_tx: mpsc::UnboundedSender<ClientMessage>,
-		clients: Clients,
-		sessions: Sessions,
-		ssr: Option<Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>>,
-		http_handler: SharedHttpHandler,
-		http_routes: SharedHttpRoutes,
-		app_css: SharedAppCss,
-		static_mounts: SharedStaticMounts,
-		ssr_hydration_roots: SsrHydrationRoots,
-	) -> Self {
+	pub async fn new(config: ServerConfig) -> Self {
+		let ServerConfig {
+			addr,
+			event_tx,
+			clients,
+			sessions,
+			ssr,
+			http_handler,
+			http_routes,
+			app_css,
+			static_mounts,
+			ssr_hydration_roots,
+		} = config;
 		let listener = TcpListener::bind(addr).await.unwrap();
 		log::info!("listening on http://localhost:{}", addr.port());
 
