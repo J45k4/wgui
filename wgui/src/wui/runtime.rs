@@ -188,6 +188,14 @@ where
 		let _ = self.command_tx.send(RuntimeCommand::Refresh { client_id });
 	}
 
+	/// Re-render a concrete `#[partial]` address for every client currently
+	/// viewing that partial region.
+	pub fn render(&self, topic: impl Into<String>) {
+		let _ = self.command_tx.send(RuntimeCommand::RenderPartial {
+			topic: topic.into(),
+		});
+	}
+
 	pub fn push_state(&self, url: impl Into<String>) {
 		let url = url.into();
 		if let Some(client_id) = *self.current_client.lock().unwrap() {
@@ -348,6 +356,9 @@ pub enum RuntimeAction {
 
 #[derive(Debug, Clone)]
 pub enum RuntimeCommand {
+	RenderPartial {
+		topic: String,
+	},
 	Refresh {
 		client_id: usize,
 	},
@@ -1306,6 +1317,7 @@ fn apply_number_prop(item: Item, name: &str, value: f64) -> Item {
 		"minHeight" => item.min_height(value as u32),
 		"maxHeight" => item.max_height(value as u32),
 		"grow" => item.grow(value as u32),
+		"arg" => item.form_arg(value as u32),
 		"repeatInterval" => apply_button_repeat_interval(item, value as u32),
 		_ => item,
 	}
@@ -1643,6 +1655,19 @@ mod tests {
 			}
 			other => panic!("expected form, got {other:?}"),
 		}
+	}
+
+	#[test]
+	fn form_arg_renders_to_item_metadata() {
+		let template = Template::parse(
+			r#"<Form action="toggle" arg=7><Button text="Toggle" /></Form>"#,
+			"test",
+		)
+		.expect("parse template");
+		let rendered = template.render(&WuiValue::Null);
+
+		assert_eq!(rendered.action, "toggle");
+		assert_eq!(rendered.form_arg, Some(7));
 	}
 
 	#[test]

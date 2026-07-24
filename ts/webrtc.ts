@@ -131,14 +131,14 @@ export class WebRtcCoordinator {
 									: `user ${clientId}`
 							return { clientId, displayName }
 						})
-						.filter((participant): participant is RoomParticipant => !!participant)
+						.filter((participant: RoomParticipant | undefined): participant is RoomParticipant => !!participant)
 				: []
 			roomState.selfClientId = selfClientId
 			roomState.peers = peers
 			roomState.participants =
 				participants.length > 0
 					? participants
-					: peers.map((peer) => ({
+					: peers.map((peer: number) => ({
 							clientId: peer,
 							displayName: `user ${peer}`,
 						}))

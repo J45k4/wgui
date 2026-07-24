@@ -5,7 +5,7 @@ use wgui::Wgui;
 use wgui::WguiModel;
 
 mod context;
-mod pages;
+mod routes;
 
 #[derive(Debug, Clone, WguiModel)]
 pub struct TodoItem {
@@ -16,7 +16,6 @@ pub struct TodoItem {
 
 #[derive(Debug, Default, Clone, WguiModel)]
 pub struct TodoState {
-	new_todo_name: String,
 	items: Vec<TodoItem>,
 }
 
@@ -27,8 +26,10 @@ async fn main() {
 	let ctx = Arc::new(Ctx::new(context::SharedContext::default()));
 	let mut wgui = Wgui::new("0.0.0.0:12345".parse().unwrap());
 	wgui.set_ctx(ctx.clone());
-	wgui.add_page::<pages::todo::Index>("/");
-	wgui.add_page::<pages::todo::Show>("/todo/:todo_id");
-	wgui.add_page::<pages::not_found::NotFound>("/*");
+	wgui.add_route(routes::page_todos_route);
+	wgui.add_route(routes::page_todo_route);
+	wgui.add_route(routes::create_todo_route);
+	wgui.add_route(routes::toggle_todo_route);
+	wgui.add_route(routes::page_not_found_route);
 	wgui.run().await;
 }

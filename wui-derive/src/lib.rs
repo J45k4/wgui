@@ -3,8 +3,8 @@ use quote::{format_ident, quote};
 use std::path::{Path, PathBuf};
 use syn::{
 	parse::{Parse, ParseStream},
-	parse_macro_input, Data, DeriveInput, Fields, FnArg, ImplItem, ItemImpl, LitStr, ReturnType,
-	Token, Type,
+	parse_macro_input, Data, DeriveInput, Fields, FnArg, ImplItem, ItemFn, ItemImpl, LitStr, Pat,
+	ReturnType, Signature, Token, Type,
 };
 
 #[proc_macro_derive(WguiModel)]
@@ -1300,6 +1300,566 @@ fn to_snake_case(value: &str) -> String {
 			for lower in ch.to_lowercase() {
 				out.push(lower);
 			}
+		} else {
+			out.push(ch);
+		}
+	}
+	out
+}
+
+// ============================================================================
+// #[route] attribute macro — see plans.md Phase 4.
+//
+// Generates a sibling marker struct implementing `RouteHandler` and a
+// `pub const <fn>_route` handle that users pass to `Wgui::add_route`.
+//
+//     #[route("/todos/:id", method = "POST")]
+//     fn action_toggle(ctx: &Ctx<AppState>, id: u32) -> Redirect { ... }
+//
+// expands to:
+//
+//     fn action_toggle(ctx: &Ctx<AppState>, id: u32) -> Redirect { ... }
+//     struct __ActionToggleRoute;
+//     impl RouteHandler for __ActionToggleRoute {
+//         type State = AppState;
+//         fn path(&self) -> &str { "/todos/:id" }
+//         fn method(&self) -> HttpMethod { HttpMethod::Post }
+//         fn call(self, ctx: &Ctx<AppState>, params: PathParams) -> RouteFuture {
+//             let id: u32 = match params.get::<u32>("id") {
+//                 Some(Ok(v)) => v,
+//                 _ => return Box::pin(async { RouteResult::NotFound }),
+//             };
+//             Box::pin(async move {
+//                 let __result = action_toggle(ctx, id).await;
+//                 RouteResult::from(__result)
+//             })
+//         }
+//     }
+//     pub(crate) const action_toggle_route: __ActionToggleRoute = __ActionToggleRoute;
+// ============================================================================
+
+#[proc_macro_attribute]
+pub fn route(attr: TokenStream, item: TokenStream) -> TokenStream {
+	let args = parse_macro_input!(attr as RouteArgs);
+	let item_fn = parse_macro_input!(item as ItemFn);
+	match expand_route(args, item_fn, "route") {
+		Ok(tokens) => tokens.into(),
+		Err(err) => err.to_compile_error().into(),
+	}
+}
+
+/// Construct a WUI-backed `View` from a model expression or anonymous object.
+/// The route dispatcher supplies the template selected by `#[route(..., view)]`.
+#[proc_macro]
+pub fn view(input: TokenStream) -> TokenStream {
+	let input = parse_macro_input!(input as ViewMacroInput);
+	let model = match input {
+		ViewMacroInput::Object(entries) => view_object_tokens(&entries),
+		ViewMacroInput::Expr(expr) => quote! {
+			::wgui::wui::runtime::WuiValueConvert::to_wui_value(&(#expr))
+		},
+	};
+	quote! {
+		::wgui::View::wui(#model)
+	}
+	.into()
+}
+
+enum ViewMacroInput {
+	Object(Vec<(syn::Ident, ViewMacroValue)>),
+	Expr(syn::Expr),
+}
+
+enum ViewMacroValue {
+	Object(Vec<(syn::Ident, ViewMacroValue)>),
+	Expr(syn::Expr),
+}
+
+impl Parse for ViewMacroInput {
+	fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+		if input.peek(syn::token::Brace) {
+			return Ok(Self::Object(parse_view_object(input)?));
+		}
+		Ok(Self::Expr(input.parse()?))
+	}
+}
+
+fn parse_view_object(input: ParseStream<'_>) -> syn::Result<Vec<(syn::Ident, ViewMacroValue)>> {
+	let content;
+	syn::braced!(content in input);
+	let mut entries = Vec::new();
+	while !content.is_empty() {
+		let key: syn::Ident = content.parse()?;
+		content.parse::<Token![:]>()?;
+		let value = if content.peek(syn::token::Brace) {
+			ViewMacroValue::Object(parse_view_object(&content)?)
+		} else {
+			ViewMacroValue::Expr(content.parse()?)
+		};
+		entries.push((key, value));
+		if content.is_empty() {
+			break;
+		}
+		content.parse::<Token![,]>()?;
+	}
+	Ok(entries)
+}
+
+fn view_object_tokens(entries: &[(syn::Ident, ViewMacroValue)]) -> TokenStream2 {
+	let entries = entries.iter().map(|(key, value)| {
+		let key = key.to_string();
+		let value = view_value_tokens(value);
+		quote! { (::std::string::String::from(#key), #value) }
+	});
+	quote! {
+		::wgui::wui::runtime::WuiValue::object(::std::vec![#(#entries),*])
+	}
+}
+
+fn view_value_tokens(value: &ViewMacroValue) -> TokenStream2 {
+	match value {
+		ViewMacroValue::Object(entries) => view_object_tokens(entries),
+		ViewMacroValue::Expr(expr) => quote! {
+			::wgui::wui::runtime::WuiValueConvert::to_wui_value(&(#expr))
+		},
+	}
+}
+
+/// Declare a re-renderable partial route. The generated `*_partial` handle
+/// is registered with `Wgui::add_partial`.
+#[proc_macro_attribute]
+pub fn partial(attr: TokenStream, item: TokenStream) -> TokenStream {
+	let args = parse_macro_input!(attr as RouteArgs);
+	if !matches!(args.method, RouteMethod::Get) {
+		return syn::Error::new_spanned(
+			proc_macro2::Literal::string(&args.path),
+			"#[partial] only supports GET-style rendering",
+		)
+		.to_compile_error()
+		.into();
+	}
+	let item_fn = parse_macro_input!(item as ItemFn);
+	match expand_route(args, item_fn, "partial") {
+		Ok(tokens) => tokens.into(),
+		Err(err) => err.to_compile_error().into(),
+	}
+}
+
+struct RouteArgs {
+	path: String,
+	method: RouteMethod,
+	view: bool,
+	template: Option<String>,
+}
+
+enum RouteMethod {
+	Get,
+	Post,
+}
+
+impl Default for RouteMethod {
+	fn default() -> Self {
+		RouteMethod::Get
+	}
+}
+
+impl Parse for RouteArgs {
+	fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+		let path: LitStr = input.parse()?;
+		let mut method = RouteMethod::default();
+		let mut view = false;
+		let mut template = None;
+		while !input.is_empty() {
+			input.parse::<Token![,]>()?;
+			if input.is_empty() {
+				break;
+			}
+			let ident: syn::Ident = input.parse()?;
+			if ident == "view" {
+				view = true;
+				continue;
+			}
+			input.parse::<Token![=]>()?;
+			let val: LitStr = input.parse()?;
+			if ident == "method" {
+				method = match val.value().as_str() {
+					"GET" | "get" => RouteMethod::Get,
+					"POST" | "post" => RouteMethod::Post,
+					other => {
+						return Err(syn::Error::new_spanned(
+							val,
+							format!("unsupported route method {other:?}; use GET or POST"),
+						))
+					}
+				};
+			} else if ident == "template" {
+				view = true;
+				template = Some(val.value());
+			} else {
+				return Err(syn::Error::new_spanned(
+					ident,
+					"unsupported #[route] argument; only `method = \"GET\"|\"POST\"` is recognized",
+				));
+			}
+		}
+		Ok(RouteArgs {
+			path: path.value(),
+			method,
+			view,
+			template,
+		})
+	}
+}
+
+fn expand_route(args: RouteArgs, item_fn: ItemFn, handle_kind: &str) -> syn::Result<TokenStream2> {
+	if args.view && !matches!(args.method, RouteMethod::Get) {
+		return Err(syn::Error::new_spanned(
+			&item_fn.sig.ident,
+			"the `view` route option only supports GET handlers",
+		));
+	}
+	let fn_ident = item_fn.sig.ident.clone();
+	let fn_is_async = item_fn.sig.asyncness.is_some();
+	let return_type = match &item_fn.sig.output {
+		ReturnType::Default => quote! { () },
+		ReturnType::Type(_, ty) => quote! { #ty },
+	};
+
+	let (ctx_ident, state_type) = extract_ctx_arg(&item_fn.sig)?;
+	let path_param_names = path_param_names(&args.path);
+	let param_args = extract_param_args(&item_fn.sig, &path_param_names, &args.method)?;
+
+	let marker_ident = marker_ident(&fn_ident);
+	let route_const_ident = route_const_ident(&fn_ident, handle_kind);
+
+	let path_lit = &args.path;
+	let template_impl = if args.view {
+		let template_name = args
+			.template
+			.clone()
+			.unwrap_or_else(|| standard_route_template(&args.path));
+		let template_fn = format_ident!("__wgui_template_for_{}", fn_ident);
+		quote! {
+			fn #template_fn() -> &'static wgui::wui::runtime::Template {
+				static TEMPLATE: ::std::sync::OnceLock<wgui::wui::runtime::Template> = ::std::sync::OnceLock::new();
+				TEMPLATE.get_or_init(|| {
+					let source_path = ::std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/wui"))
+						.join(format!("{}.wui", #template_name));
+					let source = ::std::fs::read_to_string(&source_path).unwrap_or_else(|err| {
+						panic!("failed to read WUI template {}: {}", source_path.display(), err)
+					});
+					wgui::wui::runtime::Template::parse_with_dir(&source, #template_name, source_path.parent())
+						.unwrap_or_else(|diags| panic!("failed to parse WUI template {}: {:?}", #template_name, diags))
+				})
+			}
+		}
+	} else {
+		quote! {}
+	};
+	let template_method = if args.view {
+		let template_fn = format_ident!("__wgui_template_for_{}", fn_ident);
+		quote! {
+			fn wui_template(&self) -> ::std::option::Option<&'static wgui::wui::runtime::Template> {
+				::std::option::Option::Some(#template_fn())
+			}
+		}
+	} else {
+		quote! {}
+	};
+	let method_arm = match args.method {
+		RouteMethod::Get => quote! { wgui::wui::route_handler::HttpMethod::Get },
+		RouteMethod::Post => quote! { wgui::wui::route_handler::HttpMethod::Post },
+	};
+
+	// Bind path params by extracting from `PathParams` using their ident as
+	// the lookup key. Each extracted value is bound with the user's
+	// original ident so the call site reads naturally.
+	let param_bindings = param_args.iter().map(|arg| match arg {
+		RouteArg::Path { ident, ty } => {
+			let key = ident.to_string();
+			quote! {
+				let #ident: #ty = match params.get::<#ty>(#key) {
+					Some(Ok(v)) => v,
+					Some(Err(_)) | None => {
+						return Box::pin(async { wgui::wui::route_handler::RouteResult::NotFound });
+					}
+				};
+			}
+		}
+		RouteArg::Form { ident, ty } => quote! {
+			let #ident: #ty = match form.decode::<#ty>() {
+				Ok(value) => value,
+				Err(_) => return Box::pin(async { wgui::wui::route_handler::RouteResult::NotFound }),
+			};
+		},
+	});
+
+	let call_arg_idents = param_args.iter().map(|arg| {
+		let ident = arg.ident();
+		quote! { #ident }
+	});
+	let fn_call = if fn_is_async {
+		quote! { #fn_ident(#ctx_ident, #(#call_arg_idents),*).await }
+	} else {
+		quote! { #fn_ident(#ctx_ident, #(#call_arg_idents),*) }
+	};
+
+	let expanded = quote! {
+		#item_fn
+
+		#template_impl
+
+		#[allow(non_camel_case_types)]
+		#[derive(Clone, Copy)]
+		#[doc(hidden)]
+		pub(crate) struct #marker_ident;
+
+		impl wgui::wui::route_handler::RouteHandler for #marker_ident {
+			type State = #state_type;
+
+			fn path(&self) -> &str {
+				#path_lit
+			}
+
+			fn method(&self) -> wgui::wui::route_handler::HttpMethod {
+				#method_arm
+			}
+
+			#template_method
+
+			fn call(
+				self,
+				ctx: ::std::sync::Arc<wgui::wui::runtime::Ctx<#state_type>>,
+				params: wgui::wui::route_handler::PathParams,
+				form: wgui::wui::route_handler::RouteFormData,
+			) -> wgui::wui::route_handler::RouteFuture {
+				#(#param_bindings)*
+				Box::pin(async move {
+					let #ctx_ident = &*ctx;
+					let __result: #return_type = #fn_call;
+					wgui::wui::route_handler::RouteResult::from(__result)
+				})
+			}
+		}
+
+		#[allow(non_upper_case_globals)]
+		pub(crate) const #route_const_ident: #marker_ident = #marker_ident;
+	};
+
+	Ok(expanded)
+}
+
+/// Map a GET route to its conventional WUI template below `wui/pages`.
+/// Static collection routes use `index`; an identifier terminal uses `show`;
+/// and a static terminal after an identifier names the action page.
+fn standard_route_template(path: &str) -> String {
+	if path == "/*" {
+		return "pages/not_found".to_string();
+	}
+	let segments = path
+		.trim_matches('/')
+		.split('/')
+		.filter(|segment| !segment.is_empty())
+		.collect::<Vec<_>>();
+	if segments.is_empty() {
+		return "pages/index".to_string();
+	}
+	let last_param = segments
+		.last()
+		.is_some_and(|segment| segment.starts_with(':'));
+	let leaf = if last_param {
+		"show"
+	} else if segments.iter().any(|segment| segment.starts_with(':')) {
+		segments.last().copied().unwrap_or("index")
+	} else {
+		"index"
+	};
+	let directories = if last_param {
+		&segments[..segments.len().saturating_sub(1)]
+	} else if segments.iter().any(|segment| segment.starts_with(':')) {
+		&segments[..segments.len().saturating_sub(1)]
+	} else {
+		&segments[..]
+	};
+	let mut output = String::from("pages");
+	for segment in directories {
+		if !segment.starts_with(':') && *segment != "*" {
+			output.push('/');
+			output.push_str(segment);
+		}
+	}
+	output.push('/');
+	output.push_str(leaf);
+	output
+}
+
+type TokenStream2 = proc_macro2::TokenStream;
+
+/// Extract the `ctx: &Ctx<T>` first arg, returning the user's ident for `ctx`
+/// and the `T` (AppState type).
+fn extract_ctx_arg(sig: &Signature) -> syn::Result<(syn::Ident, Type)> {
+	let Some(FnArg::Typed(pat_ty)) = sig.inputs.first().cloned() else {
+		return Err(syn::Error::new_spanned(
+			&sig.ident,
+			"#[route] handler must take `ctx: &Ctx<T>` as its first argument",
+		));
+	};
+	let ctx_ident = match &*pat_ty.pat {
+		Pat::Ident(pat_ident) => pat_ident.ident.clone(),
+		other => {
+			return Err(syn::Error::new_spanned(
+				other,
+				"#[route] first argument must be a plain ident bound to the Ctx",
+			))
+		}
+	};
+	let state_type = match &*pat_ty.ty {
+		Type::Reference(r) => extract_ctx_generic(&r.elem)?,
+		other => {
+			return Err(syn::Error::new_spanned(
+				other,
+				"#[route] first argument must be `&Ctx<T>` — got a non-reference type",
+			))
+		}
+	};
+	Ok((ctx_ident, state_type))
+}
+
+/// Given a `Type::Path` for `Ctx<...>`, return the inner generic arg.
+fn extract_ctx_generic(ty: &Type) -> syn::Result<Type> {
+	let Type::Path(type_path) = ty else {
+		return Err(syn::Error::new_spanned(
+			ty,
+			"#[route] ctx argument is not a path type; expected `Ctx<T>`",
+		));
+	};
+	let last_seg = type_path.path.segments.last().ok_or_else(|| {
+		syn::Error::new_spanned(ty, "#[route] ctx argument path is empty; expected `Ctx<T>`")
+	})?;
+	if last_seg.ident != "Ctx" {
+		return Err(syn::Error::new_spanned(
+			&last_seg.ident,
+			"#[route] first argument must be `Ctx<T>`; got another type",
+		));
+	}
+	let syn::PathArguments::AngleBracketed(args) = &last_seg.arguments else {
+		return Err(syn::Error::new_spanned(
+			&last_seg.ident,
+			"#[route] ctx must be parameterized: `Ctx<T>`",
+		));
+	};
+	let first_arg = args.args.first().ok_or_else(|| {
+		syn::Error::new_spanned(
+			&last_seg.ident,
+			"#[route] Ctx<T> missing its type parameter",
+		)
+	})?;
+	let syn::GenericArgument::Type(t) = first_arg else {
+		return Err(syn::Error::new_spanned(
+			first_arg,
+			"#[route] first generic argument of Ctx<T> must be a type",
+		));
+	};
+	Ok(t.clone())
+}
+
+enum RouteArg {
+	Path { ident: syn::Ident, ty: Type },
+	Form { ident: syn::Ident, ty: Type },
+}
+
+impl RouteArg {
+	fn ident(&self) -> &syn::Ident {
+		match self {
+			Self::Path { ident, .. } | Self::Form { ident, .. } => ident,
+		}
+	}
+}
+
+/// Extract every non-`ctx` argument. Arguments whose names match a `:name`
+/// path segment are decoded from `PathParams`; one remaining argument on a
+/// POST route is decoded from the URL-encoded request body.
+fn extract_param_args(
+	sig: &Signature,
+	path_param_names: &[String],
+	method: &RouteMethod,
+) -> syn::Result<Vec<RouteArg>> {
+	let mut out = Vec::new();
+	let mut has_form = false;
+	for arg in sig.inputs.iter().skip(1) {
+		let FnArg::Typed(pat_ty) = arg else {
+			return Err(syn::Error::new_spanned(
+				arg,
+				"#[route] non-ctx args must be typed params (e.g. `id: u32`)",
+			));
+		};
+		let ident = match &*pat_ty.pat {
+			Pat::Ident(pat_ident) => pat_ident.ident.clone(),
+			other => {
+				return Err(syn::Error::new_spanned(
+					other,
+					"#[route] handler args must be plain ident bindings",
+				))
+			}
+		};
+		let ty = (*pat_ty.ty).clone();
+		if path_param_names
+			.iter()
+			.any(|name| name == &ident.to_string())
+		{
+			out.push(RouteArg::Path { ident, ty });
+		} else {
+			if !matches!(method, RouteMethod::Post) {
+				return Err(syn::Error::new_spanned(
+					ident,
+					"only POST #[route] handlers may take a form argument",
+				));
+			}
+			if has_form {
+				return Err(syn::Error::new_spanned(
+					ident,
+					"a #[route] handler may take at most one form argument",
+				));
+			}
+			has_form = true;
+			out.push(RouteArg::Form { ident, ty });
+		}
+	}
+	Ok(out)
+}
+
+fn path_param_names(path: &str) -> Vec<String> {
+	path.split('/')
+		.filter_map(|segment| segment.strip_prefix(':'))
+		.filter(|name| !name.is_empty())
+		.map(str::to_string)
+		.collect()
+}
+
+/// `action_toggle` -> `__ActionToggleRoute`
+fn marker_ident(fn_ident: &syn::Ident) -> syn::Ident {
+	let pascal = to_pascal_case(&fn_ident.to_string());
+	format_ident!("__{pascal}Route")
+}
+
+/// `action_toggle` -> `action_toggle_route`
+fn route_const_ident(fn_ident: &syn::Ident, handle_kind: &str) -> syn::Ident {
+	format_ident!("{}_{}", fn_ident, handle_kind)
+}
+
+fn to_pascal_case(input: &str) -> String {
+	let mut out = String::new();
+	let mut cap = true;
+	for ch in input.chars() {
+		if ch == '_' {
+			cap = true;
+			continue;
+		}
+		if cap {
+			for upper in ch.to_uppercase() {
+				out.push(upper);
+			}
+			cap = false;
 		} else {
 			out.push(ch);
 		}

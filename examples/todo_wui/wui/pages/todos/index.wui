@@ -1,12 +1,12 @@
 <VStack spacing=8 padding=8>
-	<Text value="Todo List" />
+	<Text value={state.title} />
 	<Form action="create" spacing=4>
 		<HStack spacing=4>
-		<TextInput
-			name="name"
-			placeholder="What needs to be done?"
-		/>
-		<Button text="Add" />
+			<TextInput
+				name="name"
+				placeholder="What needs to be done?"
+			/>
+			<Button text="Add" />
 		</HStack>
 	</Form>
 	<VStack spacing=4>

@@ -34,8 +34,12 @@ pub mod ws;
 pub mod wui;
 
 pub use pubsub::PubSub;
+pub use wui::route_handler::{
+	DynRouteHandler, FromParam, HttpMethod, ParamError, PathParams, Redirect, RouteFormData,
+	RouteFuture, RouteHandler, RouteResult, RuntimeContext, View,
+};
 pub use wui::runtime::{WdbModel, WdbSchema, WguiModel};
-pub use wui_derive::{wgui_controller, Wdb, WguiModel};
+pub use wui_derive::{partial, route, view, wgui_controller, Wdb, WguiModel};
 
 use crate::ui_client::UiWsWorker;
 use crate::wui::routing::{best_route_index, RoutePattern};
@@ -66,6 +70,34 @@ pub use ws::{next_client_id, WsMessage, WsStream};
 pub(crate) type Sessions = Arc<RwLock<HashMap<usize, Option<String>>>>;
 pub(crate) type SsrHydrationRoots = Arc<RwLock<HashMap<String, SsrHydrationRoot>>>;
 type BoxedController = Box<dyn crate::wui::runtime::WuiController + Send>;
+pub(crate) type SharedRouteHandler = Arc<dyn crate::wui::route_handler::DynRouteHandler>;
+pub(crate) type SharedContexts =
+	Arc<std::sync::RwLock<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>>;
+type SharedRoutes = Arc<std::sync::RwLock<Vec<RouteEntry>>>;
+
+struct RouteEntry {
+	pattern: RoutePattern,
+	handler: SharedRouteHandler,
+	state_type_id: TypeId,
+}
+
+/// Result of matching a path against registered `#[route]` handlers.
+struct RouteMatchResult {
+	index: usize,
+	params: crate::wui::route_handler::PathParams,
+}
+
+struct ClientSession {
+	current_route: RouteContext,
+	page_tree: Item,
+	partials: HashMap<String, PartialCache>,
+}
+
+struct PartialCache {
+	params: PathParams,
+	tree: Item,
+	last_acked_version: u64,
+}
 type ControllerFuture = Pin<Box<dyn Future<Output = BoxedController> + Send>>;
 type ControllerFactory = Arc<dyn Fn() -> ControllerFuture + Send + Sync>;
 type ControllerProcessFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
@@ -220,6 +252,62 @@ fn collect_rendered_custom_components(item: &Item, out: &mut Vec<RenderedCustomC
 	}
 }
 
+fn collect_partial_regions(item: &Item, regions: &mut Vec<(String, Item)>) {
+	if !item.partial_addr.is_empty() {
+		regions.push((item.partial_addr.clone(), item.clone()));
+	}
+	match &item.payload {
+		ItemPayload::Layout(layout) => {
+			for child in &layout.body {
+				collect_partial_regions(child, regions);
+			}
+		}
+		ItemPayload::Form { body, .. }
+		| ItemPayload::Table { items: body }
+		| ItemPayload::Tbody { items: body }
+		| ItemPayload::Thead { items: body }
+		| ItemPayload::Tr { items: body }
+		| ItemPayload::Modal { body, .. }
+		| ItemPayload::ConnectionStatus { body, .. } => {
+			for child in body {
+				collect_partial_regions(child, regions);
+			}
+		}
+		ItemPayload::Th { item } | ItemPayload::Td { item } => {
+			collect_partial_regions(item, regions);
+		}
+		_ => {}
+	}
+}
+
+fn replace_partial_region(item: &mut Item, addr: &str, replacement: &Item) -> bool {
+	if item.partial_addr == addr {
+		let mut replacement = replacement.clone();
+		replacement.partial_addr = addr.to_string();
+		*item = replacement;
+		return true;
+	}
+	match &mut item.payload {
+		ItemPayload::Layout(layout) => layout
+			.body
+			.iter_mut()
+			.any(|child| replace_partial_region(child, addr, replacement)),
+		ItemPayload::Form { body, .. }
+		| ItemPayload::Table { items: body }
+		| ItemPayload::Tbody { items: body }
+		| ItemPayload::Thead { items: body }
+		| ItemPayload::Tr { items: body }
+		| ItemPayload::Modal { body, .. }
+		| ItemPayload::ConnectionStatus { body, .. } => body
+			.iter_mut()
+			.any(|child| replace_partial_region(child, addr, replacement)),
+		ItemPayload::Th { item } | ItemPayload::Td { item } => {
+			replace_partial_region(item, addr, replacement)
+		}
+		_ => false,
+	}
+}
+
 #[derive(Clone)]
 pub struct CustomComponentCtx {
 	handle: WguiHandle,
@@ -350,6 +438,14 @@ fn component_route_context(path: &str, query: &HashMap<String, String>) -> Route
 		params: HashMap::new(),
 		query: query.clone(),
 	}
+}
+
+fn route_target(url: &str) -> (String, HashMap<String, String>) {
+	let (path, query) = url.split_once('?').unwrap_or((url, ""));
+	let query = form_urlencoded::parse(query.as_bytes())
+		.into_owned()
+		.collect::<HashMap<_, _>>();
+	(path.to_string(), query)
 }
 
 #[derive(Clone)]
@@ -723,8 +819,10 @@ pub struct Wgui<DB = ()> {
 	mounted_custom_components: HashMap<CustomComponentKey, MountedCustomComponent>,
 	ssr_components: SsrComponentFactories,
 	ssr_pages: SsrPageFactories,
+	routes: SharedRoutes,
+	partials: SharedRoutes,
 	db: Arc<DB>,
-	contexts: HashMap<TypeId, Arc<dyn Any + Send + Sync>>,
+	contexts: SharedContexts,
 	#[cfg(feature = "hyper")]
 	http_handler: server::SharedHttpHandler,
 	#[cfg(feature = "hyper")]
@@ -750,6 +848,9 @@ impl Wgui<()> {
 		let app_css = Arc::new(std::sync::RwLock::new(None));
 		let static_mounts = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let ssr_hydration_roots = Arc::new(RwLock::new(HashMap::new()));
+		let routes: SharedRoutes = Arc::new(std::sync::RwLock::new(Vec::new()));
+		let partials: SharedRoutes = Arc::new(std::sync::RwLock::new(Vec::new()));
+		let contexts: SharedContexts = Arc::new(std::sync::RwLock::new(HashMap::new()));
 
 		{
 			let clients = clients.clone();
@@ -762,8 +863,65 @@ impl Wgui<()> {
 			let app_css = app_css.clone();
 			let static_mounts = static_mounts.clone();
 			let ssr_hydration_roots = ssr_hydration_roots.clone();
+			let routes = routes.clone();
+			let contexts = contexts.clone();
 			let ssr: Option<SsrRenderer> = Some(Arc::new(
 				move |route: RouteContext, session: Option<String>| {
+					if let Some((handler, state_type_id, params)) = {
+						let routes = routes.read().unwrap();
+						let mut best: Option<(
+							SharedRouteHandler,
+							TypeId,
+							PathParams,
+							crate::wui::routing::RouteScore,
+						)> = None;
+						for entry in routes.iter() {
+							if entry.handler.method() != HttpMethod::Get {
+								continue;
+							}
+							if let Some(matched) = entry.pattern.match_path(&route.path) {
+								if best
+									.as_ref()
+									.map(|(_, _, _, score)| matched.score > *score)
+									.unwrap_or(true)
+								{
+									best = Some((
+										entry.handler.clone(),
+										entry.state_type_id,
+										PathParams(matched.params),
+										matched.score,
+									));
+								}
+							}
+						}
+						best.map(|(handler, state_type_id, params, _)| {
+							(handler, state_type_id, params)
+						})
+					} {
+						let ctx_any = contexts.read().unwrap().get(&state_type_id).cloned()?;
+						let result = tokio::task::block_in_place(|| {
+							tokio::runtime::Handle::current().block_on(handler.call_dyn(
+								ctx_any,
+								params,
+								crate::wui::route_handler::RouteFormData::default(),
+								RuntimeContext {
+									client_id: None,
+									session: session.clone(),
+									route: Some(route.clone()),
+								},
+							))
+						});
+						return match result {
+							RouteResult::View(view) => Some(SsrResponse::Render {
+								item: view.item,
+								title: view.title,
+							}),
+							RouteResult::Redirect(redirect) => {
+								Some(SsrResponse::Redirect(redirect.0))
+							}
+							RouteResult::NotFound => None,
+						};
+					}
 					if let Some((factory, route)) = {
 						let pages = ssr_pages.read().unwrap();
 						let index = best_route_index(&pages, &route.path, |(pattern, _)| pattern)?;
@@ -846,8 +1004,10 @@ impl Wgui<()> {
 			mounted_custom_components: HashMap::new(),
 			ssr_components,
 			ssr_pages,
+			routes,
+			partials,
 			db: Arc::new(()),
-			contexts: HashMap::new(),
+			contexts,
 			http_handler,
 			http_routes,
 			app_css,
@@ -871,6 +1031,9 @@ impl Wgui<()> {
 		let app_css = Arc::new(std::sync::RwLock::new(None));
 		let static_mounts = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let ssr_hydration_roots = Arc::new(RwLock::new(HashMap::new()));
+		let routes: SharedRoutes = Arc::new(std::sync::RwLock::new(Vec::new()));
+		let partials: SharedRoutes = Arc::new(std::sync::RwLock::new(Vec::new()));
+		let contexts: SharedContexts = Arc::new(std::sync::RwLock::new(HashMap::new()));
 
 		{
 			let clients = clients.clone();
@@ -917,8 +1080,10 @@ impl Wgui<()> {
 			mounted_custom_components: HashMap::new(),
 			ssr_components,
 			ssr_pages,
+			routes,
+			partials,
 			db: Arc::new(()),
-			contexts: HashMap::new(),
+			contexts,
 			http_handler,
 			http_routes,
 			app_css,
@@ -933,6 +1098,9 @@ impl Wgui<()> {
 		let sessions: Sessions = Arc::new(RwLock::new(HashMap::new()));
 		let ssr_components: SsrComponentFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
 		let ssr_pages: SsrPageFactories = Arc::new(std::sync::RwLock::new(Vec::new()));
+		let routes: SharedRoutes = Arc::new(std::sync::RwLock::new(Vec::new()));
+		let partials: SharedRoutes = Arc::new(std::sync::RwLock::new(Vec::new()));
+		let contexts: SharedContexts = Arc::new(std::sync::RwLock::new(HashMap::new()));
 		#[cfg(feature = "hyper")]
 		let http_handler = Arc::new(std::sync::RwLock::new(None));
 		#[cfg(feature = "hyper")]
@@ -953,8 +1121,10 @@ impl Wgui<()> {
 			mounted_custom_components: HashMap::new(),
 			ssr_components,
 			ssr_pages,
+			routes,
+			partials,
 			db: Arc::new(()),
-			contexts: HashMap::new(),
+			contexts,
 			#[cfg(feature = "hyper")]
 			http_handler,
 			#[cfg(feature = "hyper")]
@@ -986,8 +1156,10 @@ where
 			mounted_custom_components: self.mounted_custom_components,
 			ssr_components: self.ssr_components,
 			ssr_pages: self.ssr_pages,
+			routes: self.routes,
+			partials: self.partials,
 			db: Arc::new(db),
-			contexts: HashMap::new(),
+			contexts: Arc::new(std::sync::RwLock::new(HashMap::new())),
 			#[cfg(feature = "hyper")]
 			http_handler: self.http_handler,
 			#[cfg(feature = "hyper")]
@@ -1288,9 +1460,16 @@ where
 	{
 		let mut command_rx = ctx.take_command_rx();
 		let handle = self.handle();
+		let event_tx = handle.event_tx.clone();
 		tokio::spawn(async move {
 			while let Some(command) = command_rx.recv().await {
 				match command {
+					crate::wui::runtime::RuntimeCommand::RenderPartial { topic } => {
+						let _ = event_tx.send(ClientMessage {
+							client_id: 0,
+							event: ClientEvent::RenderPartial { topic },
+						});
+					}
 					crate::wui::runtime::RuntimeCommand::Refresh { client_id } => {
 						handle.refresh(client_id);
 					}
@@ -1325,7 +1504,10 @@ where
 		});
 
 		let erased: Arc<dyn Any + Send + Sync> = ctx;
-		self.contexts.insert(TypeId::of::<T>(), erased);
+		self.contexts
+			.write()
+			.unwrap()
+			.insert(TypeId::of::<T>(), erased);
 	}
 
 	pub fn set_ctx_state<T>(&mut self, state: T)
@@ -1394,6 +1576,8 @@ where
 	{
 		let Some(ctx_any) = self
 			.contexts
+			.read()
+			.unwrap()
 			.get(&TypeId::of::<<C as crate::wui::runtime::Component>::Context>())
 			.cloned()
 		else {
@@ -1466,6 +1650,308 @@ where
 			factory,
 			process_factory,
 		));
+	}
+
+	/// Register a `#[route]`-generated handler.
+	///
+	/// `handler` is the `*_route` const produced by the `#[route]` macro
+	/// (e.g. `page_index_route`, `action_toggle_route`). The macro emits a
+	/// zero-sized marker struct implementing [`RouteHandler`]; passing the
+	/// const to `add_route` stores the marker in the route registry.
+	///
+	/// Routes are matched by specificity (`best_route_index`), not
+	/// registration order, so `/*` fallback routes lose to every more
+	/// specific pattern.
+	///
+	/// [`RouteHandler`]: crate::wui::route_handler::RouteHandler
+	pub fn add_route<H>(&mut self, handler: H)
+	where
+		H: crate::wui::route_handler::DynRouteHandler,
+	{
+		let handler: SharedRouteHandler = Arc::new(handler);
+		let pattern = RoutePattern::parse(handler.path());
+		let state_type_id = handler.state_type_id();
+		let method = handler.method();
+		let path_str = handler.path().to_string();
+
+		// For POST handlers, also register with the HTTP server so real
+		// form submissions reach them. GET handlers are dispatched via the
+		// WS PathChanged/Refresh event loop instead — they don't need an
+		// HTTP route entry.
+		if method == crate::wui::route_handler::HttpMethod::Post {
+			#[cfg(feature = "hyper")]
+			{
+				let contexts = self.contexts.clone();
+				let handler_arc = handler.clone();
+				let handler_path = handler_arc.path().to_string();
+				let handler_method = method.as_str().to_string();
+				let http_handler: server::HttpRouteHandler =
+					Arc::new(move |request: HttpRequest, http_ctx: HttpCtx| {
+						let handler_arc = handler_arc.clone();
+						let contexts = contexts.clone();
+						let path_str = path_str.clone();
+						Box::pin(async move {
+							let state_type_id = handler_arc.state_type_id();
+							let ctx_any = contexts
+								.read()
+								.unwrap()
+								.get(&state_type_id)
+								.cloned()
+								.expect("missing Ctx<T> for #[route] POST handler");
+							let params_map = RoutePattern::parse(&path_str)
+								.match_path(&http_ctx.path)
+								.map(|m| m.params)
+								.unwrap_or_default();
+							let route = RouteContext {
+								path: http_ctx.path.clone(),
+								params: params_map.clone(),
+								query: http_ctx.query.clone(),
+							};
+							let runtime = crate::wui::route_handler::RuntimeContext {
+								client_id: None,
+								session: http_ctx.session.clone(),
+								route: Some(route),
+							};
+							let params = crate::wui::route_handler::PathParams(params_map);
+							let form = crate::wui::route_handler::RouteFormData::from_urlencoded(
+								&request.body,
+							);
+							let result = handler_arc.call_dyn(ctx_any, params, form, runtime).await;
+							match result {
+								crate::wui::route_handler::RouteResult::Redirect(redirect) => {
+									if redirect.0.is_empty() {
+										Self::redirect_http_response(http_ctx.path.clone())
+									} else {
+										Self::redirect_http_response(redirect.0)
+									}
+								}
+								crate::wui::route_handler::RouteResult::View(view) => {
+									let body = serde_json::to_vec(&view.item)
+										.unwrap_or_else(|_| b"{}".to_vec());
+									HttpResponse::new(200, body)
+										.header("content-type", "application/json")
+								}
+								crate::wui::route_handler::RouteResult::NotFound => {
+									HttpResponse::new(404, "not found")
+								}
+							}
+						})
+					});
+				self.http_routes.write().unwrap().push(server::HttpRoute {
+					method: handler_method,
+					pattern: RoutePattern::parse(&handler_path),
+					handler: http_handler,
+				});
+			}
+			#[cfg(not(feature = "hyper"))]
+			{
+				let _ = (method, path_str);
+			}
+		}
+
+		self.routes.write().unwrap().push(RouteEntry {
+			pattern,
+			handler,
+			state_type_id,
+		});
+	}
+
+	/// Register a `#[partial]`-generated handler.
+	///
+	/// A partial is rendered only for clients whose current route contains a
+	/// matching [`partial_region`] marker. Use `Ctx::render` with its concrete
+	/// address to re-run it and send a normal VDOM diff.
+	pub fn add_partial<H>(&mut self, handler: H)
+	where
+		H: crate::wui::route_handler::DynRouteHandler,
+	{
+		let handler: SharedRouteHandler = Arc::new(handler);
+		if handler.method() != HttpMethod::Get {
+			panic!("#[partial] handlers must use GET semantics");
+		}
+		self.partials.write().unwrap().push(RouteEntry {
+			pattern: RoutePattern::parse(handler.path()),
+			state_type_id: handler.state_type_id(),
+			handler,
+		});
+	}
+
+	/// Find the best matching `#[route]` handler for `path` with the given
+	/// HTTP method. Returns the index, extracted path params, and the
+	/// `state_type_id` key for looking up the `Ctx<T>` in `self.contexts`.
+	fn match_route(
+		&self,
+		path: &str,
+		method: crate::wui::route_handler::HttpMethod,
+	) -> Option<RouteMatchResult> {
+		let mut best_index: Option<usize> = None;
+		let mut best_score = crate::wui::routing::RouteScore {
+			static_segments: 0,
+			total_segments: 0,
+			dynamic_segments: 0,
+			exact: false,
+		};
+		let mut best_params: Option<HashMap<String, String>> = None;
+		let routes = self.routes.read().unwrap();
+		for (index, entry) in routes.iter().enumerate() {
+			if entry.handler.method() != method {
+				continue;
+			}
+			if let Some(matched) = entry.pattern.match_path(path) {
+				if best_index.is_none() || matched.score > best_score {
+					best_index = Some(index);
+					best_score = matched.score;
+					best_params = Some(matched.params);
+				}
+			}
+		}
+		best_index.map(|index| RouteMatchResult {
+			index,
+			params: crate::wui::route_handler::PathParams(best_params.unwrap_or_default()),
+		})
+	}
+
+	fn match_partial(&self, path: &str) -> Option<RouteMatchResult> {
+		let mut best_index: Option<usize> = None;
+		let mut best_score = crate::wui::routing::RouteScore {
+			static_segments: 0,
+			total_segments: 0,
+			dynamic_segments: 0,
+			exact: false,
+		};
+		let mut best_params: Option<HashMap<String, String>> = None;
+		let partials = self.partials.read().unwrap();
+		for (index, entry) in partials.iter().enumerate() {
+			if let Some(matched) = entry.pattern.match_path(path) {
+				if best_index.is_none() || matched.score > best_score {
+					best_index = Some(index);
+					best_score = matched.score;
+					best_params = Some(matched.params);
+				}
+			}
+		}
+		best_index.map(|index| RouteMatchResult {
+			index,
+			params: PathParams(best_params.unwrap_or_default()),
+		})
+	}
+
+	async fn dispatch_route(
+		&self,
+		route_match: RouteMatchResult,
+		form: crate::wui::route_handler::RouteFormData,
+		client_id: Option<usize>,
+		session: Option<String>,
+		route: RouteContext,
+	) -> crate::wui::route_handler::RouteResult {
+		let (handler, state_type_id) = {
+			let routes = self.routes.read().unwrap();
+			let entry = &routes[route_match.index];
+			(entry.handler.clone(), entry.state_type_id)
+		};
+		let ctx_any = self
+			.contexts
+			.read()
+			.unwrap()
+			.get(&state_type_id)
+			.cloned()
+			.expect("missing Ctx<T> for #[route] handler; call wgui.set_ctx(...) first");
+		handler
+			.call_dyn(
+				ctx_any,
+				route_match.params,
+				form,
+				crate::wui::route_handler::RuntimeContext {
+					client_id,
+					session,
+					route: Some(route),
+				},
+			)
+			.await
+	}
+
+	async fn dispatch_partial(
+		&self,
+		route_match: RouteMatchResult,
+		client_id: usize,
+		session: Option<String>,
+		route: RouteContext,
+	) -> RouteResult {
+		let (handler, state_type_id) = {
+			let partials = self.partials.read().unwrap();
+			let entry = &partials[route_match.index];
+			(entry.handler.clone(), entry.state_type_id)
+		};
+		let ctx_any = self
+			.contexts
+			.read()
+			.unwrap()
+			.get(&state_type_id)
+			.cloned()
+			.expect("missing Ctx<T> for #[partial] handler; call wgui.set_ctx(...) first");
+		let partial_addr = route.path.clone();
+		let mut result = handler
+			.call_dyn(
+				ctx_any,
+				route_match.params,
+				RouteFormData::default(),
+				RuntimeContext {
+					client_id: Some(client_id),
+					session,
+					route: Some(route),
+				},
+			)
+			.await;
+		if let RouteResult::View(view) = &mut result {
+			if view.partial_addr.is_none() {
+				view.partial_addr = Some(partial_addr);
+			}
+		}
+		result
+	}
+
+	async fn render_route_view(
+		&mut self,
+		client_id: usize,
+		view: crate::wui::route_handler::View,
+		custom_component_entries: &CustomComponentEntries,
+	) {
+		if let Some(title) = &view.title {
+			self.handle.set_title(client_id, title).await;
+		}
+		let mut rendered = view.item.clone();
+		resolve_custom_component_entries(&mut rendered, custom_component_entries);
+		self.handle.render(client_id, rendered).await;
+		self.sync_custom_components(client_id, &view.item).await;
+		for page in self.pages.iter_mut() {
+			page.unmount(client_id);
+		}
+		for component in self.components.iter_mut() {
+			component.unmount(client_id);
+		}
+	}
+
+	fn client_session_for_route(&self, route: RouteContext, page_tree: Item) -> ClientSession {
+		let mut partials = HashMap::new();
+		let mut regions = Vec::new();
+		collect_partial_regions(&page_tree, &mut regions);
+		for (addr, tree) in regions {
+			if let Some(route_match) = self.match_partial(&addr) {
+				partials.insert(
+					addr,
+					PartialCache {
+						params: route_match.params,
+						tree,
+						last_acked_version: 0,
+					},
+				);
+			}
+		}
+		ClientSession {
+			current_route: route,
+			page_tree,
+			partials,
+		}
 	}
 
 	pub fn add_page_with<C, F, Fut>(&mut self, route: &str, controller: F)
@@ -1564,6 +2050,8 @@ where
 	{
 		let Some(ctx_any) = self
 			.contexts
+			.read()
+			.unwrap()
 			.get(&TypeId::of::<<C as crate::wui::runtime::Component>::Context>())
 			.cloned()
 		else {
@@ -1636,6 +2124,7 @@ where
 	pub async fn run(&mut self) {
 		let handle = self.handle();
 		let mut routes: HashMap<usize, RouteContext> = HashMap::new();
+		let mut client_sessions: HashMap<usize, ClientSession> = HashMap::new();
 		let mut selected_pages: HashMap<usize, Option<usize>> = HashMap::new();
 		let mut rtc_rooms: HashMap<String, BTreeSet<usize>> = HashMap::new();
 		let mut rtc_client_rooms: HashMap<usize, BTreeSet<String>> = HashMap::new();
@@ -1649,6 +2138,7 @@ where
 				ClientEvent::Disconnected { id: _ } => {
 					selected_pages.remove(&client_id);
 					routes.remove(&client_id);
+					client_sessions.remove(&client_id);
 					if let Some(rooms) = rtc_client_rooms.remove(&client_id) {
 						for room in rooms {
 							let mut room_peers = Vec::new();
@@ -1850,6 +2340,174 @@ where
 							.await;
 					}
 				}
+				ClientEvent::RenderPartial { topic } => {
+					let targets = client_sessions
+						.iter()
+						.filter_map(|(client_id, session)| {
+							session.partials.get(topic).map(|cache| {
+								(
+									*client_id,
+									session.current_route.clone(),
+									cache.params.clone(),
+								)
+							})
+						})
+						.collect::<Vec<_>>();
+					for (target_client_id, parent_route, params) in targets {
+						let Some(partial_match) = self.match_partial(topic) else {
+							continue;
+						};
+						let session = handle.session_for_client(target_client_id).await;
+						let result = self
+							.dispatch_partial(
+								partial_match,
+								target_client_id,
+								session,
+								RouteContext {
+									path: topic.clone(),
+									params: params.0,
+									query: parent_route.query,
+								},
+							)
+							.await;
+						let RouteResult::View(view) = result else {
+							continue;
+						};
+						let Some(client_session) = client_sessions.get_mut(&target_client_id)
+						else {
+							continue;
+						};
+						if !replace_partial_region(&mut client_session.page_tree, topic, &view.item)
+						{
+							continue;
+						}
+						if let Some(cache) = client_session.partials.get_mut(topic) {
+							cache.tree = view.item;
+							cache.last_acked_version += 1;
+						}
+						let mut rendered = client_session.page_tree.clone();
+						resolve_custom_component_entries(&mut rendered, &custom_component_entries);
+						handle.render(target_client_id, rendered).await;
+						self.sync_custom_components(target_client_id, &client_session.page_tree)
+							.await;
+					}
+				}
+				ClientEvent::FormSubmit(submit) => {
+					let session = handle.session_for_client(client_id).await;
+					let Some(route_match) =
+						self.match_route(&submit.path, crate::wui::route_handler::HttpMethod::Post)
+					else {
+						continue;
+					};
+					let action_route = RouteContext {
+						path: submit.path.clone(),
+						params: route_match.params.0.clone(),
+						query: submit.query.clone(),
+					};
+					let result = self
+						.dispatch_route(
+							route_match,
+							crate::wui::route_handler::RouteFormData::from_fields(
+								submit.fields.clone(),
+							),
+							Some(client_id),
+							session.clone(),
+							action_route,
+						)
+						.await;
+					match result {
+						crate::wui::route_handler::RouteResult::View(view) => {
+							self.render_route_view(client_id, view, &custom_component_entries)
+								.await;
+						}
+						crate::wui::route_handler::RouteResult::Redirect(redirect) => {
+							let current_route = routes.get(&client_id).cloned();
+							let target = if redirect.0.is_empty() {
+								current_route.unwrap_or_else(|| {
+									component_route_context("/", &HashMap::new())
+								})
+							} else {
+								let (path, query) = route_target(&redirect.0);
+								let Some(target_match) = self
+									.match_route(&path, crate::wui::route_handler::HttpMethod::Get)
+								else {
+									handle.navigate(client_id, &redirect.0).await;
+									continue;
+								};
+								let target_route = RouteContext {
+									path: path.clone(),
+									params: target_match.params.0.clone(),
+									query,
+								};
+								let rendered = self
+									.dispatch_route(
+										target_match,
+										crate::wui::route_handler::RouteFormData::default(),
+										Some(client_id),
+										session.clone(),
+										target_route.clone(),
+									)
+									.await;
+								if let crate::wui::route_handler::RouteResult::View(view) = rendered
+								{
+									if current_route.as_ref() != Some(&target_route) {
+										handle.push_state(client_id, &redirect.0).await;
+									}
+									routes.insert(client_id, target_route.clone());
+									selected_pages.insert(client_id, None);
+									client_sessions.insert(
+										client_id,
+										self.client_session_for_route(
+											target_route,
+											view.item.clone(),
+										),
+									);
+									self.render_route_view(
+										client_id,
+										view,
+										&custom_component_entries,
+									)
+									.await;
+								}
+								continue;
+							};
+							if let Some(target_match) = self.match_route(
+								&target.path,
+								crate::wui::route_handler::HttpMethod::Get,
+							) {
+								let target = RouteContext {
+									path: target.path.clone(),
+									params: target_match.params.0.clone(),
+									query: target.query.clone(),
+								};
+								if let crate::wui::route_handler::RouteResult::View(view) = self
+									.dispatch_route(
+										target_match,
+										crate::wui::route_handler::RouteFormData::default(),
+										Some(client_id),
+										session,
+										target.clone(),
+									)
+									.await
+								{
+									routes.insert(client_id, target.clone());
+									selected_pages.insert(client_id, None);
+									client_sessions.insert(
+										client_id,
+										self.client_session_for_route(target, view.item.clone()),
+									);
+									self.render_route_view(
+										client_id,
+										view,
+										&custom_component_entries,
+									)
+									.await;
+								}
+							}
+						}
+						crate::wui::route_handler::RouteResult::NotFound => {}
+					}
+				}
 				ClientEvent::PathChanged(change) => {
 					let session = handle.session_for_client(client_id).await;
 					let mut initial_root = change.initial_root.clone();
@@ -1866,6 +2524,77 @@ where
 							}
 						}
 					}
+
+					// ── #[route] handler dispatch (GET pages) ──────────────
+					// Check new-style free-fn routes before the legacy
+					// `add_page` registry. If a matching GET handler is
+					// found, run it and render/diff directly — no
+					// WuiController mount, no process() lifecycle.
+					if let Some(route_match) =
+						self.match_route(&change.path, crate::wui::route_handler::HttpMethod::Get)
+					{
+						let active_route = RouteContext {
+							path: change.path.clone(),
+							params: route_match.params.0.clone(),
+							query: change.query.clone(),
+						};
+						routes.insert(client_id, active_route.clone());
+						let result = self
+							.dispatch_route(
+								route_match,
+								crate::wui::route_handler::RouteFormData::default(),
+								Some(client_id),
+								session.clone(),
+								active_route.clone(),
+							)
+							.await;
+						match result {
+							crate::wui::route_handler::RouteResult::View(view) => {
+								client_sessions.insert(
+									client_id,
+									self.client_session_for_route(
+										active_route.clone(),
+										view.item.clone(),
+									),
+								);
+								if let Some(title) = &view.title {
+									if hydrated_title.as_deref() != Some(title.as_str()) {
+										handle.set_title(client_id, title).await;
+									}
+								}
+								let mut rendered = view.item.clone();
+								resolve_custom_component_entries(
+									&mut rendered,
+									&custom_component_entries,
+								);
+								if let Some(root) = initial_root.clone() {
+									handle.hydrate_root(client_id, root).await;
+									handle.render(client_id, rendered).await;
+								} else {
+									handle.render(client_id, rendered).await;
+								}
+								self.sync_custom_components(client_id, &view.item).await;
+								for page in self.pages.iter_mut() {
+									page.unmount(client_id);
+								}
+								for component in self.components.iter_mut() {
+									component.unmount(client_id);
+								}
+								selected_pages.insert(client_id, None);
+								continue;
+							}
+							crate::wui::route_handler::RouteResult::Redirect(redirect) => {
+								if !redirect.0.is_empty() {
+									handle.push_state(client_id, &redirect.0).await;
+								}
+								continue;
+							}
+							crate::wui::route_handler::RouteResult::NotFound => {
+								// Fall through to legacy pages below
+							}
+						}
+					}
+
 					let selected_page =
 						best_route_index(&self.pages, &change.path, |page| &page.pattern);
 					let selected_page_changed =
@@ -2061,6 +2790,43 @@ where
 							);
 							handle.render(client_id, rendered).await;
 							rendered_custom_sync = Some(item);
+						}
+					}
+
+					// ── #[route] re-render on refresh ─────────────────
+					// If no legacy page/component handled the refresh, check
+					// whether the client's current route matches a
+					// #[route] GET handler and re-render it.
+					if rendered_custom_sync.is_none() {
+						if let Some(route_match) = self
+							.match_route(&route.path, crate::wui::route_handler::HttpMethod::Get)
+						{
+							let active_route = RouteContext {
+								path: route.path.clone(),
+								params: route_match.params.0.clone(),
+								query: route.query.clone(),
+							};
+							let result = self
+								.dispatch_route(
+									route_match,
+									crate::wui::route_handler::RouteFormData::default(),
+									Some(client_id),
+									session.clone(),
+									active_route,
+								)
+								.await;
+							if let crate::wui::route_handler::RouteResult::View(view) = result {
+								if let Some(title) = &view.title {
+									handle.set_title(client_id, title).await;
+								}
+								let mut rendered = view.item.clone();
+								resolve_custom_component_entries(
+									&mut rendered,
+									&custom_component_entries,
+								);
+								handle.render(client_id, rendered).await;
+								self.sync_custom_components(client_id, &view.item).await;
+							}
 						}
 					}
 

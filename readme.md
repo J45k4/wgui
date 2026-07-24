@@ -6,37 +6,57 @@ Ever wondered that you would like to make web gui with rust and server-side virt
 
 ```rust
 use log::Level;
-use std::collections::HashSet;
-use wgui::*;
+use std::sync::Arc;
+use wgui::wui::runtime::Ctx;
+use wgui::{route, text, vstack, View, Wgui};
 
-fn render() -> Item {
-	vstack([text("Hello wgui")]).into()
+struct AppState;
+
+#[route("/")]
+fn home(_ctx: &Ctx<AppState>) -> View {
+	View::page("Hello", vstack([text("Hello wgui")]))
 }
 
 #[tokio::main]
 async fn main() {
 	simple_logger::init_with_level(Level::Info).unwrap();
+	let ctx = Arc::new(Ctx::new(AppState));
 	let mut wgui = Wgui::new("0.0.0.0:12345".parse().unwrap());
-	let mut client_ids = HashSet::new();
-
-	while let Some(event) = wgui.next().await {
-		match event {
-			ClientEvent::Disconnected { id } => {
-				client_ids.remove(&id);
-			}
-			ClientEvent::Connected { id } => {
-				wgui.render(id, render()).await;
-				client_ids.insert(id);
-			}
-			_ => {}
-		}
-
-		for id in &client_ids {
-			wgui.render(*id, render()).await;
-		}
-	}
+	wgui.set_ctx(ctx);
+	wgui.add_route(home_route);
+	wgui.run().await;
 }
 ```
+
+`#[route]` handlers receive path parameters by name and return `View` for a
+render or `Redirect` after a mutation. `POST` handlers may take one typed
+`#[derive(serde::Deserialize)]` form argument. The older
+`#[wgui_controller]` + `add_page` lifecycle API remains supported for
+non-form websocket events and lifecycle hooks.
+
+### Convention-based WUI route views
+
+For a WUI-backed GET route, add the `view` option and return `view!`. The
+route selects the template under `wui/pages`; the macro supplies the value
+available as `state` in that template.
+
+```rust
+use wgui::{route, view, View};
+
+#[route("/todos/:id", view)]
+fn todo(_ctx: &Ctx<AppState>, id: u32) -> View {
+	view!({
+		title: format!("Todo {id}"),
+		filters: { completed: false },
+	})
+}
+```
+
+The standard lookup is `/todos` → `wui/pages/todos/index.wui`,
+`/todos/:id` → `wui/pages/todos/show.wui`, `/todos/:id/edit` →
+`wui/pages/todos/edit.wui`, and `/*` → `wui/pages/not_found.wui`. Use
+`template = "path/inside/wui"` to override a route's template. `view!` also
+accepts an existing value implementing `WuiValueConvert`.
 
 ## Examples
 
@@ -105,6 +125,8 @@ See `docs/lsp.md` for setting up the `wui-lsp` server in Zed or other editors.
 ## API overview
 
 - Core runtime: `Wgui::new(addr)`, `wgui.next().await`, `wgui.render(client_id, item)`
+- Routes: `#[route("/path")]`, `#[route("/path", view)]` + `view!({ ... })`, `wgui.set_ctx(Arc<Ctx<AppState>>)`, and `wgui.add_route(handler_route)`
+- Partials: `#[partial("/path")]`, `wgui.add_partial(handler_partial)`, `partial_region(address, item)`, and `ctx.render(address)`
 - SSR snapshot: `Wgui::new_with_ssr(addr, || render())`
 - HTTP hooks: `wgui.set_http_handler(...)` for app-specific same-origin endpoints before WGUI falls back to assets/SSR.
 - Static assets: `wgui.mount_static_file(...)` returns a `StaticAsset`; pass `asset.url()` to consumers that need a content-versioned URL. Fingerprints update when the server restarts.
@@ -137,5 +159,5 @@ Item modifiers
 # Build
 bun build ./ts/app.ts --watch --outfile ./dist/index.js
 # Check 
-bunx tsc ./ts/* --noEmit --allowImportingTsExtensions
+bunx tsc --noEmit
 ```

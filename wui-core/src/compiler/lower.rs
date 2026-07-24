@@ -253,7 +253,20 @@ fn lower_widget(
 						}
 					}
 					crate::compiler::registry::PropKind::Value(_) => {
-						if attr.name == "arg" {
+						if attr.name == "arg"
+							&& el.attrs.iter().any(|candidate| {
+								schema
+									.props
+									.iter()
+									.find(|prop| prop.name == candidate.name)
+									.map(|prop| {
+										matches!(
+											&prop.kind,
+											crate::compiler::registry::PropKind::Event(_)
+										)
+									})
+									.unwrap_or(false)
+							}) {
 							continue;
 						}
 						let prop_name = normalize_prop_name(&el.name, &attr.name);

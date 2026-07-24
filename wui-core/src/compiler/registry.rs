@@ -49,6 +49,10 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 					kind: PropKind::Value(ValueType::String),
 				},
 				PropSchema {
+					name: "arg",
+					kind: PropKind::Value(ValueType::Number),
+				},
+				PropSchema {
 					name: "spacing",
 					kind: PropKind::Value(ValueType::Number),
 				},

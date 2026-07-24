@@ -84,6 +84,58 @@ Events are declared as string names on props:
 
 The compiler/runtime turns those into action IDs and can decode `ClientEvent` into a typed action name.
 
+## Forms and route actions
+
+For CRUD-style mutations, prefer a `<Form>` and a `POST #[route]` handler over
+keystroke actions. Form controls keep their values in the browser until submit.
+
+```wui
+<Form action="create">
+  <TextInput name="name" placeholder="New todo" />
+  <Button text="Add" />
+</Form>
+
+<Form action="toggle" arg={item.id}>
+  <Button text="Toggle" />
+</Form>
+```
+
+An action beginning with `/` is absolute. A relative action is resolved from
+the current page route; `arg` inserts one path segment before the action. On
+`/todos`, the forms above submit to `/todos/create` and
+`/todos/:id/toggle`. A button inside a form submits unless it has a WUI event
+prop. `TextInput name="field"` and `Checkbox name="field"` are standard HTML
+form controls.
+
+On the server, a POST route can take one typed form argument:
+
+```rust
+#[derive(serde::Deserialize)]
+struct CreateTodoForm { name: String }
+
+#[route("/todos/create", method = "POST")]
+fn create(ctx: &Ctx<AppState>, form: CreateTodoForm) -> Redirect { /* … */ }
+```
+
+## Partial regions
+
+Partials re-render a visible sub-tree only for clients that currently include
+its concrete address. Mark the page region and register the partial handler:
+
+```rust
+let address = format!("/devices/{peer_id}/status");
+let region = partial_region(address.clone(), status_item);
+
+#[partial("/devices/:peer_id/status")]
+fn status(ctx: &Ctx<AppState>, peer_id: String) -> View {
+    View::partial(render_status(ctx, &peer_id))
+}
+```
+
+Register it with `wgui.add_partial(status_partial)`. A mutation can then call
+`ctx.render(address)`. WGUI reruns the handler per subscribed client and sends
+the regular VDOM diff; it does not use stream operations.
+
 ## Widgets and props
 
 Core tags and common props:
@@ -92,8 +144,9 @@ Core tags and common props:
 - `Connected`, `Disconnected`: same layout and style props as `VStack`
 - `Text`: `value`, `textAlign`, `color`
 - `Button`: `text`, `onClick`, `arg`
-- `TextInput`: `value`, `bind:value`, `placeholder`, `onTextChanged`
-- `Checkbox`: `checked`, `bind:checked`, `onClick`, `arg`
+- `Form`: `action`, `arg`, `method`, plus layout props
+- `TextInput`: `name`, `value`, `bind:value`, `placeholder`, `onTextChanged`
+- `Checkbox`: `name`, `checked`, `bind:checked`, `onClick`, `arg`
 - `Slider`: `min`, `max`, `value`, `step`, `onSliderChange`
 - `Image`: `src`, `alt`, `objectFit`
 
@@ -130,6 +183,29 @@ There are three ways to use WUI today:
 
 3) Runtime templates (hot reload)
 - Use `wgui::wui::runtime::Template` to parse and render at runtime.
+
+### Route views
+
+`#[route("/path", view)]` resolves a conventional template below
+`wui/pages` and lets the handler return a rendered WUI page with `view!`:
+
+```rust
+#[route("/todos", view)]
+fn todos(ctx: &Ctx<AppState>) -> View {
+	let todos = load_todos(ctx);
+	view!({
+		items: todos,
+		filters: { completed: false },
+	})
+}
+```
+
+The anonymous object is available as `state` in the template, so the example
+uses `state.items` and `state.filters.completed`. Template paths are derived
+from the route: `/todos` uses `pages/todos/index`, `/todos/:id` uses
+`pages/todos/show`, and `/todos/:id/edit` uses `pages/todos/edit`. The
+wildcard route `/*` uses `pages/not_found`. Override the convention with
+`template = "pages/admin/dashboard"` in the route attribute.
 
 ## Current limits
 

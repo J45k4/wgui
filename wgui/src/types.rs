@@ -62,6 +62,20 @@ pub struct PathChanged {
 	pub initial_root: Option<Item>,
 }
 
+/// A browser form submitted through the WGUI websocket transport.
+///
+/// Normal HTTP submission remains supported as a no-JavaScript fallback, but
+/// this event lets a `POST #[route]` action apply its redirect as an in-place
+/// render/diff for the connected client.
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FormSubmit {
+	pub path: String,
+	#[serde(default)]
+	pub query: HashMap<String, String>,
+	#[serde(default)]
+	pub fields: HashMap<String, String>,
+}
+
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct InputQuery {}
 
@@ -149,6 +163,8 @@ pub enum ClientEvent {
 	Connected { id: usize },
 	Refresh,
 	PathChanged(PathChanged),
+	FormSubmit(FormSubmit),
+	RenderPartial { topic: String },
 	Input(InputQuery),
 	OnClick(OnClick),
 	OnPress(OnPress),

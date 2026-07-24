@@ -1,5 +1,5 @@
 <VStack spacing=8 padding=8>
-	<Text value="Todo Item" />
-	<Text value={params.todo_id} />
+	<Text value={state.title} />
+	<Text value={params.id} />
 	<Text value={query.tab} />
 </VStack>

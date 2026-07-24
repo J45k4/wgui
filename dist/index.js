@@ -34,6 +34,90 @@ class Deboncer {
   }
 }
 
+// ts/compact_item.ts
+var normalizeItem = (compact) => {
+  const raw = compact;
+  return {
+    id: raw.id ?? 0,
+    inx: raw.inx ?? 0,
+    typ: raw.typ ?? 0,
+    height: raw.height ?? 0,
+    width: raw.width ?? 0,
+    minHeight: raw.minHeight ?? 0,
+    maxHeight: raw.maxHeight ?? 0,
+    minWidth: raw.minWidth ?? 0,
+    maxWidth: raw.maxWidth ?? 0,
+    grow: raw.grow ?? 0,
+    backgroundColor: raw.backgroundColor ?? "",
+    color: raw.color ?? "",
+    breakWords: raw.breakWords ?? false,
+    fill: raw.fill ?? false,
+    textAlign: raw.textAlign ?? "",
+    whiteSpace: raw.whiteSpace ?? "",
+    cursor: raw.cursor ?? "",
+    margin: raw.margin ?? 0,
+    padding: raw.padding ?? 0,
+    border: raw.border ?? "",
+    marginLeft: raw.marginLeft ?? 0,
+    marginRight: raw.marginRight ?? 0,
+    marginTop: raw.marginTop ?? 0,
+    marginBottom: raw.marginBottom ?? 0,
+    paddingLeft: raw.paddingLeft ?? 0,
+    paddingRight: raw.paddingRight ?? 0,
+    paddingTop: raw.paddingTop ?? 0,
+    paddingBottom: raw.paddingBottom ?? 0,
+    editable: raw.editable ?? false,
+    overflow: raw.overflow ?? "",
+    name: raw.name ?? "",
+    action: raw.action ?? "",
+    method: raw.method ?? "",
+    partialAddr: raw.partialAddr ?? "",
+    ...raw.formArg === undefined ? {} : { formArg: raw.formArg },
+    payload: normalizePayload(raw.payload ?? { type: "none" })
+  };
+};
+var normalizeItems = (items) => (items ?? []).map(normalizeItem);
+var normalizePayload = (payload) => {
+  if (payload.type === "layout") {
+    return {
+      ...payload,
+      body: normalizeItems(payload.body),
+      flex: payload.flex ?? "column" /* Column */,
+      spacing: payload.spacing ?? 0,
+      wrap: payload.wrap ?? false,
+      horizontalResize: payload.horizontalResize ?? false,
+      horizontal_resize: payload.horizontal_resize ?? false,
+      vresize: payload.vresize ?? false,
+      hresize: payload.hresize ?? false
+    };
+  }
+  if (payload.type === "form") {
+    return { ...payload, body: normalizeItems(payload.body) };
+  }
+  if (payload.type === "table" || payload.type === "thead" || payload.type === "tbody" || payload.type === "tr") {
+    return { ...payload, items: normalizeItems(payload.items) };
+  }
+  if (payload.type === "th" || payload.type === "td") {
+    return { ...payload, item: normalizeItem(payload.item) };
+  }
+  if (payload.type === "modal" || payload.type === "connectionStatus") {
+    return { ...payload, body: normalizeItems(payload.body) };
+  }
+  return payload;
+};
+var normalizeServerMessage = (message) => {
+  switch (message.type) {
+    case "replace":
+    case "replaceAt":
+    case "addBack":
+    case "addFront":
+    case "insertAt":
+      return { ...message, item: normalizeItem(message.item) };
+    default:
+      return message;
+  }
+};
+
 // ts/custom_components.ts
 var modules = new Map;
 var componentKey = (payload) => `${payload.name}
@@ -556,6 +640,7 @@ var renderPayload = (item, ctx, old) => {
         old.replaceWith(checkbox);
     }
     checkbox.type = "checkbox";
+    checkbox.name = item.name || "";
     checkbox.checked = payload.checked;
     if (item.id) {
       checkbox.onclick = () => {
@@ -671,8 +756,31 @@ var renderPayload = (item, ctx, old) => {
         old.replaceWith(form);
       renderChildren(form, payload.body, ctx);
     }
-    form.action = payload.action || item.action || "";
+    const action = payload.action || item.action || "";
+    const basePath = location.pathname.replace(/\/$/, "");
+    const resolvedAction = action.startsWith("/") ? action : [basePath, item.formArg?.toString(), action].filter((segment) => !!segment).join("/");
+    form.action = resolvedAction || location.href;
     form.method = payload.method || item.method || "post";
+    form.onsubmit = (event) => {
+      if (form.method.toLowerCase() !== "post") {
+        return;
+      }
+      event.preventDefault();
+      const action2 = new URL(form.action || location.href, window.location.href);
+      const fields = {};
+      new FormData(form).forEach((value, key) => {
+        if (typeof value === "string") {
+          fields[key] = value;
+        }
+      });
+      ctx.sender.send({
+        type: "formSubmit",
+        path: action2.pathname,
+        query: pathQuery(action2.search),
+        fields
+      });
+      ctx.sender.sendNow();
+    };
     form.style.display = "flex";
     form.style.flexDirection = "column";
     if (payload.spacing) {
@@ -893,6 +1001,7 @@ var renderPayload = (item, ctx, old) => {
         old.replaceWith(input);
     }
     input.type = payload.inputType || payload.input_type || "text";
+    input.name = item.name || "";
     input.placeholder = payload.placeholder;
     syncTextControlValue(input, payload.value, item);
     if (item.id) {
@@ -2112,7 +2221,7 @@ var takeSsrRoot = () => {
   }
   element.remove();
   try {
-    return JSON.parse(element.textContent);
+    return normalizeItem(JSON.parse(element.textContent));
   } catch (err) {
     console.warn("failed to parse SSR root", err);
     return;
@@ -2162,7 +2271,8 @@ window.onload = () => {
         sender: sender2,
         debouncer
       };
-      for (const message of msgs) {
+      for (const rawMessage of msgs) {
+        const message = normalizeServerMessage(rawMessage);
         if (message.type === "pushState") {
           const next = new URL(message.url, window.location.href);
           const current = `${location.pathname}${location.search}${location.hash}`;

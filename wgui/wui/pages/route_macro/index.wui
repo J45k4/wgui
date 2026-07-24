@@ -1,0 +1,4 @@
+<VStack>
+	<Text value={state.greeting} />
+	<Text value={state.nested.enabled} />
+</VStack>

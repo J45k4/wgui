@@ -1,4 +1,5 @@
 import { Deboncer } from "./debouncer.ts";
+import { normalizeItem, normalizeServerMessage } from "./compact_item.ts";
 import { disposeCustomComponentTree, sendCustomData } from "./custom_components.ts";
 import { getPathItem } from "./path.ts";
 import { renderItem, setConnectionStatus } from "./render.ts";
@@ -154,7 +155,7 @@ const takeSsrRoot = (): Item | undefined => {
 	}
 	element.remove()
 	try {
-		return JSON.parse(element.textContent) as Item
+		return normalizeItem(JSON.parse(element.textContent) as Item)
 	} catch (err) {
 		console.warn("failed to parse SSR root", err)
 		return undefined
@@ -217,7 +218,8 @@ window.onload = () => {
                 debouncer
             }
             
-            for (const message of msgs) {
+			for (const rawMessage of msgs) {
+				const message = normalizeServerMessage(rawMessage)
                 if (message.type === "pushState") {
                     const next = new URL(message.url, window.location.href)
                     const current = `${location.pathname}${location.search}${location.hash}`

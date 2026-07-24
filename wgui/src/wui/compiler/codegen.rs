@@ -664,6 +664,7 @@ fn prop_method(name: &str) -> String {
 		"type" => "input_type".to_string(),
 		"objectFit" => "object_fit".to_string(),
 		"room" => "room".to_string(),
+		"arg" => "form_arg".to_string(),
 		"local" => "local".to_string(),
 		"autoplay" => "autoplay".to_string(),
 		"muted" => "muted".to_string(),
@@ -769,6 +770,9 @@ fn is_string_prop(name: &str) -> bool {
 			| "cursor"
 			| "overflow"
 			| "placeholder"
+			| "action"
+			| "method"
+			| "name"
 			| "type"
 			| "backgroundColor"
 			| "color" | "border"
@@ -791,6 +795,7 @@ fn should_emit_prop(tag: &str, prop: &IrProp) -> bool {
 			"Image" => name != "src" && name != "alt",
 			"Video" | "Audio" => name != "room",
 			"Select" => name != "value" && name != "options",
+			"Form" => false,
 			_ => name != "arg",
 		},
 	}

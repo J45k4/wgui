@@ -1,5 +1,9 @@
 use std::collections::HashMap;
 
+fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+	value == &T::default()
+}
+
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FlexDirection {
@@ -33,14 +37,23 @@ pub struct Pos {
 }
 
 #[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct Layout {
+	#[serde(skip_serializing_if = "is_default")]
 	pub body: Vec<Item>,
+	#[serde(skip_serializing_if = "is_default")]
 	pub flex: FlexDirection,
+	#[serde(skip_serializing_if = "is_default")]
 	pub spacing: u32,
+	#[serde(skip_serializing_if = "is_default")]
 	pub wrap: bool,
+	#[serde(skip_serializing_if = "is_default")]
 	pub horizontal_resize: bool,
+	#[serde(skip_serializing_if = "is_default")]
 	pub vresize: bool,
+	#[serde(skip_serializing_if = "is_default")]
 	pub hresize: bool,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	pub pos: Option<Pos>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub events: Option<LayoutEvents>,
@@ -49,6 +62,7 @@ pub struct Layout {
 #[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LayoutEvents {
+	#[serde(skip_serializing_if = "Option::is_none")]
 	pub scroll_near_bottom: Option<u32>,
 }
 
@@ -184,40 +198,77 @@ impl Default for ItemPayload {
 
 #[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(default)]
 pub struct Item {
+	#[serde(skip_serializing_if = "is_default")]
 	pub id: u32,
+	#[serde(skip_serializing_if = "is_default")]
 	pub inx: u32,
 	pub payload: ItemPayload,
+	#[serde(skip_serializing_if = "is_default")]
 	pub border: String,
+	#[serde(skip_serializing_if = "is_default")]
 	pub background_color: String,
+	#[serde(skip_serializing_if = "is_default")]
 	pub color: String,
+	#[serde(skip_serializing_if = "is_default")]
 	pub cursor: String,
+	#[serde(skip_serializing_if = "is_default")]
 	pub break_words: bool,
+	#[serde(skip_serializing_if = "is_default")]
 	pub fill: bool,
+	#[serde(skip_serializing_if = "is_default")]
 	pub height: u32,
+	#[serde(skip_serializing_if = "is_default")]
 	pub width: u32,
+	#[serde(skip_serializing_if = "is_default")]
 	pub min_height: u32,
+	#[serde(skip_serializing_if = "is_default")]
 	pub max_height: u32,
+	#[serde(skip_serializing_if = "is_default")]
 	pub min_width: u32,
+	#[serde(skip_serializing_if = "is_default")]
 	pub max_width: u32,
+	#[serde(skip_serializing_if = "is_default")]
 	pub grow: u32,
+	#[serde(skip_serializing_if = "is_default")]
 	pub text_align: String,
+	#[serde(skip_serializing_if = "is_default")]
 	pub white_space: String,
+	#[serde(skip_serializing_if = "is_default")]
 	pub margin: u16,
+	#[serde(skip_serializing_if = "is_default")]
 	pub margin_left: u16,
+	#[serde(skip_serializing_if = "is_default")]
 	pub margin_right: u16,
+	#[serde(skip_serializing_if = "is_default")]
 	pub margin_top: u16,
+	#[serde(skip_serializing_if = "is_default")]
 	pub margin_bottom: u16,
+	#[serde(skip_serializing_if = "is_default")]
 	pub padding: u16,
+	#[serde(skip_serializing_if = "is_default")]
 	pub padding_left: u16,
+	#[serde(skip_serializing_if = "is_default")]
 	pub padding_right: u16,
+	#[serde(skip_serializing_if = "is_default")]
 	pub padding_top: u16,
+	#[serde(skip_serializing_if = "is_default")]
 	pub padding_bottom: u16,
+	#[serde(skip_serializing_if = "is_default")]
 	pub overflow: String,
+	#[serde(skip_serializing_if = "is_default")]
 	pub editable: bool,
+	#[serde(skip_serializing_if = "is_default")]
 	pub name: String,
+	#[serde(skip_serializing_if = "is_default")]
 	pub action: String,
+	#[serde(skip_serializing_if = "is_default")]
 	pub method: String,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub form_arg: Option<u32>,
+	#[serde(skip_serializing_if = "is_default")]
+	pub partial_addr: String,
 }
 
 pub fn checkbox() -> Item {
@@ -268,6 +319,16 @@ where
 		},
 		..Default::default()
 	}
+}
+
+/// Mark an item subtree as a re-renderable partial region.
+///
+/// `addr` is the concrete address later passed to [`Ctx::render`]. The
+/// region remains an ordinary item tree in the browser; only the server uses
+/// this metadata to scope re-renders to clients currently viewing it.
+pub fn partial_region(addr: impl Into<String>, mut item: Item) -> Item {
+	item.partial_addr = addr.into();
+	item
 }
 
 pub fn button(title: &str) -> Item {
@@ -610,6 +671,16 @@ impl Item {
 		if let ItemPayload::Form { method, .. } = &mut self.payload {
 			*method = self.method.clone();
 		}
+		self
+	}
+
+	pub fn partial_addr(mut self, addr: impl Into<String>) -> Self {
+		self.partial_addr = addr.into();
+		self
+	}
+
+	pub fn form_arg(mut self, arg: u32) -> Self {
+		self.form_arg = Some(arg);
 		self
 	}
 
@@ -1062,5 +1133,21 @@ mod tests {
 		let value = serde_json::to_value(text_input().input_type("hidden")).unwrap();
 
 		assert_eq!(value["payload"]["inputType"], "hidden");
+	}
+
+	#[test]
+	fn item_wire_format_omits_defaults_and_round_trips() {
+		let item = vstack([text("Hello")]).padding(8);
+		let value = serde_json::to_value(&item).unwrap();
+
+		assert_eq!(value["padding"], 8);
+		assert!(value.get("border").is_none());
+		assert!(value.get("margin").is_none());
+		assert!(value.get("editable").is_none());
+		assert!(value["payload"].get("spacing").is_none());
+		assert!(value["payload"].get("wrap").is_none());
+
+		let decoded: Item = serde_json::from_value(value).unwrap();
+		assert_eq!(decoded, item);
 	}
 }

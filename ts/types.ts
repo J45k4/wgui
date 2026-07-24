@@ -290,6 +290,8 @@ export type Item = {
 	name?: string
 	action?: string
 	method?: string
+	formArg?: number
+	partialAddr?: string
 	payload: ItemPayload
 }
 
@@ -502,6 +504,13 @@ export type PathChanged = {
 	initialRoot?: Item
 }
 
+export type FormSubmit = {
+	type: "formSubmit"
+	path: string
+	query: { [key: string]: string }
+	fields: { [key: string]: string }
+}
+
 export type OnSliderChange = {
 	type: "onSliderChange"
 	id: number
@@ -563,6 +572,7 @@ export type MessageToSrv = OnClick |
     OnKeyDown |
     OnKeyUp |
 	PathChanged |
+	FormSubmit |
 	OnSliderChange |
 	OnSelect |
 	OnScrollNearBottom |

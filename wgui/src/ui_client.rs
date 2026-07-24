@@ -16,6 +16,8 @@ fn event_kind_name(event: &ClientEvent) -> &'static str {
 		ClientEvent::Connected { .. } => "Connected",
 		ClientEvent::Refresh => "Refresh",
 		ClientEvent::PathChanged(_) => "PathChanged",
+		ClientEvent::FormSubmit(_) => "FormSubmit",
+		ClientEvent::RenderPartial { .. } => "RenderPartial",
 		ClientEvent::Input(_) => "Input",
 		ClientEvent::OnClick(_) => "OnClick",
 		ClientEvent::OnPress(_) => "OnPress",

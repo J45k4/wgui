@@ -439,6 +439,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			if (old) old.replaceWith(checkbox)
 		}
 		checkbox.type = "checkbox"
+		checkbox.name = item.name || ""
 		checkbox.checked = payload.checked
 		if (item.id) {
 			checkbox.onclick = () => {
@@ -556,8 +557,35 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			if (old) old.replaceWith(form)
 			renderChildren(form, payload.body, ctx)
 		}
-		form.action = payload.action || item.action || ""
+		const action = payload.action || item.action || ""
+		const basePath = location.pathname.replace(/\/$/, "")
+		const resolvedAction = action.startsWith("/")
+			? action
+			: [basePath, item.formArg?.toString(), action]
+				.filter((segment): segment is string => !!segment)
+				.join("/")
+		form.action = resolvedAction || location.href
 		form.method = payload.method || item.method || "post"
+		form.onsubmit = (event: SubmitEvent) => {
+			if (form.method.toLowerCase() !== "post") {
+				return
+			}
+			event.preventDefault()
+			const action = new URL(form.action || location.href, window.location.href)
+			const fields: { [key: string]: string } = {}
+			new FormData(form).forEach((value, key) => {
+				if (typeof value === "string") {
+					fields[key] = value
+				}
+			})
+			ctx.sender.send({
+				type: "formSubmit",
+				path: action.pathname,
+				query: pathQuery(action.search),
+				fields,
+			})
+			ctx.sender.sendNow()
+		}
 		form.style.display = "flex"
 		form.style.flexDirection = "column"
 		if (payload.spacing) {
@@ -783,6 +811,7 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 			if (old) old.replaceWith(input)
 		}
 		input.type = payload.inputType || payload.input_type || "text"
+		input.name = item.name || ""
 		input.placeholder = payload.placeholder as string
 		syncTextControlValue(input, payload.value, item)
 		if (item.id) {

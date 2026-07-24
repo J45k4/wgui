@@ -12,11 +12,18 @@
 The workspace root (`Cargo.toml`) ties together the core `wgui` crate and the `examples/*` showcase projects. Core server-side virtual DOM logic lives in `wgui/src` (notably `gui.rs`, `server.rs`, `diff.rs`), with focused unit tests colocated under `#[cfg(test)]`. Browser-facing TypeScript resides in `ts/` and is bundled into `dist/index.js`; treat everything under `dist/` as generated output. Example applications such as `examples/todo` and `examples/allcomponents` exercise the library and ship any static assets they need.
 
 ## Build, Test, and Development Commands
+
+New page and mutation endpoints should prefer `#[route]` free functions
+registered with `Wgui::add_route`; use `#[partial]` + `Wgui::add_partial` for
+targeted, server-authoritative sub-tree broadcasts. Keep
+`#[wgui_controller]`/`add_page` working for legacy lifecycle pages while apps
+migrate incrementally.
+
 - `cargo build` – compile all workspace crates to validate Rust changes.
 - `cargo test -p wgui` – run the unit tests embedded in the core crate; add `-- --nocapture` when debugging logs.
 - `cargo run -p todo` – launch the Todo example and verify end-to-end behaviour.
 - `bun build ./ts/app.ts --outfile ./dist/index.js` – produce the browser bundle once; add `--watch` or call `bundle_watch.sh`/`.bat` for iterative work.
-- `bunx tsc ./ts/* --noEmit --allowImportingTsExtensions` – type-check the front-end exactly as documented in `readme.md`.
+- `bunx tsc --noEmit` – type-check the front-end exactly as documented in `readme.md`.
 
 ## Coding Style & Naming Conventions
 Editors should honour `.editorconfig` (tabs with a visual width of four). Run `cargo fmt` before committing Rust changes to normalize spacing, and prefer `snake_case` for functions/modules and `PascalCase` for types. TypeScript sticks to camelCase identifiers, PascalCase classes, and omits trailing semicolons; keep imports relative with explicit `.ts` extensions. Avoid manual edits in `dist/`; adjust `ts/` sources and re-run the bundler instead.
