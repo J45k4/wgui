@@ -354,6 +354,13 @@ mod tests {
 		let new = hstack([]).spacing(10);
 
 		let changes = super::diff(&old, &new);
-		println!("{:?}", changes);
+		assert!(matches!(
+			changes.as_slice(),
+			[crate::types::ClientAction::SetProp { sets, .. }]
+				if matches!(sets.as_slice(), [crate::types::SetProp {
+					key: crate::types::PropKey::Spacing,
+					value: crate::types::Value::Number(10),
+				}])
+		));
 	}
 }

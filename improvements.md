@@ -4,6 +4,20 @@ This is a review of `cargo clippy --workspace --all-targets`.  It separates
 mechanical cleanup from changes that need a deliberate API or performance
 decision.  None of the findings is a compile error or a confirmed bug.
 
+## Completion status
+
+All items in this backlog are implemented.
+
+- Sections 1--7: mechanical cleanup and stronger diff-test assertion.
+- Sections 8--9: `ServerConfig` and the shared `SsrRenderer` alias.
+- Section 10: the large `PathChanged`, `RouteResult::View`, and SSR item
+  payloads are boxed. Their Serde wire representation remains unchanged.
+  This was implemented at the user's direction without a dedicated
+  event-throughput benchmark.
+- Section 11: `Db`, `PubSub`, and `PuppyDB` implement `Default` via `new`.
+- Section 12: initialization and trace-only edit-distance loops use iterators.
+- Section 13: the workspace explicitly selects Cargo resolver `3`.
+
 ## Recommended first: safe, small cleanups
 
 These changes preserve the existing design and are suitable for a focused

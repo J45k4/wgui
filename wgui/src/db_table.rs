@@ -264,3 +264,9 @@ impl<S: WdbSchema> Db<S> {
 		crate::write_schema_migration::<S, _, _>(db_path, name, dir)
 	}
 }
+
+impl<S: WdbSchema> Default for Db<S> {
+	fn default() -> Self {
+		Self::new()
+	}
+}

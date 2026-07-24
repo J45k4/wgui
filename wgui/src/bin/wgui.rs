@@ -262,6 +262,14 @@ struct SessionDaemonArgs {
 	session: String,
 }
 
+struct SessionDaemonCall {
+	action: String,
+	route: Option<String>,
+	kind: Option<ControllerEventKind>,
+	arg: Option<u32>,
+	value: Option<String>,
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct WguiConfig {
 	schema: Option<PathBuf>,
@@ -884,11 +892,13 @@ async fn run_session_daemon_async(args: SessionDaemonArgs) -> Result<(), String>
 					&project_dir,
 					&mut ws_write,
 					&args.route,
-					action,
-					route,
-					kind,
-					arg,
-					value,
+					SessionDaemonCall {
+						action,
+						route,
+						kind,
+						arg,
+						value,
+					},
 				)
 				.await;
 				match result {
@@ -914,23 +924,20 @@ async fn session_daemon_call<S>(
 	project_dir: &std::path::Path,
 	ws_write: &mut S,
 	default_route: &str,
-	action: String,
-	route: Option<String>,
-	kind: Option<ControllerEventKind>,
-	arg: Option<u32>,
-	value: Option<String>,
+	call: SessionDaemonCall,
 ) -> Result<String, String>
 where
 	S: SinkExt<Message> + Unpin,
 	<S as futures_util::Sink<Message>>::Error: std::fmt::Display,
 {
 	let actions = discover_controller_actions(project_dir)?;
-	let discovered = find_controller_action(&actions, &action)?;
+	let discovered = find_controller_action(&actions, &call.action)?;
 	let action_name = discovered
 		.as_ref()
 		.map(|action| action.name.clone())
-		.unwrap_or(action);
-	let event_kind = kind
+		.unwrap_or(call.action);
+	let event_kind = call
+		.kind
 		.or_else(|| {
 			discovered
 				.as_ref()
@@ -944,8 +951,8 @@ where
 		.as_ref()
 		.map(|action| action.id)
 		.unwrap_or_else(|| action_id(&action_name));
-	let route = route.unwrap_or_else(|| default_route.to_string());
-	let event = controller_event_json(id, event_kind, payload.as_ref(), arg, value)?;
+	let route = call.route.unwrap_or_else(|| default_route.to_string());
+	let event = controller_event_json(id, event_kind, payload.as_ref(), call.arg, call.value)?;
 	let body = websocket_messages_body(&route, Some(event))?;
 	ws_write
 		.send(Message::Text(body))

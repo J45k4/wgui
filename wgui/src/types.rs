@@ -162,7 +162,7 @@ pub enum ClientEvent {
 	Disconnected { id: usize },
 	Connected { id: usize },
 	Refresh,
-	PathChanged(PathChanged),
+	PathChanged(Box<PathChanged>),
 	FormSubmit(FormSubmit),
 	RenderPartial { topic: String },
 	Input(InputQuery),
@@ -411,6 +411,19 @@ mod tests {
 			}
 			_ => panic!("expected PathChanged"),
 		}
+	}
+
+	#[test]
+	fn boxed_path_changed_preserves_the_wire_shape() {
+		let event = ClientEvent::PathChanged(Box::new(PathChanged {
+			path: "/".to_string(),
+			query: HashMap::new(),
+			ssr_hydration_id: None,
+			initial_root: Some(Item::default()),
+		}));
+
+		let value = serde_json::to_value(event).unwrap();
+		assert!(value["initialRoot"].is_object());
 	}
 
 	#[test]

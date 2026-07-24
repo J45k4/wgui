@@ -114,7 +114,8 @@ type HttpControllerFactory = Arc<
 		+ Send
 		+ Sync,
 >;
-pub(crate) type SsrRenderer = Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>;
+pub(crate) type SsrRenderer =
+	Arc<dyn Fn(RouteContext, Option<String>) -> Option<SsrResponse> + Send + Sync>;
 type SsrComponentFactories = Arc<std::sync::RwLock<Vec<(String, ControllerFactory)>>>;
 type SsrPageFactories = Arc<std::sync::RwLock<Vec<(RoutePattern, PageControllerFactory)>>>;
 type BoxedCustomComponentController = Box<dyn CustomComponentController>;
@@ -133,7 +134,10 @@ pub(crate) struct SsrHydrationRoot {
 }
 
 pub(crate) enum SsrResponse {
-	Render { item: Item, title: Option<String> },
+	Render {
+		item: Box<Item>,
+		title: Option<String>,
+	},
 	Redirect(String),
 }
 
@@ -913,7 +917,7 @@ impl Wgui<()> {
 						});
 						return match result {
 							RouteResult::View(view) => Some(SsrResponse::Render {
-								item: view.item,
+								item: Box::new(view.item),
 								title: view.title,
 							}),
 							RouteResult::Redirect(redirect) => {
@@ -944,7 +948,7 @@ impl Wgui<()> {
 									.title()
 									.or_else(|| controller.route_title(&route.path));
 								Some(SsrResponse::Render {
-									item: controller.render_with_route(&route),
+									item: Box::new(controller.render_with_route(&route)),
 									title,
 								})
 							}
@@ -971,7 +975,7 @@ impl Wgui<()> {
 						.title()
 						.or_else(|| controller.route_title(&route.path));
 					Some(SsrResponse::Render {
-						item: controller.render_with_route(&route),
+						item: Box::new(controller.render_with_route(&route)),
 						title,
 					})
 				},
@@ -1047,7 +1051,7 @@ impl Wgui<()> {
 			let ssr: Option<SsrRenderer> = Some(Arc::new(
 				move |_route: RouteContext, _session: Option<String>| {
 					Some(SsrResponse::Render {
-						item: (renderer)(),
+						item: Box::new((renderer)()),
 						title: None,
 					})
 				},
@@ -2415,7 +2419,7 @@ where
 						.await;
 					match result {
 						crate::wui::route_handler::RouteResult::View(view) => {
-							self.render_route_view(client_id, view, &custom_component_entries)
+							self.render_route_view(client_id, *view, &custom_component_entries)
 								.await;
 						}
 						crate::wui::route_handler::RouteResult::Redirect(redirect) => {
@@ -2462,7 +2466,7 @@ where
 									);
 									self.render_route_view(
 										client_id,
-										view,
+										*view,
 										&custom_component_entries,
 									)
 									.await;
@@ -2496,7 +2500,7 @@ where
 									);
 									self.render_route_view(
 										client_id,
-										view,
+										*view,
 										&custom_component_entries,
 									)
 									.await;

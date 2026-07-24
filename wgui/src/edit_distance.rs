@@ -24,11 +24,11 @@ pub fn get_minimum_edits<T: PartialEq + Clone + Debug>(
 	let mut dp = vec![vec![0; n + 1]; m + 1];
 
 	// Initialize the base cases
-	for i in 0..=m {
-		dp[i][0] = i;
+	for (i, row) in dp.iter_mut().enumerate() {
+		row[0] = i;
 	}
-	for j in 0..=n {
-		dp[0][j] = j;
+	for (j, cell) in dp[0].iter_mut().enumerate() {
+		*cell = j;
 	}
 
 	// Fill in the DP table
@@ -45,13 +45,7 @@ pub fn get_minimum_edits<T: PartialEq + Clone + Debug>(
 	if log_enabled!(log::Level::Trace) {
 		log::trace!("DP table:");
 
-		for i in 0..=m {
-			let mut row = vec![];
-
-			for j in 0..=n {
-				row.push(dp[i][j]);
-			}
-
+		for row in &dp {
 			log::trace!("{:?}", row)
 		}
 	}

@@ -147,7 +147,7 @@ impl FromParam for i64 {
 pub enum RouteResult {
 	/// Render a page or partial. `title` is set on full page renders; partials
 	/// leave it `None` and the framework patches the existing title.
-	View(View),
+	View(Box<View>),
 	/// Issue a client-side navigation to a new URL (PRG: Post/Redirect/Get).
 	Redirect(Redirect),
 	/// No matching route / guarded access denied. Triggers the fallback page.
@@ -233,13 +233,13 @@ impl From<Item> for View {
 
 impl From<Item> for RouteResult {
 	fn from(item: Item) -> Self {
-		RouteResult::View(item.into())
+		RouteResult::View(Box::new(item.into()))
 	}
 }
 
 impl From<View> for RouteResult {
 	fn from(view: View) -> Self {
-		RouteResult::View(view)
+		RouteResult::View(Box::new(view))
 	}
 }
 

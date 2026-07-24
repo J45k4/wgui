@@ -49,3 +49,12 @@ where
 		let _ = sender.send(value);
 	}
 }
+
+impl<T> Default for PubSub<T>
+where
+	T: Clone + Send + Sync + 'static,
+{
+	fn default() -> Self {
+		Self::new()
+	}
+}

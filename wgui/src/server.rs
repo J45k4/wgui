@@ -731,7 +731,7 @@ async fn handle_req(
 							&ctx.ssr_hydration_roots,
 							hydration_id.clone(),
 							req.uri().path().to_string(),
-							item.clone(),
+							(*item).clone(),
 							title.clone(),
 						)
 						.await;

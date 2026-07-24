@@ -126,3 +126,9 @@ impl PuppyDB {
 		}
 	}
 }
+
+impl Default for PuppyDB {
+	fn default() -> Self {
+		Self::new()
+	}
+}
