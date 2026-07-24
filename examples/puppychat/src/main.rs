@@ -5,6 +5,7 @@ mod components;
 mod context;
 mod db;
 mod notifications;
+mod routes;
 
 pub use db::{
 	Channel, DirectMessage, Message, PuppyDB as PuppyDb, PushSubscription, Session, User,
@@ -131,8 +132,16 @@ async fn main() {
 	ensure_db_url_from_local_env();
 
 	let db = puppy_db_with_defaults();
-	let mut wgui = Wgui::new("0.0.0.0:5545".parse().unwrap()).with_db(db);
+	let address = std::env::var("PUPPYCHAT_ADDR")
+		.unwrap_or_else(|_| "0.0.0.0:5545".to_string())
+		.parse()
+		.expect("PUPPYCHAT_ADDR must be a valid socket address");
+	let mut wgui = Wgui::new(address).with_db(db);
 	wgui.set_ctx_state(context::SharedContext::default());
+	wgui.add_route(routes::page_login_route);
+	wgui.add_route(routes::login_route);
+	wgui.add_route(routes::page_register_route);
+	wgui.add_route(routes::register_route);
 	wgui.add_component::<components::puppychat::Puppychat>("/");
 	wgui.run().await;
 }

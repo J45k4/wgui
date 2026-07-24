@@ -1,0 +1,14 @@
+<VStack padding=16 spacing=12 width=360>
+    <Text value="Create PuppyChat account" />
+    <Form action="/register" method="post" spacing=8>
+        <VStack spacing=8>
+            <TextInput name="name" value={state.name} placeholder="Username" />
+            <TextInput name="password" type="password" placeholder="Password" />
+            <If test={state.error != ""}>
+                <Text value={state.error} color="#b30000" />
+            </If>
+            <Button text="Register" />
+        </VStack>
+    </Form>
+    <Link href="/login" text="Back to login" />
+</VStack>

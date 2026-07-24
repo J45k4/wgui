@@ -101,6 +101,19 @@ fn macro_view(_ctx: &Ctx<TestAppState>) -> View {
 	})
 }
 
+#[route(
+	"/macro-form-error",
+	method = "POST",
+	template = "pages/route_macro/index"
+)]
+fn macro_form_error(_ctx: &Ctx<TestAppState>) -> View {
+	view!({
+		greeting: "invalid form",
+		nested: { enabled: false },
+	})
+	.with_status(422)
+}
+
 #[test]
 fn routes_register_and_stored_by_path() {
 	// `add_route` doesn't require a context — it just stores the marker.
@@ -117,6 +130,7 @@ fn routes_register_and_stored_by_path() {
 	wgui.add_route(action_form_create_route);
 	wgui.add_partial(todo_status_partial);
 	wgui.add_route(macro_view_route);
+	wgui.add_route(macro_form_error_route);
 
 	// No runtime assertion on length — routes field is pub(crate).
 	// Successful registration (no panic, traits resolve) is the contract.
@@ -145,6 +159,37 @@ fn const_handles_implement_route_handler() {
 	assert_eq!(action_form_create_route.method(), HttpMethod::Post);
 	assert_eq!(todo_status_partial.path(), "/todos/:id/status");
 	assert_eq!(macro_view_route.path(), "/macro-view");
+	assert_eq!(macro_form_error_route.path(), "/macro-form-error");
+	assert_eq!(macro_form_error_route.method(), HttpMethod::Post);
+}
+
+#[tokio::test]
+async fn post_view_route_renders_the_template_and_retains_its_status() {
+	let ctx = Arc::new(Ctx::new(TestAppState::default()));
+	let result = wgui::DynRouteHandler::call_dyn(
+		&macro_form_error_route,
+		ctx,
+		PathParams::default(),
+		RouteFormData::default(),
+		RuntimeContext {
+			client_id: None,
+			session: None,
+			route: Some(wgui::wui::runtime::RouteContext {
+				path: "/macro-form-error".to_string(),
+				params: Default::default(),
+				query: Default::default(),
+			}),
+		},
+	)
+	.await;
+	let RouteResult::View(view) = result else {
+		panic!("form validation route should render a view");
+	};
+
+	assert_eq!(view.status, 422);
+	assert!(serde_json::to_string(&view.item)
+		.unwrap()
+		.contains("invalid form"));
 }
 
 #[tokio::test]
@@ -202,4 +247,5 @@ fn pascal_case_marker_names_are_generated() {
 	let _ = action_form_create_route;
 	let _ = todo_status_partial;
 	let _ = macro_view_route;
+	let _ = macro_form_error_route;
 }

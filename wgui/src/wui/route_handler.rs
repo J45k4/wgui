@@ -159,6 +159,9 @@ pub enum RouteResult {
 pub struct View {
 	pub item: Item,
 	pub title: Option<String>,
+	/// HTTP status used for normal form submissions. Websocket form
+	/// submissions render the same view in place and ignore this value.
+	pub status: u16,
 	/// `Some(addr)` if this view is a partial render addressable via
 	/// `ctx.render(addr)`. `None` for full page renders.
 	pub partial_addr: Option<String>,
@@ -174,6 +177,7 @@ impl View {
 		Self {
 			item,
 			title: Some(title.into()),
+			status: 200,
 			partial_addr: None,
 			wui_model: None,
 		}
@@ -184,6 +188,7 @@ impl View {
 		Self {
 			item,
 			title: None,
+			status: 200,
 			partial_addr: None,
 			wui_model: None,
 		}
@@ -197,6 +202,7 @@ impl View {
 		Self {
 			item,
 			title: None,
+			status: 200,
 			partial_addr: None,
 			wui_model: None,
 		}
@@ -209,9 +215,17 @@ impl View {
 		Self {
 			item: Item::default(),
 			title: None,
+			status: 200,
 			partial_addr: None,
 			wui_model: Some(model),
 		}
+	}
+
+	/// Set the HTTP status used when this view is returned to a regular form
+	/// request. The websocket transport renders it in place.
+	pub fn with_status(mut self, status: u16) -> Self {
+		self.status = status;
+		self
 	}
 
 	pub(crate) fn render_wui(&mut self, template: Option<&Template>, route: &RouteContext) {
@@ -219,7 +233,7 @@ impl View {
 			return;
 		};
 		let template = template.expect(
-			"view! requires a GET route declared with `#[route(path, view)]` or an explicit template",
+			"view! requires a route declared with `#[route(path, view)]` or an explicit template",
 		);
 		self.item = template.render_with_route(&model, route);
 	}
@@ -284,12 +298,15 @@ pub type RouteFuture = Pin<Box<dyn Future<Output = RouteResult> + Send + 'static
 /// RouteHandler` by hand — they register handlers via
 /// [`crate::Wgui::add_route`].
 ///
-/// `State` is the `T` in `Ctx<T>` the handler expects. The framework
+/// `State` is the `T` in `Ctx<T, DB>` the handler expects. The framework
 /// type-erases this when storing handlers, downcasting at dispatch time.
 pub trait RouteHandler: Send + Sync + 'static + Copy {
 	/// App state type. Must match the `Ctx<T>` the `Wgui` instance was set
 	/// up with via `Wgui::set_ctx`.
 	type State: Send + Sync + 'static;
+	/// Database type carried by the route context. Use `()` for apps without a
+	/// database.
+	type Db: Send + Sync + 'static;
 
 	/// Route pattern, e.g. `"/todos/:id"`.
 	fn path(&self) -> &str;
@@ -317,7 +334,7 @@ pub trait RouteHandler: Send + Sync + 'static + Copy {
 	/// acrobatics.
 	fn call(
 		self,
-		ctx: Arc<Ctx<Self::State>>,
+		ctx: Arc<Ctx<Self::State, Self::Db>>,
 		params: PathParams,
 		form: RouteFormData,
 	) -> RouteFuture;
@@ -371,6 +388,7 @@ pub trait DynRouteHandler: Send + Sync + 'static {
 impl<H: RouteHandler> DynRouteHandler for H
 where
 	H::State: 'static + Send + Sync,
+	H::Db: 'static + Send + Sync,
 {
 	fn path(&self) -> &str {
 		RouteHandler::path(self)
@@ -394,8 +412,8 @@ where
 		let this = *self;
 		Box::pin(async move {
 			let ctx = ctx_any
-				.downcast::<Ctx<H::State>>()
-				.expect("AppState type mismatch: Ctx<T> registered with Wgui does not match #[route] handler's State");
+				.downcast::<Ctx<H::State, H::Db>>()
+				.expect("route context type mismatch: Ctx<T, DB> registered with Wgui does not match the #[route] handler");
 			ctx.set_current_client(runtime.client_id);
 			ctx.set_current_session(runtime.session);
 			ctx.set_current_route(runtime.route.clone());
@@ -490,6 +508,12 @@ mod tests {
 		let item = Item::default();
 		let r: RouteResult = item.into();
 		assert!(matches!(r, RouteResult::View(_)));
+	}
+
+	#[test]
+	fn view_can_return_an_unprocessable_form_response() {
+		let view = View::untitled(Item::default()).with_status(422);
+		assert_eq!(view.status, 422);
 	}
 
 	#[test]

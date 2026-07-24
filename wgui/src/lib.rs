@@ -1218,6 +1218,19 @@ where
 	}
 
 	#[cfg(feature = "hyper")]
+	fn route_view_http_response(view: &View, app_css: &server::SharedAppCss) -> HttpResponse {
+		let body = crate::ssr::render_document_with_app_css_hydration_title(
+			&view.item,
+			app_css.read().unwrap().is_some(),
+			None,
+			view.title.as_deref(),
+		);
+		HttpResponse::new(view.status, body)
+			.header("content-type", "text/html")
+			.header("cache-control", "no-store")
+	}
+
+	#[cfg(feature = "hyper")]
 	pub fn set_css(&self, css: impl Into<String>) {
 		*self.app_css.write().unwrap() = Some(css.into());
 	}
@@ -1678,79 +1691,75 @@ where
 		let method = handler.method();
 		let path_str = handler.path().to_string();
 
-		// For POST handlers, also register with the HTTP server so real
-		// form submissions reach them. GET handlers are dispatched via the
-		// WS PathChanged/Refresh event loop instead — they don't need an
-		// HTTP route entry.
-		if method == crate::wui::route_handler::HttpMethod::Post {
-			#[cfg(feature = "hyper")]
-			{
-				let contexts = self.contexts.clone();
-				let handler_arc = handler.clone();
-				let handler_path = handler_arc.path().to_string();
-				let handler_method = method.as_str().to_string();
-				let http_handler: server::HttpRouteHandler =
-					Arc::new(move |request: HttpRequest, http_ctx: HttpCtx| {
-						let handler_arc = handler_arc.clone();
-						let contexts = contexts.clone();
-						let path_str = path_str.clone();
-						Box::pin(async move {
-							let state_type_id = handler_arc.state_type_id();
-							let ctx_any = contexts
-								.read()
-								.unwrap()
-								.get(&state_type_id)
-								.cloned()
-								.expect("missing Ctx<T> for #[route] POST handler");
-							let params_map = RoutePattern::parse(&path_str)
-								.match_path(&http_ctx.path)
-								.map(|m| m.params)
-								.unwrap_or_default();
-							let route = RouteContext {
-								path: http_ctx.path.clone(),
-								params: params_map.clone(),
-								query: http_ctx.query.clone(),
-							};
-							let runtime = crate::wui::route_handler::RuntimeContext {
-								client_id: None,
-								session: http_ctx.session.clone(),
-								route: Some(route),
-							};
-							let params = crate::wui::route_handler::PathParams(params_map);
-							let form = crate::wui::route_handler::RouteFormData::from_urlencoded(
-								&request.body,
-							);
-							let result = handler_arc.call_dyn(ctx_any, params, form, runtime).await;
-							match result {
-								crate::wui::route_handler::RouteResult::Redirect(redirect) => {
-									if redirect.0.is_empty() {
-										Self::redirect_http_response(http_ctx.path.clone())
-									} else {
-										Self::redirect_http_response(redirect.0)
-									}
-								}
-								crate::wui::route_handler::RouteResult::View(view) => {
-									let body = serde_json::to_vec(&view.item)
-										.unwrap_or_else(|_| b"{}".to_vec());
-									HttpResponse::new(200, body)
-										.header("content-type", "application/json")
-								}
-								crate::wui::route_handler::RouteResult::NotFound => {
-									HttpResponse::new(404, "not found")
+		// Register every route with the HTTP server. POST routes serve
+		// no-JavaScript form submissions, while GET routes must be available
+		// for the initial SSR document before the browser can open its WebSocket.
+		#[cfg(feature = "hyper")]
+		{
+			let contexts = self.contexts.clone();
+			let handler_arc = handler.clone();
+			let app_css = self.app_css.clone();
+			let handler_path = handler_arc.path().to_string();
+			let handler_method = method.as_str().to_string();
+			let http_handler: server::HttpRouteHandler =
+				Arc::new(move |request: HttpRequest, http_ctx: HttpCtx| {
+					let handler_arc = handler_arc.clone();
+					let contexts = contexts.clone();
+					let app_css = app_css.clone();
+					let path_str = path_str.clone();
+					Box::pin(async move {
+						let state_type_id = handler_arc.state_type_id();
+						let ctx_any = contexts
+							.read()
+							.unwrap()
+							.get(&state_type_id)
+							.cloned()
+							.expect("missing Ctx<T> for #[route] handler");
+						let params_map = RoutePattern::parse(&path_str)
+							.match_path(&http_ctx.path)
+							.map(|m| m.params)
+							.unwrap_or_default();
+						let route = RouteContext {
+							path: http_ctx.path.clone(),
+							params: params_map.clone(),
+							query: http_ctx.query.clone(),
+						};
+						let runtime = crate::wui::route_handler::RuntimeContext {
+							client_id: None,
+							session: http_ctx.session.clone(),
+							route: Some(route),
+						};
+						let params = crate::wui::route_handler::PathParams(params_map);
+						let form = crate::wui::route_handler::RouteFormData::from_urlencoded(
+							&request.body,
+						);
+						let result = handler_arc.call_dyn(ctx_any, params, form, runtime).await;
+						match result {
+							crate::wui::route_handler::RouteResult::Redirect(redirect) => {
+								if redirect.0.is_empty() {
+									Self::redirect_http_response(http_ctx.path.clone())
+								} else {
+									Self::redirect_http_response(redirect.0)
 								}
 							}
-						})
-					});
-				self.http_routes.write().unwrap().push(server::HttpRoute {
-					method: handler_method,
-					pattern: RoutePattern::parse(&handler_path),
-					handler: http_handler,
+							crate::wui::route_handler::RouteResult::View(view) => {
+								Self::route_view_http_response(&view, &app_css)
+							}
+							crate::wui::route_handler::RouteResult::NotFound => {
+								HttpResponse::new(404, "not found")
+							}
+						}
+					})
 				});
-			}
-			#[cfg(not(feature = "hyper"))]
-			{
-				let _ = (method, path_str);
-			}
+			self.http_routes.write().unwrap().push(server::HttpRoute {
+				method: handler_method,
+				pattern: RoutePattern::parse(&handler_path),
+				handler: http_handler,
+			});
+		}
+		#[cfg(not(feature = "hyper"))]
+		{
+			let _ = (method, path_str);
 		}
 
 		self.routes.write().unwrap().push(RouteEntry {
@@ -2987,6 +2996,24 @@ mod tests {
 			best_component_route_index(&routes, "/missing", |route| route.as_str()),
 			Some(0)
 		);
+	}
+
+	#[cfg(feature = "hyper")]
+	#[test]
+	fn validation_view_is_rendered_as_an_html_response() {
+		let css = Arc::new(std::sync::RwLock::new(None));
+		let view = View::page("Login", text("invalid credentials")).with_status(422);
+
+		let response = Wgui::<()>::route_view_http_response(&view, &css);
+
+		assert_eq!(response.status, 422);
+		assert!(response
+			.headers
+			.iter()
+			.any(|(name, value)| name == "content-type" && value == "text/html"));
+		let body = String::from_utf8(response.body).unwrap();
+		assert!(body.contains("<html>"));
+		assert!(body.contains("invalid credentials"));
 	}
 
 	#[test]

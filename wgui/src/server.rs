@@ -517,7 +517,11 @@ fn session_from_query(req: &Request<hyper::body::Incoming>) -> Option<String> {
 }
 
 fn session_from_request(req: &Request<hyper::body::Incoming>) -> Option<String> {
-	cookie_value(req, "sid").or_else(|| session_from_query(req))
+	session_from_query(req).or_else(|| cookie_value(req, "sid"))
+}
+
+fn new_session_id() -> String {
+	format!("sid-{}", next_ssr_hydration_id())
 }
 
 fn matching_http_route(
@@ -624,6 +628,13 @@ async fn handle_req(
 			return Ok(response);
 		}
 		if let Some((route, params)) = route {
+			let (session, new_session) = match session {
+				Some(session) => (Some(session), None),
+				None => {
+					let session = new_session_id();
+					(Some(session.clone()), Some(session))
+				}
+			};
 			let http_ctx = HttpCtx {
 				path: request.path.clone(),
 				params,
@@ -631,7 +642,16 @@ async fn handle_req(
 				headers: request.headers.clone(),
 				session,
 			};
-			return Ok(http_response((route.handler)(request, http_ctx).await));
+			let mut response = http_response((route.handler)(request, http_ctx).await);
+			if let Some(session) = new_session {
+				response.headers_mut().insert(
+					hyper::header::SET_COOKIE,
+					format!("sid={session}; Path=/; HttpOnly; SameSite=Lax")
+						.parse()
+						.expect("valid session cookie"),
+				);
+			}
+			return Ok(response);
 		}
 	}
 

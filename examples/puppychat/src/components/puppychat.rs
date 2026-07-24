@@ -1,7 +1,7 @@
 use crate::context::SharedContext;
 use crate::{
 	Channel, ChannelView, ChatViewState, DirectMessage, DirectMessageView, Message, PuppyDb,
-	PushSubscription, Session, SessionState, User,
+	PushSubscription, SessionState,
 };
 use async_trait::async_trait;
 use std::collections::BTreeSet;
@@ -126,32 +126,6 @@ impl Puppychat {
 			return Some(format!("channel:{}", session.active_id));
 		}
 		None
-	}
-
-	async fn find_user(db: &std::sync::Arc<PuppyDb>, name: &str) -> Option<User> {
-		db.users
-			.snapshot()
-			.into_iter()
-			.find(|user| user.name == name)
-	}
-
-	async fn persist_auth_session(
-		db: &std::sync::Arc<PuppyDb>,
-		session_key: &str,
-		user_name: &str,
-	) {
-		let existing = db
-			.sessions
-			.snapshot()
-			.into_iter()
-			.find(|session| session.session_key == session_key);
-		let mut row = existing.unwrap_or(Session {
-			id: 0,
-			session_key: session_key.to_string(),
-			user_name: user_name.to_string(),
-		});
-		row.user_name = user_name.to_string();
-		db.sessions.save(row).await;
 	}
 
 	fn notification_recipients(&self, message: &Message) -> Vec<String> {
@@ -349,118 +323,6 @@ impl Puppychat {
 				directs
 			},
 		}
-	}
-
-	pub(crate) fn edit_login_name(&mut self, value: String) {
-		let mut sessions = self.ctx.state.sessions.lock().unwrap();
-		let session = self.ensure_session_state(&mut sessions);
-		session.login_name = value;
-		session.auth_error.clear();
-	}
-
-	pub(crate) fn edit_login_password(&mut self, value: String) {
-		let mut sessions = self.ctx.state.sessions.lock().unwrap();
-		let session = self.ensure_session_state(&mut sessions);
-		session.login_password = value;
-		session.auth_error.clear();
-	}
-
-	pub(crate) fn open_register_page(&mut self) {
-		self.ctx.push_state("/register");
-	}
-
-	pub(crate) fn open_login_page(&mut self) {
-		self.ctx.push_state("/");
-	}
-
-	pub(crate) async fn login(&mut self) {
-		let auth_session_key = self.auth_session_key();
-		let (name, password) = {
-			let mut sessions = self.ctx.state.sessions.lock().unwrap();
-			let session = self.ensure_session_state(&mut sessions);
-			(
-				session.login_name.trim().to_string(),
-				session.login_password.clone(),
-			)
-		};
-		if name.is_empty() || password.trim().is_empty() {
-			let mut sessions = self.ctx.state.sessions.lock().unwrap();
-			let session = self.ensure_session_state(&mut sessions);
-			session.auth_error = "username and password are required".to_string();
-			return;
-		}
-
-		match Self::find_user(&self.ctx.db, &name).await {
-			Some(saved) if saved.password == password => {}
-			Some(_) => {
-				let mut sessions = self.ctx.state.sessions.lock().unwrap();
-				let session = self.ensure_session_state(&mut sessions);
-				session.auth_error = "invalid username or password".to_string();
-				return;
-			}
-			None => {
-				let mut sessions = self.ctx.state.sessions.lock().unwrap();
-				let session = self.ensure_session_state(&mut sessions);
-				session.auth_error = "account not found, register first".to_string();
-				return;
-			}
-		}
-
-		let user_name = {
-			let mut sessions = self.ctx.state.sessions.lock().unwrap();
-			let session = self.ensure_session_state(&mut sessions);
-			session.user_name = name;
-			let user_name = session.user_name.clone();
-			session.login_name.clear();
-			session.login_password.clear();
-			session.auth_error.clear();
-			user_name
-		};
-		Self::ensure_direct_entry(self.ctx.db(), &user_name);
-		Self::persist_auth_session(&self.ctx.db, &auth_session_key, &user_name).await;
-		self.ctx.pubsub().publish("rerender", ());
-	}
-
-	pub(crate) async fn register(&mut self) {
-		let (name, password) = {
-			let mut sessions = self.ctx.state.sessions.lock().unwrap();
-			let session = self.ensure_session_state(&mut sessions);
-			(
-				session.login_name.trim().to_string(),
-				session.login_password.clone(),
-			)
-		};
-
-		if name.is_empty() || password.trim().is_empty() {
-			let mut sessions = self.ctx.state.sessions.lock().unwrap();
-			let session = self.ensure_session_state(&mut sessions);
-			session.auth_error = "username and password are required".to_string();
-			return;
-		}
-
-		if Self::find_user(&self.ctx.db, &name).await.is_some() {
-			let mut sessions = self.ctx.state.sessions.lock().unwrap();
-			let session = self.ensure_session_state(&mut sessions);
-			session.auth_error = "username already exists".to_string();
-			return;
-		}
-
-		self.ctx
-			.db()
-			.users
-			.insert(User {
-				name: name.clone(),
-				password,
-			})
-			.await;
-
-		let mut sessions = self.ctx.state.sessions.lock().unwrap();
-		let session = self.ensure_session_state(&mut sessions);
-		session.login_name = name.clone();
-		session.login_password.clear();
-		session.auth_error = "account created, please login".to_string();
-		Self::ensure_direct_entry(self.ctx.db(), &name);
-		self.ctx.push_state("/");
 	}
 
 	pub(crate) fn edit_new_message(&mut self, value: String) {

@@ -1508,12 +1508,6 @@ impl Parse for RouteArgs {
 }
 
 fn expand_route(args: RouteArgs, item_fn: ItemFn, handle_kind: &str) -> syn::Result<TokenStream2> {
-	if args.view && !matches!(args.method, RouteMethod::Get) {
-		return Err(syn::Error::new_spanned(
-			&item_fn.sig.ident,
-			"the `view` route option only supports GET handlers",
-		));
-	}
 	let fn_ident = item_fn.sig.ident.clone();
 	let fn_is_async = item_fn.sig.asyncness.is_some();
 	let return_type = match &item_fn.sig.output {
@@ -1521,7 +1515,7 @@ fn expand_route(args: RouteArgs, item_fn: ItemFn, handle_kind: &str) -> syn::Res
 		ReturnType::Type(_, ty) => quote! { #ty },
 	};
 
-	let (ctx_ident, state_type) = extract_ctx_arg(&item_fn.sig)?;
+	let (ctx_ident, state_type, db_type) = extract_ctx_arg(&item_fn.sig)?;
 	let path_param_names = path_param_names(&args.path);
 	let param_args = extract_param_args(&item_fn.sig, &path_param_names, &args.method)?;
 
@@ -1612,6 +1606,7 @@ fn expand_route(args: RouteArgs, item_fn: ItemFn, handle_kind: &str) -> syn::Res
 
 		impl wgui::wui::route_handler::RouteHandler for #marker_ident {
 			type State = #state_type;
+			type Db = #db_type;
 
 			fn path(&self) -> &str {
 				#path_lit
@@ -1625,7 +1620,7 @@ fn expand_route(args: RouteArgs, item_fn: ItemFn, handle_kind: &str) -> syn::Res
 
 			fn call(
 				self,
-				ctx: ::std::sync::Arc<wgui::wui::runtime::Ctx<#state_type>>,
+				ctx: ::std::sync::Arc<wgui::wui::runtime::Ctx<#state_type, #db_type>>,
 				params: wgui::wui::route_handler::PathParams,
 				form: wgui::wui::route_handler::RouteFormData,
 			) -> wgui::wui::route_handler::RouteFuture {
@@ -1689,9 +1684,9 @@ fn standard_route_template(path: &str) -> String {
 
 type TokenStream2 = proc_macro2::TokenStream;
 
-/// Extract the `ctx: &Ctx<T>` first arg, returning the user's ident for `ctx`
-/// and the `T` (AppState type).
-fn extract_ctx_arg(sig: &Signature) -> syn::Result<(syn::Ident, Type)> {
+/// Extract the `ctx: &Ctx<T, DB>` first arg, returning the user's ident,
+/// application state type, and database type.
+fn extract_ctx_arg(sig: &Signature) -> syn::Result<(syn::Ident, Type, Type)> {
 	let Some(FnArg::Typed(pat_ty)) = sig.inputs.first().cloned() else {
 		return Err(syn::Error::new_spanned(
 			&sig.ident,
@@ -1707,8 +1702,8 @@ fn extract_ctx_arg(sig: &Signature) -> syn::Result<(syn::Ident, Type)> {
 			))
 		}
 	};
-	let state_type = match &*pat_ty.ty {
-		Type::Reference(r) => extract_ctx_generic(&r.elem)?,
+	let (state_type, db_type) = match &*pat_ty.ty {
+		Type::Reference(r) => extract_ctx_generics(&r.elem)?,
 		other => {
 			return Err(syn::Error::new_spanned(
 				other,
@@ -1716,11 +1711,12 @@ fn extract_ctx_arg(sig: &Signature) -> syn::Result<(syn::Ident, Type)> {
 			))
 		}
 	};
-	Ok((ctx_ident, state_type))
+	Ok((ctx_ident, state_type, db_type))
 }
 
-/// Given a `Type::Path` for `Ctx<...>`, return the inner generic arg.
-fn extract_ctx_generic(ty: &Type) -> syn::Result<Type> {
+/// Given a `Type::Path` for `Ctx<...>`, return its state and database types.
+/// The database type defaults to `()` for `Ctx<T>`.
+fn extract_ctx_generics(ty: &Type) -> syn::Result<(Type, Type)> {
 	let Type::Path(type_path) = ty else {
 		return Err(syn::Error::new_spanned(
 			ty,
@@ -1748,13 +1744,29 @@ fn extract_ctx_generic(ty: &Type) -> syn::Result<Type> {
 			"#[route] Ctx<T> missing its type parameter",
 		)
 	})?;
-	let syn::GenericArgument::Type(t) = first_arg else {
+	let syn::GenericArgument::Type(state_type) = first_arg else {
 		return Err(syn::Error::new_spanned(
 			first_arg,
 			"#[route] first generic argument of Ctx<T> must be a type",
 		));
 	};
-	Ok(t.clone())
+	let db_type = match args.args.iter().nth(1) {
+		Some(syn::GenericArgument::Type(db_type)) => db_type.clone(),
+		Some(other) => {
+			return Err(syn::Error::new_spanned(
+				other,
+				"second generic argument of Ctx<T, DB> must be a type",
+			))
+		}
+		None => syn::parse_quote!(()),
+	};
+	if args.args.len() > 2 {
+		return Err(syn::Error::new_spanned(
+			args,
+			"Ctx accepts at most two type arguments: Ctx<T, DB>",
+		));
+	}
+	Ok((state_type.clone(), db_type))
 }
 
 enum RouteArg {
