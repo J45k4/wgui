@@ -61,7 +61,7 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 
 						changes.push(ClientAction::AddFront(AddFront {
 							path: path.clone(),
-							item: item,
+							item,
 						}));
 					}
 					EditOperation::InsertAfter(index, item) => {
@@ -70,7 +70,7 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 						changes.push(ClientAction::InsertAt(InsertAt {
 							path: path.clone(),
 							inx: index,
-							item: item,
+							item,
 						}));
 					}
 					EditOperation::RemoveAt(index) => {
@@ -244,7 +244,7 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 		});
 	}
 
-	if sets.len() > 0 {
+	if !sets.is_empty() {
 		changes.push(ClientAction::SetProp {
 			path: path.clone(),
 			sets,
@@ -338,7 +338,7 @@ pub fn diff(old: &Item, new: &Item) -> Vec<ClientAction> {
 	log::trace!("{:?}", old);
 	log::trace!("{:?}", new);
 	let mut changes = Vec::new();
-	let mut path = Vec::new();
+	let path = Vec::new();
 	inner_diff(&mut changes, old, new, path);
 	log::debug!("diff changes: {:?}", changes);
 	changes
@@ -346,7 +346,6 @@ pub fn diff(old: &Item, new: &Item) -> Vec<ClientAction> {
 
 #[cfg(test)]
 mod tests {
-	use super::*;
 	use crate::gui::hstack;
 
 	#[test]
@@ -354,7 +353,7 @@ mod tests {
 		let old = hstack([]);
 		let new = hstack([]).spacing(10);
 
-		let changes = super::diff(&old.into(), &new.into());
+		let changes = super::diff(&old, &new);
 		println!("{:?}", changes);
 	}
 }

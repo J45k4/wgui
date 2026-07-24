@@ -565,9 +565,7 @@ async fn custom_http_response(
 	request: HttpRequest,
 	handler: &SharedHttpHandler,
 ) -> Option<Response<HttpBody>> {
-	let Some(handler) = handler.read().unwrap().clone() else {
-		return None;
-	};
+	let handler = handler.read().unwrap().clone()?;
 	(handler)(request).await.map(http_response)
 }
 

@@ -71,7 +71,7 @@ where
 		Self {
 			id,
 			ws,
-			cmd_recv: cmd_recv,
+			cmd_recv,
 			event_tx,
 			last_root: None,
 			clients,
@@ -121,16 +121,13 @@ where
 		match cmd {
 			Command::Render(root) => {
 				let changes = match &self.last_root {
-					Some(last_root) => {
-						let changes = diff(&last_root, &root);
-						changes
-					}
+					Some(last_root) => diff(last_root, &root),
 					None => vec![ClientAction::Replace(Replace {
 						path: vec![],
 						item: root.clone(),
 					})],
 				};
-				if changes.len() == 0 {
+				if changes.is_empty() {
 					return Ok(());
 				}
 				self.last_root = Some(root);

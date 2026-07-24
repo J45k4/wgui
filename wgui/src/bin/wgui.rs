@@ -1905,10 +1905,8 @@ fn normalize_name(raw: &str) -> Result<String, String> {
 	for ch in raw.chars() {
 		if ch.is_ascii_alphanumeric() {
 			out.push(ch.to_ascii_lowercase());
-		} else if ch == '-' || ch == '_' || ch == ' ' {
-			if !out.ends_with('_') {
-				out.push('_');
-			}
+		} else if (ch == '-' || ch == '_' || ch == ' ') && !out.ends_with('_') {
+			out.push('_');
 		}
 	}
 	let out = out.trim_matches('_').to_string();
@@ -2201,7 +2199,7 @@ mod tests {
 		let file = wui_dir.join("home.wui");
 		std::fs::write(&file, r#"<Text value="Hi" />"#).unwrap();
 
-		let files = discover_wui_check_files(&[project.clone()]).unwrap();
+		let files = discover_wui_check_files(std::slice::from_ref(&project)).unwrap();
 
 		let _ = std::fs::remove_dir_all(project.parent().unwrap());
 		assert_eq!(files, vec![(wui_dir, file)]);

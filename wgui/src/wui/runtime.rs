@@ -876,7 +876,7 @@ fn render_nodes(nodes: &[IrNode], out: &mut Vec<Item>, ctx: &mut EvalContext) {
 					.vars
 					.get("path")
 					.map(value_as_string)
-					.unwrap_or_else(String::new);
+					.unwrap_or_default();
 				if let Some(params) = route_params(&node.path, &path) {
 					let params = WuiValue::object(
 						params
@@ -893,7 +893,7 @@ fn render_nodes(nodes: &[IrNode], out: &mut Vec<Item>, ctx: &mut EvalContext) {
 					.vars
 					.get("path")
 					.map(value_as_string)
-					.unwrap_or_else(String::new);
+					.unwrap_or_default();
 				for case in &node.cases {
 					if let Some(params) = route_params(&case.path, &path) {
 						let params = WuiValue::object(
@@ -1442,7 +1442,7 @@ fn eval_path_matches(args: &[Expr], ctx: &EvalContext) -> WuiValue {
 		.vars
 		.get("path")
 		.map(value_as_string)
-		.unwrap_or_else(String::new);
+		.unwrap_or_default();
 	WuiValue::Bool(route_params(&pattern, &path).is_some())
 }
 

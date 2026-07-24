@@ -171,7 +171,7 @@ mod tests {
 		assert!(matches!(
 			ops.as_slice(),
 			[DiffOp::CreateTable { .. }, DiffOp::CreateIndex { table, index }]
-				if table == "Message" && index.unique == false
+				if table == "Message" && !index.unique
 		));
 	}
 }

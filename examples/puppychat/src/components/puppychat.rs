@@ -63,7 +63,7 @@ impl Puppychat {
 			{
 				state.user_name = row.user_name.clone();
 				if !state.user_name.is_empty() {
-					Self::ensure_direct_entry(&db, &state.user_name);
+					Self::ensure_direct_entry(db, &state.user_name);
 				}
 			}
 			state

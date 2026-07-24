@@ -2211,19 +2211,17 @@ where
 						.unwrap_or_else(|| format!("user {}", client_id));
 
 					let peers = {
-						let participants = rtc_rooms
-							.entry(join.room.clone())
-							.or_insert_with(BTreeSet::new);
+						let participants = rtc_rooms.entry(join.room.clone()).or_default();
 						participants.insert(client_id);
 						participants.iter().copied().collect::<Vec<_>>()
 					};
 					rtc_room_names
 						.entry(join.room.clone())
-						.or_insert_with(HashMap::new)
+						.or_default()
 						.insert(client_id, display_name);
 					rtc_client_rooms
 						.entry(client_id)
-						.or_insert_with(BTreeSet::new)
+						.or_default()
 						.insert(join.room.clone());
 					let room_participants = peers
 						.iter()

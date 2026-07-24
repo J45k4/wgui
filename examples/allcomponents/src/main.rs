@@ -105,7 +105,6 @@ fn render(state: &State) -> Item {
 		.id(MODAL_BACKDROP)
 		.open(state.show_modal),
 	])
-	.into()
 }
 
 #[tokio::main]
@@ -128,7 +127,7 @@ async fn main() {
 				client_ids.insert(client_id);
 			}
 			ClientEvent::PathChanged(_) => {}
-			ClientEvent::Input(q) => {}
+			ClientEvent::Input(_q) => {}
 			ClientEvent::OnClick(o) => match o.id {
 				SHOW_TABLE_BUTTON => {
 					state.show_table = !state.show_table;
@@ -153,10 +152,8 @@ async fn main() {
 					state.slider_value = s.value;
 				}
 			}
-			ClientEvent::OnSelect(o) => {
-				if o.id == SELECT {
-					state.option = o.value;
-				}
+			ClientEvent::OnSelect(o) if o.id == SELECT => {
+				state.option = o.value;
 			}
 			_ => {}
 		}

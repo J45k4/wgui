@@ -1452,15 +1452,11 @@ struct RouteArgs {
 	template: Option<String>,
 }
 
+#[derive(Default)]
 enum RouteMethod {
+	#[default]
 	Get,
 	Post,
-}
-
-impl Default for RouteMethod {
-	fn default() -> Self {
-		RouteMethod::Get
-	}
 }
 
 impl Parse for RouteArgs {
@@ -1674,9 +1670,7 @@ fn standard_route_template(path: &str) -> String {
 	} else {
 		"index"
 	};
-	let directories = if last_param {
-		&segments[..segments.len().saturating_sub(1)]
-	} else if segments.iter().any(|segment| segment.starts_with(':')) {
+	let directories = if last_param || segments.iter().any(|segment| segment.starts_with(':')) {
 		&segments[..segments.len().saturating_sub(1)]
 	} else {
 		&segments[..]

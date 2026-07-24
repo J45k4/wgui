@@ -83,7 +83,7 @@ async fn main() {
 				client_ids.insert(client_id);
 			}
 			ClientEvent::PathChanged(_) => {}
-			ClientEvent::Input(q) => {}
+			ClientEvent::Input(_q) => {}
 			ClientEvent::OnClick(o) => match o.id {
 				ADD_TODO_ID => {
 					log::info!("add_todo_button clicked");
@@ -101,13 +101,12 @@ async fn main() {
 				}
 				_ => {}
 			},
-			ClientEvent::OnTextChanged(t) => match t.id {
-				NEW_TODO_TEXT_ID => {
+			ClientEvent::OnTextChanged(t) => {
+				if t.id == NEW_TODO_TEXT_ID {
 					log::info!("new_todo_name {:?}", t.value);
 					state.new_todo_name = t.value;
 				}
-				_ => {}
-			},
+			}
 			ClientEvent::OnSliderChange(s) => {
 				state.slider_value = s.value;
 			}

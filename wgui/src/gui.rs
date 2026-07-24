@@ -4,30 +4,12 @@ fn is_default<T: Default + PartialEq>(value: &T) -> bool {
 	value == &T::default()
 }
 
-#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FlexDirection {
+	#[default]
 	Column,
 	Row,
-}
-
-impl Default for FlexDirection {
-	fn default() -> Self {
-		FlexDirection::Column
-	}
-}
-
-#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
-enum Value {
-	String(String),
-	Bool(bool),
-	Undefined,
-}
-
-impl Default for Value {
-	fn default() -> Self {
-		Value::Undefined
-	}
 }
 
 #[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -66,7 +48,7 @@ pub struct LayoutEvents {
 	pub scroll_near_bottom: Option<u32>,
 }
 
-#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ItemPayload {
 	Layout(Layout),
@@ -177,6 +159,7 @@ pub enum ItemPayload {
 		#[serde(default, skip_serializing_if = "HashMap::is_empty")]
 		events: HashMap<String, u32>,
 	},
+	#[default]
 	None,
 }
 
@@ -188,12 +171,6 @@ pub struct ButtonEvents {
 	pub release: Option<u32>,
 	pub repeat: Option<u32>,
 	pub repeat_interval: Option<u32>,
-}
-
-impl Default for ItemPayload {
-	fn default() -> Self {
-		ItemPayload::None
-	}
 }
 
 #[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -710,31 +687,22 @@ impl Item {
 	}
 
 	pub fn min(mut self, m: i32) -> Self {
-		match self.payload {
-			ItemPayload::Slider { ref mut min, .. } => {
-				*min = m;
-			}
-			_ => {}
+		if let ItemPayload::Slider { ref mut min, .. } = self.payload {
+			*min = m;
 		}
 		self
 	}
 
 	pub fn max(mut self, m: i32) -> Self {
-		match self.payload {
-			ItemPayload::Slider { ref mut max, .. } => {
-				*max = m;
-			}
-			_ => {}
+		if let ItemPayload::Slider { ref mut max, .. } = self.payload {
+			*max = m;
 		}
 		self
 	}
 
 	pub fn ivalue(mut self, v: i32) -> Self {
-		match self.payload {
-			ItemPayload::Slider { ref mut value, .. } => {
-				*value = v;
-			}
-			_ => {}
+		if let ItemPayload::Slider { ref mut value, .. } = self.payload {
+			*value = v;
 		}
 		self
 	}
@@ -762,11 +730,8 @@ impl Item {
 	}
 
 	pub fn step(mut self, s: i32) -> Self {
-		match self.payload {
-			ItemPayload::Slider { ref mut step, .. } => {
-				*step = s;
-			}
-			_ => {}
+		if let ItemPayload::Slider { ref mut step, .. } = self.payload {
+			*step = s;
 		}
 		self
 	}
@@ -975,13 +940,11 @@ impl Item {
 	}
 
 	pub fn object_fit(mut self, fit: &str) -> Self {
-		match self.payload {
-			ItemPayload::Img {
-				ref mut object_fit, ..
-			} => {
-				*object_fit = Some(fit.to_string());
-			}
-			_ => {}
+		if let ItemPayload::Img {
+			ref mut object_fit, ..
+		} = self.payload
+		{
+			*object_fit = Some(fit.to_string());
 		}
 		self
 	}
@@ -1091,21 +1054,15 @@ impl Item {
 	}
 
 	pub fn hresize(mut self, r: bool) -> Self {
-		match self.payload {
-			ItemPayload::Layout(ref mut layout) => {
-				layout.horizontal_resize = r;
-			}
-			_ => {}
+		if let ItemPayload::Layout(ref mut layout) = self.payload {
+			layout.horizontal_resize = r;
 		}
 		self
 	}
 
 	pub fn vresize(mut self, r: bool) -> Self {
-		match self.payload {
-			ItemPayload::Layout(ref mut layout) => {
-				layout.vresize = r;
-			}
-			_ => {}
+		if let ItemPayload::Layout(ref mut layout) = self.payload {
+			layout.vresize = r;
 		}
 		self
 	}
@@ -1117,7 +1074,7 @@ mod tests {
 
 	#[test]
 	fn test_vstack() {
-		let view = vstack([hstack([text("Hello"), button("Click me")]), button("DUNNO")]);
+		let _ = vstack([hstack([text("Hello"), button("Click me")]), button("DUNNO")]);
 	}
 
 	#[test]
