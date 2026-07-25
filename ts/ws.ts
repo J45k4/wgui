@@ -11,9 +11,6 @@ export const connectWebsocket = (args: {
     onConnectionChange?: OnConnectionChange
 }) => {
     let ws: WebSocket | undefined
-    const sessionStorageKey = "wgui.sid"
-    let inMemorySid: string | undefined
-
     const sender = new MessageSender((msgs: MessageToSrv[]) => {
         if (!ws || ws.readyState !== WebSocket.OPEN) {
             return
@@ -22,38 +19,12 @@ export const connectWebsocket = (args: {
         ws.send(JSON.stringify(msgs))
     })
 
-    const getSessionId = () => {
-        try {
-            const existing = window.localStorage.getItem(sessionStorageKey)
-            if (existing) {
-                return existing
-            }
-            // Backward-compat: migrate previous sid storage.
-            const legacy = window.sessionStorage.getItem(sessionStorageKey)
-            if (legacy) {
-                window.localStorage.setItem(sessionStorageKey, legacy)
-                return legacy
-            }
-        } catch (_) {}
-        if (inMemorySid) {
-            return inMemorySid
-        }
-        const sid = (window.crypto?.randomUUID?.() ?? `sid-${Date.now()}-${Math.floor(Math.random() * 1_000_000_000)}`).replace(/[^a-zA-Z0-9_-]/g, "")
-        try {
-            window.localStorage.setItem(sessionStorageKey, sid)
-        } catch (_) {
-            inMemorySid = sid
-        }
-        return sid
-    }
-
     const createConnection = () => {
         args.onConnectionChange?.(false)
         const href = window.location.href
         const url = new URL(href)
         const wsProtocol = url.protocol === "https:" ? "wss" : "ws"
-        const sid = encodeURIComponent(getSessionId())
-        const wsUrl = `${wsProtocol}://${url.host}/ws?sid=${sid}`
+        const wsUrl = `${wsProtocol}://${url.host}/ws`
         ws = new WebSocket(wsUrl)
 
         ws.onmessage = (e) => {

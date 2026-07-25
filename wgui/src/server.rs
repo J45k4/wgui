@@ -738,7 +738,13 @@ async fn handle_req(
 		}
 		_ => {
 			if let Some(renderer) = ctx.ssr {
-				let session = session_from_request(&req);
+				let (session, new_session) = match session_from_request(&req) {
+					Some(session) => (Some(session), None),
+					None => {
+						let session = new_session_id();
+						(Some(session.clone()), Some(session))
+					}
+				};
 				let route = RouteContext {
 					path: req.uri().path().to_string(),
 					params: std::collections::HashMap::new(),
@@ -761,18 +767,38 @@ async fn handle_req(
 							Some(&hydration_id),
 							title.as_deref(),
 						);
-						Ok(Response::builder()
+						let mut response = Response::builder()
 							.header("content-type", "text/html")
 							.header("cache-control", "no-store")
 							.body(full_body(html))
-							.unwrap())
+							.unwrap();
+						if let Some(session) = new_session.clone() {
+							response.headers_mut().insert(
+								hyper::header::SET_COOKIE,
+								format!("sid={session}; Path=/; HttpOnly; SameSite=Lax")
+									.parse()
+									.expect("valid session cookie"),
+							);
+						}
+						Ok(response)
 					}
-					Some(SsrResponse::Redirect(url)) => Ok(Response::builder()
-						.status(303)
-						.header("location", url)
-						.header("cache-control", "no-store")
-						.body(full_body(Bytes::new()))
-						.unwrap()),
+					Some(SsrResponse::Redirect(url)) => {
+						let mut response = Response::builder()
+							.status(303)
+							.header("location", url)
+							.header("cache-control", "no-store")
+							.body(full_body(Bytes::new()))
+							.unwrap();
+						if let Some(session) = new_session {
+							response.headers_mut().insert(
+								hyper::header::SET_COOKIE,
+								format!("sid={session}; Path=/; HttpOnly; SameSite=Lax")
+									.parse()
+									.expect("valid session cookie"),
+							);
+						}
+						Ok(response)
+					}
 					None => Ok(Response::builder()
 						.header("content-type", "text/html")
 						.header("cache-control", "no-store")

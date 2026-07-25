@@ -1,6 +1,17 @@
 import { ButtonEvents, Context, Item, ItemPayload } from "./types.ts";
 import { disposeCustomComponentTree, mountCustomComponent } from "./custom_components.ts";
 
+let nextFormSubmissionId = 1
+const pendingFormSubmissions = new Map<number, HTMLFormElement>()
+const latestFormSubmissionIds = new WeakMap<HTMLFormElement, number>()
+
+export const formSubmissionSucceeded = (submissionId: number) => {
+	const form = pendingFormSubmissions.get(submissionId)
+	pendingFormSubmissions.delete(submissionId)
+	if (form && latestFormSubmissionIds.get(form) === submissionId) {
+		form.reset()
+	}
+}
 
 
 const renderChildren = (element: HTMLElement, items: Item[], ctx: Context) => {
@@ -107,6 +118,20 @@ const fileToDataUrl = (file: File): Promise<string> =>
 		reader.onerror = () => reject(reader.error)
 		reader.readAsDataURL(file)
 	})
+
+const sendImageFileAsTextChanged = async (ctx: Context, id: number, inx: number | undefined, file: File) => {
+	const value = await fileToDataUrl(file).catch(() => "")
+	if (!value) {
+		return
+	}
+	ctx.sender.send({
+		type: "onTextChanged",
+		id,
+		inx,
+		value,
+	})
+	ctx.sender.sendNow()
+}
 
 const setImageDropActive = (input: HTMLInputElement, active: boolean) => {
 	if (active) {
@@ -256,20 +281,6 @@ const configureButtonEvents = (button: HTMLButtonElement, item: Item, events: Bu
 		button.onblur = () => stopButtonHold(state!, true)
 	}
 	state.config = { item, events, ctx }
-}
-
-const sendImageFileAsTextChanged = async (ctx: Context, id: number, inx: number | undefined, file: File) => {
-	const value = await fileToDataUrl(file).catch(() => "")
-	if (!value) {
-		return
-	}
-	ctx.sender.send({
-		type: "onTextChanged",
-		id,
-		inx,
-		value,
-	})
-	ctx.sender.sendNow()
 }
 
 const bindAutoClick = (element: HTMLElement, item: Item, ctx: Context) => {
@@ -566,25 +577,8 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 				.join("/")
 		form.action = resolvedAction || location.href
 		form.method = payload.method || item.method || "post"
-		form.onsubmit = (event: SubmitEvent) => {
-			if (form.method.toLowerCase() !== "post") {
-				return
-			}
-			event.preventDefault()
-			const action = new URL(form.action || location.href, window.location.href)
-			const fields: { [key: string]: string } = {}
-			new FormData(form).forEach((value, key) => {
-				if (typeof value === "string") {
-					fields[key] = value
-				}
-			})
-			ctx.sender.send({
-				type: "formSubmit",
-				path: action.pathname,
-				query: pathQuery(action.search),
-				fields,
-			})
-			ctx.sender.sendNow()
+		if (form.querySelector('input[type="file"]')) {
+			form.enctype = "multipart/form-data"
 		}
 		form.style.display = "flex"
 		form.style.flexDirection = "column"
@@ -1014,18 +1008,9 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 		element.webkitdirectory = false
 		element.multiple = false
 		element.accept = "image/*"
+		element.name = "image_url"
 		element.dataset.wguiRole = "folder-picker"
 		element.dataset.wguiId = item.id ? item.id.toString() : ""
-		element.oninput = async (e: any) => {
-			if (!item.id) {
-				return
-			}
-			const file: File | undefined = e?.target?.files?.[0]
-			if (!file) {
-				return
-			}
-			await sendImageFileAsTextChanged(ctx, item.id, item.inx, file)
-		}
 		return element
 	}
 

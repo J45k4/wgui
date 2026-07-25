@@ -1276,6 +1276,7 @@ fn apply_string_prop(item: Item, name: &str, value: &str) -> Item {
 		"svalue" | "bind:svalue" => item.svalue(value),
 		"name" => item.name(value),
 		"class" => item.class(value),
+		"partial" => item.partial_addr(value),
 		"action" => item.action(value),
 		"method" => item.method(value),
 		"placeholder" => item.placeholder(value),

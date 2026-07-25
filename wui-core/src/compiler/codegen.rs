@@ -676,6 +676,7 @@ fn prop_method(name: &str) -> String {
 		"objectFit" => "object_fit".to_string(),
 		"room" => "room".to_string(),
 		"arg" => "form_arg".to_string(),
+		"partial" => "partial_addr".to_string(),
 		"local" => "local".to_string(),
 		"autoplay" => "autoplay".to_string(),
 		"muted" => "muted".to_string(),
@@ -784,6 +785,7 @@ fn is_string_prop(name: &str) -> bool {
 			| "action"
 			| "method"
 			| "name" | "class"
+			| "partial"
 			| "type" | "backgroundColor"
 			| "color" | "border"
 			| "objectFit"

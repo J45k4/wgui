@@ -375,6 +375,11 @@ export type Navigate = {
 	url: string
 }
 
+export type FormSucceeded = {
+	type: "formSucceeded"
+	submissionId: number
+}
+
 export type ReplaceState = {
     type: "replaceState"
     url: string
@@ -443,6 +448,7 @@ export type SrvMessage = Replace |
 	RemoveInx |
 	PushState |
 	Navigate |
+	FormSucceeded |
 	ReplaceState |
     SetQuery |
 	SetProp |
@@ -509,6 +515,7 @@ export type PathChanged = {
 export type FormSubmit = {
 	type: "formSubmit"
 	path: string
+	submissionId: number
 	query: { [key: string]: string }
 	fields: { [key: string]: string }
 }

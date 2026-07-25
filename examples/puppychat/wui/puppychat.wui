@@ -1,5 +1,5 @@
 <Switch>
-  <Case path="/" title="PuppyChat">
+  <Case path="/*" title="PuppyChat">
     <If test={state.user_name == ""}>
       <VStack padding=16 spacing=12 width=360>
         <Text value="Login to PuppyChat" />
@@ -14,16 +14,18 @@
       </VStack>
     </If>
     <Else>
-      <HStack class="puppychat-shell" spacing=0 grow=1>
+      <HStack class={state.shell_class} spacing=0 grow=1>
         <VStack class="puppychat-sidebar" width=260 minWidth=200 maxWidth=420 padding=12 spacing=10 backgroundColor="#f6f5f2" border="1px solid #e1ded7" hresize=true overflow="auto">
           <Text value="PuppyChat" />
           <HStack spacing=6>
             <Text value="Channels" grow=1 />
-            <Button text="Add" onClick="OpenCreateChannel" />
+            <Form action="/chat/channels/new" method="post">
+              <Button text="Add" />
+            </Form>
           </HStack>
           <VStack spacing=4>
             <For each={state.channels} itemAs="channel">
-              <Button text={channel.display_name} onClick="SelectChannel" arg={channel.id} />
+              <Link href={channel.href} text={channel.display_name} />
             </For>
           </VStack>
           <Text value="Direct Messages" />
@@ -31,35 +33,26 @@
             <For each={state.directs} itemAs="dm">
               <HStack spacing=6>
                 <Text value={dm.online ? "●" : "○"} />
-                <Button text={dm.display_name} onClick="SelectDirect" arg={dm.id} />
+                <Link href={dm.href} text={dm.display_name} />
               </HStack>
             </For>
           </VStack>
+          <VStack grow=1 />
+          <Form action="/logout" method="post"><Button text="Logout" /></Form>
         </VStack>
         <VStack class="puppychat-main" grow=1 padding=12 spacing=10>
           <HStack class="puppychat-header" spacing=8>
+            <Link class="puppychat-back" href="/" text="← Channels" />
             <Text value={state.active_name} />
             <If test={state.active_kind != "" && !state.call_active}>
-              <Button text="Audio Call" onClick="StartAudioCall" />
-              <Button text="Video Call" onClick="StartVideoCall" />
+              <Form action="/chat/call/audio" method="post"><Button text="Audio Call" /></Form>
+              <Form action="/chat/call/video" method="post"><Button text="Video Call" /></Form>
             </If>
             <If test={state.call_active}>
-              <Button text="End Call" onClick="EndCall" />
+              <Form action="/chat/call/end" method="post"><Button text="End Call" /></Form>
             </If>
             <Text value={state.user_name} grow=1 textAlign="right" />
           </HStack>
-          <HStack class="puppychat-push-controls" spacing=8>
-            <Button text="Enable Push" onClick="EnablePushNotifications" />
-            <Button text="Disable Push" onClick="DisablePushNotifications" />
-            <Text value={state.push_status} />
-          </HStack>
-          <VStack height=0 overflow="hidden">
-            <TextInput
-              value={state.web_push_sink}
-              placeholder="__web_push_subscription_sink__"
-              onTextChanged="RegisterWebPushSubscription"
-            />
-          </VStack>
           <If test={state.call_active && state.call_room != ""}>
             <VStack spacing=8 padding=8 border="1px solid #d8d8d8">
               <Text value={state.call_with_video ? "Video call in progress" : "Audio call in progress"} />
@@ -105,7 +98,7 @@
               </If>
             </VStack>
           </If>
-          <VStack spacing=6 grow=1 overflow="scroll">
+          <VStack class="puppychat-messages" partial={state.message_partial_addr} spacing=6 grow=1 overflow="scroll">
             <If test={state.active_kind == "channel"}>
               <For each={state.channels} itemAs="channel">
                 <If test={channel.id == state.active_id}>
@@ -125,9 +118,11 @@
                           objectFit="contain"
                           maxWidth=320
                           maxHeight=220
-                          onClick="OpenMessageImage"
-                          arg={msg.id}
                         />
+                        <Form action="/chat/images/open" method="post">
+                          <TextInput name="id" type="hidden" value={msg.id} />
+                          <Button text="Open image" />
+                        </Form>
                       </If>
                     </VStack>
                   </For>
@@ -153,9 +148,11 @@
                           objectFit="contain"
                           maxWidth=320
                           maxHeight=220
-                          onClick="OpenMessageImage"
-                          arg={msg.id}
                         />
+                        <Form action="/chat/images/open" method="post">
+                          <TextInput name="id" type="hidden" value={msg.id} />
+                          <Button text="Open image" />
+                        </Form>
                       </If>
                     </VStack>
                   </For>
@@ -166,46 +163,49 @@
           <VStack spacing=6>
             <Form action="/messages" method="post" spacing=6>
               <HStack class="puppychat-composer" spacing=6>
-                <TextInput name="channel_id" type="hidden" value={state.active_id} />
+                <TextInput name="active_kind" type="hidden" value={state.active_kind} />
+                <TextInput name="active_id" type="hidden" value={state.active_id} />
                 <TextInput
                   name="body"
-                  value={state.new_message}
                   placeholder="Write a message"
-                  onTextChanged="EditNewMessage"
                   grow=1
                 />
                 <Button text="Send" />
               </HStack>
             </Form>
-            <Button text="Attach image" onClick="OpenAttachMenu" />
+            <Form action="/chat/attachments/open" method="post"><Button text="Attach image" /></Form>
           </VStack>
         </VStack>
       </HStack>
-      <Modal open={state.show_attach_menu} onClick="CloseAttachMenu">
-        <VStack padding=16 spacing=10 width=360 backgroundColor="#ffffff" border="1px solid #d9d9d9">
+      <Modal open={state.show_attach_menu}>
+        <VStack class="puppychat-upload-modal" padding=16 spacing=10 width=360 backgroundColor="#ffffff" border="1px solid #d9d9d9">
           <Text value="Upload image" />
-          <FolderPicker onTextChanged="EditNewPictureUrl" />
-          <Text value="Choose a file to send it immediately" />
-          <HStack spacing=8>
-            <Button text="Close" onClick="CloseAttachMenu" />
+          <Form action="/chat/attachments" method="post">
+            <FolderPicker name="image_url" />
+            <HStack class="puppychat-upload-submit-row" spacing=8>
+              <Button text="Send image" />
+            </HStack>
+          </Form>
+          <HStack class="puppychat-upload-cancel-row" spacing=8>
+            <Form action="/chat/attachments/cancel" method="post"><Button text="Close" /></Form>
           </HStack>
         </VStack>
       </Modal>
-      <Modal open={state.show_create_channel} onClick="CloseCreateChannel">
-        <VStack padding=16 spacing=10 width=360 backgroundColor="#ffffff" border="1px solid #d9d9d9">
+      <Modal open={state.show_create_channel}>
+        <VStack class="puppychat-create-channel-modal" padding=16 spacing=10 width=360 backgroundColor="#ffffff" border="1px solid #d9d9d9">
           <Text value="Create channel" />
-          <TextInput
-            value={state.new_channel_name}
-            placeholder="Channel name"
-            onTextChanged="EditNewChannelName"
-          />
-          <HStack spacing=8>
-            <Button text="Cancel" onClick="CloseCreateChannel" />
-            <Button text="Create" onClick="CreateChannel" />
+          <Form action="/chat/channels" method="post">
+            <TextInput name="name" placeholder="Channel name" />
+            <HStack class="puppychat-create-submit-row" spacing=8>
+              <Button text="Create" />
+            </HStack>
+          </Form>
+          <HStack class="puppychat-create-cancel-row" spacing=8>
+            <Form action="/chat/channels/cancel" method="post"><Button text="Cancel" /></Form>
           </HStack>
         </VStack>
       </Modal>
-      <Modal open={state.show_image_modal} onClick="CloseImageModal">
+      <Modal open={state.show_image_modal}>
         <VStack
           padding=12
           spacing=8
@@ -217,12 +217,9 @@
             alt="full image"
             objectFit="contain"
           />
-          <Button text="Close" onClick="CloseImageModal" />
+          <Form action="/chat/images/close" method="post"><Button text="Close" /></Form>
         </VStack>
       </Modal>
     </Else>
-  </Case>
-  <Case path="/*" title="Not Found">
-    <Text value="Page not found" />
   </Case>
 </Switch>

@@ -62,6 +62,67 @@ impl RouteFormData {
 		)
 	}
 
+	pub fn from_multipart(body: &[u8], content_type: &str) -> Self {
+		let Some(boundary) = content_type
+			.split(';')
+			.map(str::trim)
+			.find_map(|part| part.strip_prefix("boundary="))
+			.map(|value| value.trim_matches('"'))
+		else {
+			return Self::default();
+		};
+		let marker = format!("--{boundary}").into_bytes();
+		let mut fields = HashMap::new();
+		let mut remaining = body;
+		while let Some(start) = remaining
+			.windows(marker.len())
+			.position(|window| window == marker)
+		{
+			remaining = &remaining[start + marker.len()..];
+			let Some(end) = remaining
+				.windows(marker.len())
+				.position(|window| window == marker)
+			else {
+				break;
+			};
+			let part = &remaining[..end];
+			remaining = &remaining[end..];
+			let part = part.strip_prefix(b"\r\n").unwrap_or(part);
+			if part.is_empty() || part.starts_with(b"--") {
+				continue;
+			}
+			let Some(header_end) = part.windows(4).position(|window| window == b"\r\n\r\n") else {
+				continue;
+			};
+			let headers = String::from_utf8_lossy(&part[..header_end]);
+			let data = part[header_end + 4..]
+				.strip_suffix(b"\r\n")
+				.unwrap_or(&part[header_end + 4..]);
+			let Some(name) = headers.split(';').find_map(|header| {
+				header
+					.trim()
+					.strip_prefix("name=\"")
+					.and_then(|value| value.strip_suffix('"'))
+			}) else {
+				continue;
+			};
+			let value = if headers.contains("filename=\"") {
+				let mime = headers
+					.lines()
+					.find_map(|line| line.strip_prefix("Content-Type:"))
+					.map(str::trim)
+					.unwrap_or("application/octet-stream");
+				format!("data:{mime};base64,{}", encode_base64(data))
+			} else {
+				String::from_utf8_lossy(data)
+					.trim_end_matches('\r')
+					.to_string()
+			};
+			fields.insert(name.to_string(), value);
+		}
+		Self(fields)
+	}
+
 	/// Decode fields into a `#[derive(serde::Deserialize)]` form type.
 	///
 	pub fn decode<T: DeserializeOwned>(&self) -> Result<T, ParamError> {
@@ -79,6 +140,29 @@ impl RouteFormData {
 	pub fn is_empty(&self) -> bool {
 		self.0.is_empty()
 	}
+}
+
+fn encode_base64(bytes: &[u8]) -> String {
+	const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
+	for chunk in bytes.chunks(3) {
+		let a = chunk[0] as u32;
+		let b = chunk.get(1).copied().unwrap_or(0) as u32;
+		let c = chunk.get(2).copied().unwrap_or(0) as u32;
+		output.push(TABLE[((a >> 2) & 63) as usize] as char);
+		output.push(TABLE[(((a & 3) << 4) | (b >> 4)) as usize] as char);
+		output.push(if chunk.len() > 1 {
+			TABLE[(((b & 15) << 2) | (c >> 6)) as usize] as char
+		} else {
+			'='
+		});
+		output.push(if chunk.len() > 2 {
+			TABLE[(c & 63) as usize] as char
+		} else {
+			'='
+		});
+	}
+	output
 }
 
 /// Error returned when a path param can't be decoded into the requested type.
@@ -480,6 +564,27 @@ mod tests {
 				count: 7,
 				done: true,
 			}
+		);
+	}
+
+	#[test]
+	fn multipart_form_data_decodes_fields_and_files() {
+		let body = concat!(
+			"--demo\r\n",
+			"Content-Disposition: form-data; name=\"caption\"\r\n\r\n",
+			"hello\r\n",
+			"--demo\r\n",
+			"Content-Disposition: form-data; name=\"image_url\"; filename=\"x.png\"\r\n",
+			"Content-Type: image/png\r\n\r\n",
+			"abc\r\n",
+			"--demo--\r\n",
+		);
+		let form =
+			RouteFormData::from_multipart(body.as_bytes(), "multipart/form-data; boundary=demo");
+		assert_eq!(form.0.get("caption"), Some(&"hello".to_string()));
+		assert_eq!(
+			form.0.get("image_url"),
+			Some(&"data:image/png;base64,YWJj".to_string())
 		);
 	}
 

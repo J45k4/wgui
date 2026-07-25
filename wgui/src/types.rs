@@ -70,6 +70,10 @@ pub struct PathChanged {
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FormSubmit {
 	pub path: String,
+	/// Identifies this browser submission so a successful response can reset
+	/// exactly the form that initiated it.
+	#[serde(default, rename = "submissionId")]
+	pub submission_id: u64,
 	#[serde(default)]
 	pub query: HashMap<String, String>,
 	#[serde(default)]
@@ -239,6 +243,15 @@ pub struct Navigate {
 	pub url: String,
 }
 
+/// Confirms that a POST action completed successfully. The browser uses this
+/// to reset the matching submitted form; validation views deliberately do not
+/// emit this action so their entered values remain visible.
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FormSucceeded {
+	#[serde(rename = "submissionId")]
+	pub submission_id: u64,
+}
+
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ReplaceState {
 	pub url: String,
@@ -295,6 +308,7 @@ pub enum ClientAction {
 	RemoveInx(RemoveInx),
 	PushState(PushState),
 	Navigate(Navigate),
+	FormSucceeded(FormSucceeded),
 	ReplaceState(ReplaceState),
 	SetQuery(SetQuery),
 	SetProp {
@@ -425,6 +439,26 @@ mod tests {
 
 		let value = serde_json::to_value(event).unwrap();
 		assert!(value["initialRoot"].is_object());
+	}
+
+	#[test]
+	fn form_submit_deserializes_submission_id() {
+		let event: ClientEvent = serde_json::from_str(
+			r#"{"type":"formSubmit","path":"/messages","submissionId":42,"query":{},"fields":{}}"#,
+		)
+		.unwrap();
+		let ClientEvent::FormSubmit(form) = event else {
+			panic!("expected FormSubmit");
+		};
+		assert_eq!(form.submission_id, 42);
+	}
+
+	#[test]
+	fn form_succeeded_serializes_submission_id() {
+		let action = ClientAction::FormSucceeded(FormSucceeded { submission_id: 42 });
+		let json = serde_json::to_value(action).unwrap();
+		assert_eq!(json["type"], "formSucceeded");
+		assert_eq!(json["submissionId"], 42);
 	}
 
 	#[test]

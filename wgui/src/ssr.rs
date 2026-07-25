@@ -183,6 +183,9 @@ fn render_form(item: &Item, action: &str, method: &str, spacing: u32, body: &[It
 		attrs.push(("method".to_string(), escape_attr(method)));
 	}
 	let children = render_children(body);
+	if children.contains("type=\"file\"") {
+		attrs.push(("enctype".to_string(), "multipart/form-data".to_string()));
+	}
 	render_element("form", &classes, style, &attrs, &children)
 }
 

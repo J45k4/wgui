@@ -277,6 +277,15 @@ var getPathItem = (path, element) => {
 };
 
 // ts/render.ts
+var pendingFormSubmissions = new Map;
+var latestFormSubmissionIds = new WeakMap;
+var formSubmissionSucceeded = (submissionId) => {
+  const form = pendingFormSubmissions.get(submissionId);
+  pendingFormSubmissions.delete(submissionId);
+  if (form && latestFormSubmissionIds.get(form) === submissionId) {
+    form.reset();
+  }
+};
 var renderChildren = (element, items, ctx) => {
   for (const item of items) {
     const child = renderItem(item, ctx);
@@ -370,6 +379,19 @@ var fileToDataUrl = (file) => new Promise((resolve, reject) => {
   reader.onerror = () => reject(reader.error);
   reader.readAsDataURL(file);
 });
+var sendImageFileAsTextChanged = async (ctx, id, inx, file) => {
+  const value = await fileToDataUrl(file).catch(() => "");
+  if (!value) {
+    return;
+  }
+  ctx.sender.send({
+    type: "onTextChanged",
+    id,
+    inx,
+    value
+  });
+  ctx.sender.sendNow();
+};
 var setImageDropActive = (input, active) => {
   if (active) {
     input.style.outline = "2px dashed #2f7dd1";
@@ -493,19 +515,6 @@ var configureButtonEvents = (button, item, events, ctx) => {
     button.onblur = () => stopButtonHold(state, true);
   }
   state.config = { item, events, ctx };
-};
-var sendImageFileAsTextChanged = async (ctx, id, inx, file) => {
-  const value = await fileToDataUrl(file).catch(() => "");
-  if (!value) {
-    return;
-  }
-  ctx.sender.send({
-    type: "onTextChanged",
-    id,
-    inx,
-    value
-  });
-  ctx.sender.sendNow();
 };
 var bindAutoClick = (element, item, ctx) => {
   const autoKey = "1";
@@ -762,26 +771,9 @@ var renderPayload = (item, ctx, old) => {
     const resolvedAction = action.startsWith("/") ? action : [basePath, item.formArg?.toString(), action].filter((segment) => !!segment).join("/");
     form.action = resolvedAction || location.href;
     form.method = payload.method || item.method || "post";
-    form.onsubmit = (event) => {
-      if (form.method.toLowerCase() !== "post") {
-        return;
-      }
-      event.preventDefault();
-      const action2 = new URL(form.action || location.href, window.location.href);
-      const fields = {};
-      new FormData(form).forEach((value, key) => {
-        if (typeof value === "string") {
-          fields[key] = value;
-        }
-      });
-      ctx.sender.send({
-        type: "formSubmit",
-        path: action2.pathname,
-        query: pathQuery(action2.search),
-        fields
-      });
-      ctx.sender.sendNow();
-    };
+    if (form.querySelector('input[type="file"]')) {
+      form.enctype = "multipart/form-data";
+    }
     form.style.display = "flex";
     form.style.flexDirection = "column";
     if (payload.spacing) {
@@ -1205,18 +1197,9 @@ var renderPayload = (item, ctx, old) => {
     element.webkitdirectory = false;
     element.multiple = false;
     element.accept = "image/*";
+    element.name = "image_url";
     element.dataset.wguiRole = "folder-picker";
     element.dataset.wguiId = item.id ? item.id.toString() : "";
-    element.oninput = async (e) => {
-      if (!item.id) {
-        return;
-      }
-      const file = e?.target?.files?.[0];
-      if (!file) {
-        return;
-      }
-      await sendImageFileAsTextChanged(ctx, item.id, item.inx, file);
-    };
     return element;
   }
   if (payload.type === "modal") {
@@ -2024,44 +2007,18 @@ class MessageSender {
 // ts/ws.ts
 var connectWebsocket = (args) => {
   let ws;
-  const sessionStorageKey = "wgui.sid";
-  let inMemorySid;
   const sender = new MessageSender((msgs) => {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       return;
     }
     ws.send(JSON.stringify(msgs));
   });
-  const getSessionId = () => {
-    try {
-      const existing = window.localStorage.getItem(sessionStorageKey);
-      if (existing) {
-        return existing;
-      }
-      const legacy = window.sessionStorage.getItem(sessionStorageKey);
-      if (legacy) {
-        window.localStorage.setItem(sessionStorageKey, legacy);
-        return legacy;
-      }
-    } catch (_) {}
-    if (inMemorySid) {
-      return inMemorySid;
-    }
-    const sid = (window.crypto?.randomUUID?.() ?? `sid-${Date.now()}-${Math.floor(Math.random() * 1e9)}`).replace(/[^a-zA-Z0-9_-]/g, "");
-    try {
-      window.localStorage.setItem(sessionStorageKey, sid);
-    } catch (_) {
-      inMemorySid = sid;
-    }
-    return sid;
-  };
   const createConnection = () => {
     args.onConnectionChange?.(false);
     const href = window.location.href;
     const url = new URL(href);
     const wsProtocol = url.protocol === "https:" ? "wss" : "ws";
-    const sid = encodeURIComponent(getSessionId());
-    const wsUrl = `${wsProtocol}://${url.host}/ws?sid=${sid}`;
+    const wsUrl = `${wsProtocol}://${url.host}/ws`;
     ws = new WebSocket(wsUrl);
     ws.onmessage = (e) => {
       const data = e.data.toString();
@@ -2294,6 +2251,10 @@ window.onload = () => {
       };
       for (const rawMessage of msgs) {
         const message = normalizeServerMessage(rawMessage);
+        if (message.type === "formSucceeded") {
+          formSubmissionSucceeded(message.submissionId);
+          continue;
+        }
         if (message.type === "pushState") {
           const next = new URL(message.url, window.location.href);
           const current = `${location.pathname}${location.search}${location.hash}`;

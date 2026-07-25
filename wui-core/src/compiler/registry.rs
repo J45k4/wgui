@@ -576,10 +576,16 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 		}),
 		"FolderPicker" => Some(TagSchema {
 			name: "FolderPicker",
-			props: &[PropSchema {
-				name: "onTextChanged",
-				kind: PropKind::Event(EventKind::TextChanged),
-			}],
+			props: &[
+				PropSchema {
+					name: "name",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "onTextChanged",
+					kind: PropKind::Event(EventKind::TextChanged),
+				},
+			],
 		}),
 		"Modal" => Some(TagSchema {
 			name: "Modal",
@@ -702,6 +708,10 @@ fn layout_props() -> &'static [PropSchema] {
 		},
 		PropSchema {
 			name: "name",
+			kind: PropKind::Value(ValueType::String),
+		},
+		PropSchema {
+			name: "partial",
 			kind: PropKind::Value(ValueType::String),
 		},
 		PropSchema {

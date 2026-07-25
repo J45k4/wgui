@@ -2,7 +2,7 @@ import { Deboncer } from "./debouncer.ts";
 import { normalizeItem, normalizeServerMessage } from "./compact_item.ts";
 import { disposeCustomComponentTree, sendCustomData } from "./custom_components.ts";
 import { getPathItem } from "./path.ts";
-import { renderItem, setConnectionStatus } from "./render.ts";
+import { formSubmissionSucceeded, renderItem, setConnectionStatus } from "./render.ts";
 import { Context, Item, PropValue, SetPropSet, SrvMessage } from "./types.ts";
 import { WebRtcCoordinator } from "./webrtc.ts";
 import { disableWebPush, enableWebPush } from "./web_push.ts";
@@ -231,6 +231,10 @@ window.onload = () => {
             
 			for (const rawMessage of msgs) {
 				const message = normalizeServerMessage(rawMessage)
+				if (message.type === "formSucceeded") {
+					formSubmissionSucceeded(message.submissionId)
+					continue
+				}
                 if (message.type === "pushState") {
                     const next = new URL(message.url, window.location.href)
                     const current = `${location.pathname}${location.search}${location.hash}`

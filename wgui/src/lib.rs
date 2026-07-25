@@ -75,6 +75,77 @@ pub(crate) type SharedContexts =
 	Arc<std::sync::RwLock<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>>;
 type SharedRoutes = Arc<std::sync::RwLock<Vec<RouteEntry>>>;
 
+/// A composable collection of `#[route]` and `#[partial]` handlers.
+///
+/// Define one router per feature, then combine feature routers before adding
+/// them to an application:
+///
+/// ```ignore
+/// fn todos_router() -> Router {
+///     Router::new()
+///         .route(page_todos_route)
+///         .route(create_todo_route)
+///         .partial(todo_status_partial)
+/// }
+///
+/// let router = Router::new().merge(todos_router()).merge(auth_router());
+/// wgui.add_router(router);
+/// ```
+pub struct Router {
+	routes: Vec<SharedRouteHandler>,
+	partials: Vec<SharedRouteHandler>,
+}
+
+impl Router {
+	/// Create an empty router.
+	pub fn new() -> Self {
+		Self::default()
+	}
+
+	/// Add a `#[route]` handler to this router.
+	pub fn route<H>(mut self, handler: H) -> Self
+	where
+		H: crate::wui::route_handler::DynRouteHandler,
+	{
+		self.routes.push(Arc::new(handler));
+		self
+	}
+
+	/// Add a `#[partial]` handler to this router.
+	///
+	/// Partials use GET semantics, just as they do with [`Wgui::add_partial`].
+	pub fn partial<H>(mut self, handler: H) -> Self
+	where
+		H: crate::wui::route_handler::DynRouteHandler,
+	{
+		if handler.method() != HttpMethod::Get {
+			panic!("#[partial] handlers must use GET semantics");
+		}
+		self.partials.push(Arc::new(handler));
+		self
+	}
+
+	/// Combine another router into this one.
+	///
+	/// The routes from `other` are registered after the routes already in this
+	/// router. Matching still uses route specificity rather than registration
+	/// order.
+	pub fn merge(mut self, other: Self) -> Self {
+		self.routes.extend(other.routes);
+		self.partials.extend(other.partials);
+		self
+	}
+}
+
+impl Default for Router {
+	fn default() -> Self {
+		Self {
+			routes: Vec::new(),
+			partials: Vec::new(),
+		}
+	}
+}
+
 struct RouteEntry {
 	pattern: RoutePattern,
 	handler: SharedRouteHandler,
@@ -1222,6 +1293,17 @@ where
 	}
 
 	#[cfg(feature = "hyper")]
+	fn http_referer_path(headers: &HashMap<String, String>) -> Option<String> {
+		let referer = headers.get("referer")?;
+		if referer.starts_with('/') {
+			return Some(referer.clone());
+		}
+		let (_, rest) = referer.split_once("://")?;
+		let slash = rest.find('/')?;
+		Some(rest[slash..].to_string())
+	}
+
+	#[cfg(feature = "hyper")]
 	fn route_view_http_response(view: &View, app_css: &server::SharedAppCss) -> HttpResponse {
 		let body = crate::ssr::render_document_with_app_css_hydration_title(
 			&view.item,
@@ -1689,7 +1771,20 @@ where
 	where
 		H: crate::wui::route_handler::DynRouteHandler,
 	{
-		let handler: SharedRouteHandler = Arc::new(handler);
+		self.add_route_handler(Arc::new(handler));
+	}
+
+	/// Register all handlers collected in a [`Router`].
+	pub fn add_router(&mut self, router: Router) {
+		for handler in router.routes {
+			self.add_route_handler(handler);
+		}
+		for handler in router.partials {
+			self.add_partial_handler(handler);
+		}
+	}
+
+	fn add_route_handler(&mut self, handler: SharedRouteHandler) {
 		let pattern = RoutePattern::parse(handler.path());
 		let state_type_id = handler.state_type_id();
 		let method = handler.method();
@@ -1734,14 +1829,31 @@ where
 							route: Some(route),
 						};
 						let params = crate::wui::route_handler::PathParams(params_map);
-						let form = crate::wui::route_handler::RouteFormData::from_urlencoded(
-							&request.body,
-						);
+						let form = if request
+							.headers
+							.get("content-type")
+							.map(|content_type| content_type.starts_with("multipart/form-data"))
+							.unwrap_or(false)
+						{
+							crate::wui::route_handler::RouteFormData::from_multipart(
+								&request.body,
+								request
+									.headers
+									.get("content-type")
+									.map(String::as_str)
+									.unwrap_or(""),
+							)
+						} else {
+							crate::wui::route_handler::RouteFormData::from_urlencoded(&request.body)
+						};
 						let result = handler_arc.call_dyn(ctx_any, params, form, runtime).await;
 						match result {
 							crate::wui::route_handler::RouteResult::Redirect(redirect) => {
 								if redirect.0.is_empty() {
-									Self::redirect_http_response(http_ctx.path.clone())
+									Self::redirect_http_response(
+										Self::http_referer_path(&http_ctx.headers)
+											.unwrap_or_else(|| "/".to_string()),
+									)
 								} else {
 									Self::redirect_http_response(redirect.0)
 								}
@@ -1782,7 +1894,10 @@ where
 	where
 		H: crate::wui::route_handler::DynRouteHandler,
 	{
-		let handler: SharedRouteHandler = Arc::new(handler);
+		self.add_partial_handler(Arc::new(handler));
+	}
+
+	fn add_partial_handler(&mut self, handler: SharedRouteHandler) {
 		if handler.method() != HttpMethod::Get {
 			panic!("#[partial] handlers must use GET semantics");
 		}
@@ -1932,13 +2047,18 @@ where
 		client_id: usize,
 		view: crate::wui::route_handler::View,
 		custom_component_entries: &CustomComponentEntries,
+		replace_root: bool,
 	) {
 		if let Some(title) = &view.title {
 			self.handle.set_title(client_id, title).await;
 		}
 		let mut rendered = view.item.clone();
 		resolve_custom_component_entries(&mut rendered, custom_component_entries);
-		self.handle.render(client_id, rendered).await;
+		if replace_root {
+			self.handle.replace_root(client_id, rendered).await;
+		} else {
+			self.handle.render(client_id, rendered).await;
+		}
 		self.sync_custom_components(client_id, &view.item).await;
 		for page in self.pages.iter_mut() {
 			page.unmount(client_id);
@@ -2432,10 +2552,25 @@ where
 						.await;
 					match result {
 						crate::wui::route_handler::RouteResult::View(view) => {
-							self.render_route_view(client_id, *view, &custom_component_entries)
-								.await;
+							self.render_route_view(
+								client_id,
+								*view,
+								&custom_component_entries,
+								true,
+							)
+							.await;
 						}
 						crate::wui::route_handler::RouteResult::Redirect(redirect) => {
+							handle
+								.send_actions(
+									client_id,
+									vec![ClientAction::FormSucceeded(
+										crate::types::FormSucceeded {
+											submission_id: submit.submission_id,
+										},
+									)],
+								)
+								.await;
 							let current_route = routes.get(&client_id).cloned();
 							let target = if redirect.0.is_empty() {
 								current_route.unwrap_or_else(|| {
@@ -2446,7 +2581,20 @@ where
 								let Some(target_match) = self
 									.match_route(&path, crate::wui::route_handler::HttpMethod::Get)
 								else {
-									handle.navigate(client_id, &redirect.0).await;
+									if best_component_route_index(
+										&self.components,
+										&path,
+										|component| component.route_path.as_str(),
+									)
+									.is_some()
+									{
+										// Component-backed paths are rendered by the normal
+										// PathChanged flow. Keep this as client-side navigation
+										// so its next render is diffed rather than reloading.
+										handle.push_state(client_id, &redirect.0).await;
+									} else {
+										handle.navigate(client_id, &redirect.0).await;
+									}
 									continue;
 								};
 								let target_route = RouteContext {
@@ -2481,6 +2629,7 @@ where
 										client_id,
 										*view,
 										&custom_component_entries,
+										false,
 									)
 									.await;
 								}
@@ -2515,6 +2664,7 @@ where
 										client_id,
 										*view,
 										&custom_component_entries,
+										false,
 									)
 									.await;
 								}

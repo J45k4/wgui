@@ -1,22 +1,31 @@
 use log::Level;
 use wgui::{Wgui, WguiModel};
 
-mod components;
 mod context;
 mod db;
-mod notifications;
 mod routes;
 
-pub use db::{
-	Channel, DirectMessage, Message, PuppyDB as PuppyDb, PushSubscription, Session, User,
-};
+pub use db::{Channel, DirectMessage, Message, PuppyDB as PuppyDb, Session, User};
 
 const PUPPYCHAT_CSS: &str = r#"
+.puppychat-shell {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.puppychat-sidebar,
+.puppychat-main,
+.puppychat-messages {
+  min-height: 0;
+}
+
 @media (max-width: 640px) {
   .puppychat-shell {
     flex-direction: column !important;
     flex-wrap: nowrap !important;
-    overflow-y: auto;
+    width: 100vw !important;
+    box-sizing: border-box !important;
   }
 
   .puppychat-sidebar {
@@ -24,8 +33,8 @@ const PUPPYCHAT_CSS: &str = r#"
     width: 100% !important;
     min-width: 0 !important;
     max-width: none !important;
-    max-height: 220px;
-    flex: 0 1 auto !important;
+    max-height: 140px;
+    flex: 0 0 auto !important;
     resize: none !important;
   }
 
@@ -33,15 +42,26 @@ const PUPPYCHAT_CSS: &str = r#"
     display: none !important;
   }
 
+  .puppychat-list-page .puppychat-sidebar {
+    max-height: none;
+    flex: 1 1 auto !important;
+  }
+
+  .puppychat-list-page .puppychat-main,
+  .puppychat-conversation-page .puppychat-sidebar {
+    display: none !important;
+  }
+
   .puppychat-main {
     box-sizing: border-box !important;
     width: 100% !important;
     min-width: 0 !important;
-    flex: 1 0 auto !important;
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
   }
 
   .puppychat-header,
-  .puppychat-push-controls,
   .puppychat-call-controls,
   .puppychat-composer {
     flex-wrap: wrap !important;
@@ -51,6 +71,53 @@ const PUPPYCHAT_CSS: &str = r#"
     min-width: 0;
     max-width: 100%;
   }
+
+  .puppychat-back {
+    display: inline !important;
+  }
+}
+
+.puppychat-back {
+  display: none;
+}
+
+.puppychat-create-channel-modal {
+  position: relative;
+  min-height: 200px;
+  box-sizing: border-box;
+}
+
+.puppychat-create-submit-row {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: calc(100% - 32px);
+  justify-content: flex-end;
+}
+
+.puppychat-create-cancel-row {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+}
+
+.puppychat-upload-modal {
+  position: relative;
+  min-height: 200px;
+  box-sizing: border-box;
+}
+
+.puppychat-upload-submit-row {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+}
+
+.puppychat-upload-cancel-row {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  transform: translateY(20px);
 }
 "#;
 
@@ -73,7 +140,6 @@ pub struct SessionState {
 	pub call_active: bool,
 	pub call_with_video: bool,
 	pub push_status: String,
-	pub web_push_sink: String,
 }
 
 impl SessionState {
@@ -102,7 +168,6 @@ impl SessionState {
 			call_active: false,
 			call_with_video: true,
 			push_status: String::new(),
-			web_push_sink: String::new(),
 		}
 	}
 }
@@ -112,6 +177,7 @@ pub struct ChannelView {
 	id: u32,
 	name: String,
 	display_name: String,
+	href: String,
 	messages: Vec<Message>,
 }
 
@@ -120,6 +186,7 @@ pub struct DirectMessageView {
 	id: u32,
 	name: String,
 	display_name: String,
+	href: String,
 	online: bool,
 	messages: Vec<Message>,
 }
@@ -144,9 +211,19 @@ pub struct ChatViewState {
 	call_with_video: bool,
 	call_room: String,
 	push_status: String,
-	web_push_sink: String,
+	shell_class: String,
+	message_partial_addr: String,
 	channels: Vec<ChannelView>,
 	directs: Vec<DirectMessageView>,
+}
+
+impl ChatViewState {
+	pub(crate) fn with_message_target(mut self, kind: String, id: u32) -> Self {
+		self.active_kind = kind.clone();
+		self.active_id = id;
+		self.message_partial_addr = format!("/chat/messages/{kind}/{id}");
+		self
+	}
 }
 
 pub(crate) fn puppy_db_with_defaults() -> PuppyDb {
@@ -184,9 +261,24 @@ async fn main() {
 	wgui.set_ctx_state(context::SharedContext::default());
 	wgui.add_route(routes::page_login_route);
 	wgui.add_route(routes::login_route);
+	wgui.add_route(routes::logout_route);
 	wgui.add_route(routes::page_register_route);
 	wgui.add_route(routes::register_route);
 	wgui.add_route(routes::send_message_route);
-	wgui.add_component::<components::puppychat::Puppychat>("/");
+	wgui.add_route(routes::open_create_channel_route);
+	wgui.add_route(routes::close_create_channel_route);
+	wgui.add_route(routes::create_channel_route);
+	wgui.add_route(routes::start_audio_call_route);
+	wgui.add_route(routes::start_video_call_route);
+	wgui.add_route(routes::end_call_route);
+	wgui.add_route(routes::open_attach_menu_route);
+	wgui.add_route(routes::close_attach_menu_route);
+	wgui.add_route(routes::send_picture_route);
+	wgui.add_route(routes::open_message_image_route);
+	wgui.add_route(routes::close_image_modal_route);
+	wgui.add_route(routes::page_chat_route);
+	wgui.add_route(routes::page_channel_route);
+	wgui.add_route(routes::page_direct_route);
+	wgui.add_partial(routes::message_list_partial);
 	wgui.run().await;
 }

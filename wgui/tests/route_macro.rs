@@ -16,7 +16,7 @@ use std::sync::Arc;
 use wgui::wui::runtime::Ctx;
 use wgui::{
 	partial, route, view, HttpMethod, PathParams, Redirect, RouteFormData, RouteHandler,
-	RouteResult, RuntimeContext, View, Wgui,
+	RouteResult, Router, RuntimeContext, View, Wgui,
 };
 
 #[derive(Default)]
@@ -134,6 +134,22 @@ fn routes_register_and_stored_by_path() {
 
 	// No runtime assertion on length — routes field is pub(crate).
 	// Successful registration (no panic, traits resolve) is the contract.
+}
+
+#[test]
+fn routers_compose_route_groups() {
+	let todo_routes = Router::new()
+		.route(page_show_route)
+		.route(action_create_route)
+		.route(action_toggle_route)
+		.partial(todo_status_partial);
+	let app_routes = Router::new()
+		.route(page_index_route)
+		.merge(todo_routes)
+		.route(page_not_found_route);
+
+	let mut wgui = Wgui::new_without_server();
+	wgui.add_router(app_routes);
 }
 
 #[test]

@@ -81,28 +81,6 @@ impl HasId for Session {
 	}
 }
 
-#[derive(Debug, Clone, WguiModel, serde::Serialize, serde::Deserialize)]
-pub struct PushSubscription {
-	pub id: u32,
-	pub user_name: String,
-	pub channel: String,
-	pub endpoint: String,
-	pub p256dh_key: String,
-	pub auth_key: String,
-	pub active: bool,
-	pub updated_at: String,
-}
-
-impl HasId for PushSubscription {
-	fn id(&self) -> u32 {
-		self.id
-	}
-
-	fn set_id(&mut self, id: u32) {
-		self.id = id;
-	}
-}
-
 #[derive(Debug, Wdb)]
 pub struct PuppyDB {
 	pub messages: DbTable<Message>,
@@ -110,7 +88,6 @@ pub struct PuppyDB {
 	pub direct_messages: DbTable<DirectMessage>,
 	pub users: DbTable<User>,
 	pub sessions: DbTable<Session>,
-	pub push_subscriptions: DbTable<PushSubscription>,
 }
 
 impl PuppyDB {
@@ -122,7 +99,6 @@ impl PuppyDB {
 			direct_messages: db.table(),
 			users: db.table(),
 			sessions: db.table(),
-			push_subscriptions: db.table(),
 		}
 	}
 }
