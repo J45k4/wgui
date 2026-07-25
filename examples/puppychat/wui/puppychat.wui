@@ -14,8 +14,8 @@
       </VStack>
     </If>
     <Else>
-      <HStack spacing=0 grow=1>
-        <VStack width=260 minWidth=200 maxWidth=420 padding=12 spacing=10 backgroundColor="#f6f5f2" border="1px solid #e1ded7" hresize=true overflow="auto">
+      <HStack class="puppychat-shell" spacing=0 grow=1>
+        <VStack class="puppychat-sidebar" width=260 minWidth=200 maxWidth=420 padding=12 spacing=10 backgroundColor="#f6f5f2" border="1px solid #e1ded7" hresize=true overflow="auto">
           <Text value="PuppyChat" />
           <HStack spacing=6>
             <Text value="Channels" grow=1 />
@@ -36,8 +36,8 @@
             </For>
           </VStack>
         </VStack>
-        <VStack grow=1 padding=12 spacing=10>
-          <HStack spacing=8>
+        <VStack class="puppychat-main" grow=1 padding=12 spacing=10>
+          <HStack class="puppychat-header" spacing=8>
             <Text value={state.active_name} />
             <If test={state.active_kind != "" && !state.call_active}>
               <Button text="Audio Call" onClick="StartAudioCall" />
@@ -48,7 +48,7 @@
             </If>
             <Text value={state.user_name} grow=1 textAlign="right" />
           </HStack>
-          <HStack spacing=8>
+          <HStack class="puppychat-push-controls" spacing=8>
             <Button text="Enable Push" onClick="EnablePushNotifications" />
             <Button text="Disable Push" onClick="DisablePushNotifications" />
             <Text value={state.push_status} />
@@ -90,14 +90,14 @@
                     />
                   </VStack>
                 </HStack>
-                <HStack spacing=8>
+                <HStack class="puppychat-call-controls" spacing=8>
                   <Audio room={state.call_room} local=true muted=true autoplay=true controls=false />
                   <Audio room={state.call_room} local=false muted=false autoplay=true controls=true />
                   <Text value="If remote audio stays muted, press play on the audio control." />
                 </HStack>
               </If>
               <If test={!state.call_with_video}>
-                <HStack spacing=8>
+                <HStack class="puppychat-call-controls" spacing=8>
                   <Audio room={state.call_room} local=true muted=true autoplay=true controls=false />
                   <Audio room={state.call_room} local=false muted=false autoplay=true controls=true />
                   <Text value="Audio connected when another participant joins this room." />
@@ -164,16 +164,20 @@
             </If>
           </VStack>
           <VStack spacing=6>
-            <HStack spacing=6>
-              <Button text="+" onClick="OpenAttachMenu" />
-              <TextInput
-                value={state.new_message}
-                placeholder="Write a message"
-                onTextChanged="EditNewMessage"
-                grow=1
-              />
-              <Button text="Send" onClick="SendMessage" />
-            </HStack>
+            <Form action="/messages" method="post" spacing=6>
+              <HStack class="puppychat-composer" spacing=6>
+                <TextInput name="channel_id" type="hidden" value={state.active_id} />
+                <TextInput
+                  name="body"
+                  value={state.new_message}
+                  placeholder="Write a message"
+                  onTextChanged="EditNewMessage"
+                  grow=1
+                />
+                <Button text="Send" />
+              </HStack>
+            </Form>
+            <Button text="Attach image" onClick="OpenAttachMenu" />
           </VStack>
         </VStack>
       </HStack>

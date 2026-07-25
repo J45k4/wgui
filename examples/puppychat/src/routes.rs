@@ -1,5 +1,5 @@
 use crate::context::SharedContext;
-use crate::{PuppyDb, Session};
+use crate::{Message, PuppyDb, Session};
 use serde::Deserialize;
 use wgui::wui::runtime::Ctx;
 use wgui::{Redirect, RouteResult, View, route, view};
@@ -8,6 +8,12 @@ use wgui::{Redirect, RouteResult, View, route, view};
 pub struct LoginForm {
 	name: String,
 	password: String,
+}
+
+#[derive(Deserialize)]
+pub struct SendMessageForm {
+	body: String,
+	channel_id: u32,
 }
 
 fn login_view(name: String, error: String, status: u16) -> View {
@@ -97,4 +103,48 @@ pub async fn register(ctx: &Ctx<SharedContext, PuppyDb>, form: LoginForm) -> Rou
 		.await;
 
 	Redirect::to("/login").into()
+}
+
+#[route("/messages", method = "POST")]
+pub async fn send_message(ctx: &Ctx<SharedContext, PuppyDb>, form: SendMessageForm) -> RouteResult {
+	let Some(session_key) = ctx.session_id() else {
+		return Redirect::to("/login").into();
+	};
+	let Some(session) = ctx
+		.db()
+		.sessions
+		.snapshot()
+		.into_iter()
+		.find(|session| session.session_key == session_key)
+	else {
+		return Redirect::to("/login").into();
+	};
+
+	let body = form.body.trim().to_string();
+	if body.is_empty() {
+		return Redirect::to("/").into();
+	}
+	let channel_id = ctx
+		.db()
+		.channels
+		.snapshot()
+		.into_iter()
+		.find(|channel| channel.id == form.channel_id)
+		.or_else(|| ctx.db().channels.snapshot().into_iter().next())
+		.map(|channel| channel.id);
+
+	ctx.db()
+		.messages
+		.save(Message {
+			id: 0,
+			author: session.user_name,
+			body,
+			image_url: String::new(),
+			time: "now".to_string(),
+			channel_id,
+			dm_thread_key: None,
+		})
+		.await;
+
+	Redirect::to("/").into()
 }

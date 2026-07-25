@@ -1143,6 +1143,15 @@ export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 	}
 
 	clearModalState(element, item)
+	const previousUserClasses = (element.dataset.wguiClassName ?? "").split(/\s+/).filter(Boolean)
+	if (previousUserClasses.length > 0) {
+		element.classList.remove(...previousUserClasses)
+	}
+	const userClasses = (item.className ?? "").split(/\s+/).filter(Boolean)
+	if (userClasses.length > 0) {
+		element.classList.add(...userClasses)
+	}
+	element.dataset.wguiClassName = userClasses.join(" ")
 
 	element.style.width = item.fill ? "100%" : item.width ? item.width + "px" : ""
 	if (

@@ -701,6 +701,10 @@ fn layout_props() -> &'static [PropSchema] {
 			kind: PropKind::Value(ValueType::Number),
 		},
 		PropSchema {
+			name: "name",
+			kind: PropKind::Value(ValueType::String),
+		},
+		PropSchema {
 			name: "padding",
 			kind: PropKind::Value(ValueType::Number),
 		},

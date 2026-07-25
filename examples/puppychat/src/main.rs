@@ -11,6 +11,49 @@ pub use db::{
 	Channel, DirectMessage, Message, PuppyDB as PuppyDb, PushSubscription, Session, User,
 };
 
+const PUPPYCHAT_CSS: &str = r#"
+@media (max-width: 640px) {
+  .puppychat-shell {
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    overflow-y: auto;
+  }
+
+  .puppychat-sidebar {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    max-height: 220px;
+    flex: 0 1 auto !important;
+    resize: none !important;
+  }
+
+  .puppychat-sidebar > .wgui-resize-handle {
+    display: none !important;
+  }
+
+  .puppychat-main {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    flex: 1 0 auto !important;
+  }
+
+  .puppychat-header,
+  .puppychat-push-controls,
+  .puppychat-call-controls,
+  .puppychat-composer {
+    flex-wrap: wrap !important;
+  }
+
+  .puppychat-composer input {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+"#;
+
 #[derive(Debug, Clone)]
 pub struct SessionState {
 	pub user_name: String,
@@ -137,11 +180,13 @@ async fn main() {
 		.parse()
 		.expect("PUPPYCHAT_ADDR must be a valid socket address");
 	let mut wgui = Wgui::new(address).with_db(db);
+	wgui.set_css(PUPPYCHAT_CSS);
 	wgui.set_ctx_state(context::SharedContext::default());
 	wgui.add_route(routes::page_login_route);
 	wgui.add_route(routes::login_route);
 	wgui.add_route(routes::page_register_route);
 	wgui.add_route(routes::register_route);
+	wgui.add_route(routes::send_message_route);
 	wgui.add_component::<components::puppychat::Puppychat>("/");
 	wgui.run().await;
 }

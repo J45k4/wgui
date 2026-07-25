@@ -158,6 +158,18 @@ mod tests {
 	}
 
 	#[test]
+	fn compiles_class_prop_on_layouts() {
+		let src = r#"<VStack class="sidebar compact"><Text value="row" /></VStack>"#;
+		let generated = compile(src, "class_prop").expect("compile should succeed");
+
+		assert!(
+			generated.code.contains(".class(\"sidebar compact\")"),
+			"{}",
+			generated.code
+		);
+	}
+
+	#[test]
 	fn compiles_connection_status_widgets() {
 		let src = r#"
 <Disconnected padding=8><Text value="Offline" /></Disconnected>

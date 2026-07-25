@@ -926,13 +926,17 @@ impl Wgui<()> {
 							RouteResult::NotFound => None,
 						};
 					}
-					if let Some((factory, route)) = {
+					let page = {
 						let pages = ssr_pages.read().unwrap();
-						let index = best_route_index(&pages, &route.path, |(pattern, _)| pattern)?;
-						let pattern = &pages[index].0;
-						let route = page_route_context(pattern, &route.path, &route.query)?;
-						Some((pages[index].1.clone(), route))
-					} {
+						best_route_index(&pages, &route.path, |(pattern, _)| pattern).and_then(
+							|index| {
+								let pattern = &pages[index].0;
+								page_route_context(pattern, &route.path, &route.query)
+									.map(|route| (pages[index].1.clone(), route))
+							},
+						)
+					};
+					if let Some((factory, route)) = page {
 						let mount = tokio::task::block_in_place(|| {
 							tokio::runtime::Handle::current().block_on((factory)(
 								route.clone(),

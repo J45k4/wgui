@@ -91,6 +91,17 @@ const applySetProp = (element: Element, set: SetPropSet) => {
         case "ID":
             element.id = value
             break
+		case "ClassName":
+			const previous = (element.dataset.wguiClassName ?? "").split(/\s+/).filter(Boolean)
+			if (previous.length > 0) {
+				element.classList.remove(...previous)
+			}
+			const next = value.split(/\s+/).filter(Boolean)
+			if (next.length > 0) {
+				element.classList.add(...next)
+			}
+			element.dataset.wguiClassName = next.join(" ")
+			break
     }
 }
 

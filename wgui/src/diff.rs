@@ -243,6 +243,12 @@ fn inner_diff(changes: &mut Vec<ClientAction>, old: &Item, new: &Item, path: Ite
 			value: Value::String(new.white_space.clone()),
 		});
 	}
+	if old.class_name != new.class_name {
+		sets.push(SetProp {
+			key: PropKey::ClassName,
+			value: Value::String(new.class_name.clone()),
+		});
+	}
 
 	if !sets.is_empty() {
 		changes.push(ClientAction::SetProp {

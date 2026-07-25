@@ -228,6 +228,12 @@ fn validate_widget(el: &crate::ast::Element, diags: &mut Vec<Diagnostic>) {
 	};
 	for attr in &el.attrs {
 		let Some(prop) = schema.props.iter().find(|p| p.name == attr.name) else {
+			if attr.name == "class" {
+				if !attr_value_matches(&attr.value, crate::compiler::registry::ValueType::String) {
+					diags.push(Diagnostic::new("invalid value for class", attr.span));
+				}
+				continue;
+			}
 			if is_custom_component_tag(&el.name) && is_custom_event_attr(&attr.name) {
 				validate_event_attr(attr, diags);
 				continue;

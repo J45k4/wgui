@@ -288,6 +288,7 @@ export type Item = {
 	editable?: boolean
 	overflow?: string
 	name?: string
+	className?: string
 	action?: string
 	method?: string
 	formArg?: number
@@ -352,6 +353,7 @@ export type PropKey =
 	| "BreakWords"
 	| "Fill"
 	| "WhiteSpace"
+	| "ClassName"
 
 export type PropValue = {
     String?: string

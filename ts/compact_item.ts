@@ -37,6 +37,7 @@ export const normalizeItem = (compact: Item): Item => {
 		editable: raw.editable ?? false,
 		overflow: raw.overflow ?? "",
 		name: raw.name ?? "",
+		className: raw.className ?? "",
 		action: raw.action ?? "",
 		method: raw.method ?? "",
 		partialAddr: raw.partialAddr ?? "",

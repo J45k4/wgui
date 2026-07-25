@@ -275,6 +275,7 @@ pub enum PropKey {
 	Fill = 16,
 	Color = 17,
 	WhiteSpace = 18,
+	ClassName = 19,
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]

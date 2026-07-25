@@ -69,6 +69,7 @@ var normalizeItem = (compact) => {
     editable: raw.editable ?? false,
     overflow: raw.overflow ?? "",
     name: raw.name ?? "",
+    className: raw.className ?? "",
     action: raw.action ?? "",
     method: raw.method ?? "",
     partialAddr: raw.partialAddr ?? "",
@@ -1325,6 +1326,15 @@ var renderItem = (item, ctx, old) => {
     return element;
   }
   clearModalState(element, item);
+  const previousUserClasses = (element.dataset.wguiClassName ?? "").split(/\s+/).filter(Boolean);
+  if (previousUserClasses.length > 0) {
+    element.classList.remove(...previousUserClasses);
+  }
+  const userClasses = (item.className ?? "").split(/\s+/).filter(Boolean);
+  if (userClasses.length > 0) {
+    element.classList.add(...userClasses);
+  }
+  element.dataset.wguiClassName = userClasses.join(" ");
   element.style.width = item.fill ? "100%" : item.width ? item.width + "px" : "";
   if (element instanceof HTMLElement && item.payload.type === "layout" && (item.payload.horizontalResize || item.payload.horizontal_resize || item.payload.hresize) && element.dataset.wguiResizedWidth) {
     element.style.width = `${element.dataset.wguiResizedWidth}px`;
@@ -2165,6 +2175,17 @@ var applySetProp = (element, set) => {
       break;
     case "ID":
       element.id = value;
+      break;
+    case "ClassName":
+      const previous = (element.dataset.wguiClassName ?? "").split(/\s+/).filter(Boolean);
+      if (previous.length > 0) {
+        element.classList.remove(...previous);
+      }
+      const next = value.split(/\s+/).filter(Boolean);
+      if (next.length > 0) {
+        element.classList.add(...next);
+      }
+      element.dataset.wguiClassName = next.join(" ");
       break;
   }
 };

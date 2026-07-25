@@ -232,6 +232,10 @@ fn lower_widget(
 
 	if let Some(schema) = schema_for(&el.name) {
 		for attr in &el.attrs {
+			if attr.name == "class" {
+				lower_value_prop(&mut props, "class".to_string(), &attr.value);
+				continue;
+			}
 			if let Some(def) = schema.props.iter().find(|p| p.name == attr.name) {
 				match &def.kind {
 					crate::compiler::registry::PropKind::Event(kind) => {

@@ -238,6 +238,8 @@ pub struct Item {
 	pub editable: bool,
 	#[serde(skip_serializing_if = "is_default")]
 	pub name: String,
+	#[serde(rename = "className", skip_serializing_if = "is_default")]
+	pub class_name: String,
 	#[serde(skip_serializing_if = "is_default")]
 	pub action: String,
 	#[serde(skip_serializing_if = "is_default")]
@@ -632,6 +634,11 @@ impl Item {
 
 	pub fn name(mut self, name: impl Into<String>) -> Self {
 		self.name = name.into();
+		self
+	}
+
+	pub fn class(mut self, class_name: impl Into<String>) -> Self {
+		self.class_name = class_name.into();
 		self
 	}
 
@@ -1106,5 +1113,12 @@ mod tests {
 
 		let decoded: Item = serde_json::from_value(value).unwrap();
 		assert_eq!(decoded, item);
+	}
+
+	#[test]
+	fn item_class_serializes_as_class_name() {
+		let value = serde_json::to_value(vstack([]).class("sidebar compact")).unwrap();
+
+		assert_eq!(value["className"], "sidebar compact");
 	}
 }

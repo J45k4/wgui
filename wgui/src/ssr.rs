@@ -654,6 +654,9 @@ fn collect_item_attrs(item: &Item) -> Vec<(String, String)> {
 	if !item.name.is_empty() {
 		attrs.push(("name".to_string(), escape_attr(&item.name)));
 	}
+	if !item.class_name.is_empty() {
+		attrs.push(("class".to_string(), escape_attr(&item.class_name)));
+	}
 	attrs
 }
 
@@ -728,5 +731,12 @@ mod tests {
 
 		assert!(html.contains("align-items:stretch"));
 		assert!(html.contains("width:100%"));
+	}
+
+	#[test]
+	fn item_class_is_rendered_as_a_css_class() {
+		let html = render_item(&vstack([text("Dialog")]).class("dialog compact"));
+
+		assert!(html.contains("class=\"dialog compact\""));
 	}
 }
