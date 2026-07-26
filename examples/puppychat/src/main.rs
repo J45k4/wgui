@@ -81,6 +81,56 @@ const PUPPYCHAT_CSS: &str = r#"
   display: none;
 }
 
+.puppychat-user-menu {
+  position: relative;
+  align-items: flex-end;
+}
+
+.puppychat-user-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 10;
+  min-width: 120px;
+  box-sizing: border-box;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+}
+
+.puppychat-user-menu-dropdown form,
+.puppychat-user-menu-dropdown button {
+  width: 100%;
+}
+
+.puppychat-message {
+  position: relative;
+}
+
+.puppychat-message-actions {
+  margin-left: auto;
+}
+
+.puppychat-more-actions {
+  min-width: 32px;
+  padding: 2px 8px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.puppychat-message-menu {
+  position: absolute;
+  right: 6px;
+  top: 34px;
+  z-index: 8;
+  min-width: 110px;
+  box-sizing: border-box;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+}
+
+.puppychat-message-menu form,
+.puppychat-message-menu button {
+  width: 100%;
+}
+
 .puppychat-create-channel-modal {
   position: relative;
   min-height: 200px;
@@ -132,6 +182,9 @@ pub struct SessionState {
 	pub new_channel_name: String,
 	pub show_create_channel: bool,
 	pub show_attach_menu: bool,
+	pub show_user_menu: bool,
+	pub message_menu_id: u32,
+	pub editing_message_id: u32,
 	pub show_image_modal: bool,
 	pub selected_image_url: String,
 	pub active_kind: String,
@@ -160,6 +213,9 @@ impl SessionState {
 			new_channel_name: String::new(),
 			show_create_channel: false,
 			show_attach_menu: false,
+			show_user_menu: false,
+			message_menu_id: 0,
+			editing_message_id: 0,
 			show_image_modal: false,
 			selected_image_url: String::new(),
 			active_kind,
@@ -178,7 +234,7 @@ pub struct ChannelView {
 	name: String,
 	display_name: String,
 	href: String,
-	messages: Vec<Message>,
+	messages: Vec<MessageView>,
 }
 
 #[derive(Debug, Clone, WguiModel)]
@@ -188,7 +244,30 @@ pub struct DirectMessageView {
 	display_name: String,
 	href: String,
 	online: bool,
-	messages: Vec<Message>,
+	messages: Vec<MessageView>,
+}
+
+#[derive(Debug, Clone, WguiModel)]
+pub struct MessageView {
+	id: u32,
+	author: String,
+	body: String,
+	image_url: String,
+	image_href: String,
+	time: String,
+}
+
+impl From<Message> for MessageView {
+	fn from(message: Message) -> Self {
+		Self {
+			id: message.id,
+			author: message.author,
+			body: message.body,
+			image_href: format!("/chat/images/view/{}", message.id),
+			image_url: message.image_url,
+			time: message.time,
+		}
+	}
 }
 
 #[derive(Debug, Clone, WguiModel)]
@@ -202,6 +281,9 @@ pub struct ChatViewState {
 	new_channel_name: String,
 	show_create_channel: bool,
 	show_attach_menu: bool,
+	show_user_menu: bool,
+	message_menu_id: u32,
+	editing_message_id: u32,
 	show_image_modal: bool,
 	selected_image_url: String,
 	active_kind: String,
@@ -265,16 +347,23 @@ async fn main() {
 	wgui.add_route(routes::page_register_route);
 	wgui.add_route(routes::register_route);
 	wgui.add_route(routes::send_message_route);
+	wgui.add_route(routes::toggle_message_menu_route);
+	wgui.add_route(routes::open_message_editor_route);
+	wgui.add_route(routes::cancel_message_editor_route);
+	wgui.add_route(routes::edit_message_route);
+	wgui.add_route(routes::delete_message_route);
 	wgui.add_route(routes::open_create_channel_route);
 	wgui.add_route(routes::close_create_channel_route);
 	wgui.add_route(routes::create_channel_route);
 	wgui.add_route(routes::start_audio_call_route);
 	wgui.add_route(routes::start_video_call_route);
 	wgui.add_route(routes::end_call_route);
+	wgui.add_route(routes::toggle_user_menu_route);
 	wgui.add_route(routes::open_attach_menu_route);
 	wgui.add_route(routes::close_attach_menu_route);
 	wgui.add_route(routes::send_picture_route);
 	wgui.add_route(routes::open_message_image_route);
+	wgui.add_route(routes::view_message_image_route);
 	wgui.add_route(routes::close_image_modal_route);
 	wgui.add_route(routes::page_chat_route);
 	wgui.add_route(routes::page_channel_route);

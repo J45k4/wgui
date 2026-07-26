@@ -122,6 +122,10 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 					kind: PropKind::Value(ValueType::String),
 				},
 				PropSchema {
+					name: "fontWeight",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
 					name: "whiteSpace",
 					kind: PropKind::Value(ValueType::String),
 				},
@@ -464,6 +468,14 @@ pub fn schema_for(tag: &str) -> Option<TagSchema> {
 				},
 				PropSchema {
 					name: "objectFit",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "href",
+					kind: PropKind::Value(ValueType::String),
+				},
+				PropSchema {
+					name: "cursor",
 					kind: PropKind::Value(ValueType::String),
 				},
 				PropSchema {

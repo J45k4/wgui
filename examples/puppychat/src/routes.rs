@@ -1,6 +1,7 @@
 use crate::context::SharedContext;
 use crate::{
-	Channel, ChannelView, ChatViewState, DirectMessageView, Message, PuppyDb, Session, SessionState,
+	Channel, ChannelView, ChatViewState, DirectMessageView, Message, MessageView, PuppyDb, Session,
+	SessionState,
 };
 use serde::Deserialize;
 use wgui::wui::runtime::Ctx;
@@ -17,6 +18,12 @@ pub struct SendMessageForm {
 	body: String,
 	active_kind: String,
 	active_id: u32,
+}
+
+#[derive(Deserialize)]
+pub struct EditMessageForm {
+	id: u32,
+	body: String,
 }
 
 #[derive(Deserialize)]
@@ -103,6 +110,7 @@ fn chat_state(ctx: &Ctx<SharedContext, PuppyDb>, conversation_page: bool) -> Cha
 				.iter()
 				.filter(|message| message.channel_id == Some(channel.id))
 				.cloned()
+				.map(MessageView::from)
 				.collect(),
 		})
 		.collect();
@@ -128,6 +136,7 @@ fn chat_state(ctx: &Ctx<SharedContext, PuppyDb>, conversation_page: bool) -> Cha
 					.iter()
 					.filter(|message| message.dm_thread_key.as_deref() == Some(&thread))
 					.cloned()
+					.map(MessageView::from)
 					.collect(),
 			}
 		})
@@ -142,6 +151,9 @@ fn chat_state(ctx: &Ctx<SharedContext, PuppyDb>, conversation_page: bool) -> Cha
 		new_channel_name: String::new(),
 		show_create_channel: session.show_create_channel,
 		show_attach_menu: session.show_attach_menu,
+		show_user_menu: session.show_user_menu,
+		message_menu_id: session.message_menu_id,
+		editing_message_id: session.editing_message_id,
 		show_image_modal: session.show_image_modal,
 		selected_image_url: session.selected_image_url.clone(),
 		active_kind: session.active_kind.clone(),
@@ -172,6 +184,28 @@ fn chat_state(ctx: &Ctx<SharedContext, PuppyDb>, conversation_page: bool) -> Cha
 fn update_session(ctx: &Ctx<SharedContext, PuppyDb>, update: impl FnOnce(&mut SessionState)) {
 	let mut sessions = ctx.state.sessions.lock().unwrap();
 	update(session_state(ctx, &mut sessions));
+}
+
+fn authenticated_user_name(ctx: &Ctx<SharedContext, PuppyDb>) -> Option<String> {
+	let session_key = ctx.session_id()?;
+	ctx.db()
+		.sessions
+		.snapshot()
+		.into_iter()
+		.find(|session| session.session_key == session_key)
+		.map(|session| session.user_name)
+}
+
+fn render_active_message_list(ctx: &Ctx<SharedContext, PuppyDb>) {
+	let topic = {
+		let mut sessions = ctx.state.sessions.lock().unwrap();
+		let session = session_state(ctx, &mut sessions);
+		format!(
+			"/chat/messages/{}/{}",
+			session.active_kind, session.active_id
+		)
+	};
+	ctx.render(topic);
 }
 
 #[route("/", view, template = "puppychat")]
@@ -285,6 +319,9 @@ pub async fn logout(ctx: &Ctx<SharedContext, PuppyDb>) -> RouteResult {
 		session.auth_error.clear();
 		session.show_create_channel = false;
 		session.show_attach_menu = false;
+		session.show_user_menu = false;
+		session.message_menu_id = 0;
+		session.editing_message_id = 0;
 		session.show_image_modal = false;
 		session.selected_image_url.clear();
 		session.call_active = false;
@@ -389,6 +426,93 @@ pub async fn send_message(ctx: &Ctx<SharedContext, PuppyDb>, form: SendMessageFo
 	Redirect::to("").into()
 }
 
+#[route("/chat/messages/menu", method = "POST")]
+pub fn toggle_message_menu(ctx: &Ctx<SharedContext, PuppyDb>, form: IdForm) -> Redirect {
+	update_session(ctx, |session| {
+		session.message_menu_id = if session.message_menu_id == form.id {
+			0
+		} else {
+			form.id
+		};
+	});
+	Redirect::to("")
+}
+
+#[route("/chat/messages/edit/open", method = "POST")]
+pub async fn open_message_editor(ctx: &Ctx<SharedContext, PuppyDb>, form: IdForm) -> Redirect {
+	let Some(user_name) = authenticated_user_name(ctx) else {
+		return Redirect::to("/login");
+	};
+	if ctx
+		.db()
+		.messages
+		.find(form.id)
+		.await
+		.is_some_and(|message| message.author == user_name)
+	{
+		update_session(ctx, |session| {
+			session.editing_message_id = form.id;
+			session.message_menu_id = 0;
+		});
+	}
+	Redirect::to("")
+}
+
+#[route("/chat/messages/edit/cancel", method = "POST")]
+pub fn cancel_message_editor(ctx: &Ctx<SharedContext, PuppyDb>) -> Redirect {
+	update_session(ctx, |session| session.editing_message_id = 0);
+	Redirect::to("")
+}
+
+#[route("/chat/messages/edit", method = "POST")]
+pub async fn edit_message(ctx: &Ctx<SharedContext, PuppyDb>, form: EditMessageForm) -> Redirect {
+	let Some(user_name) = authenticated_user_name(ctx) else {
+		return Redirect::to("/login");
+	};
+	let Some(mut message) = ctx.db().messages.find(form.id).await else {
+		return Redirect::to("");
+	};
+	if message.author != user_name {
+		return Redirect::to("");
+	}
+	let body = form.body.trim().to_string();
+	if body.is_empty() && message.image_url.is_empty() {
+		return Redirect::to("");
+	}
+	message.body = body;
+	ctx.db().messages.save(message).await;
+	update_session(ctx, |session| {
+		session.editing_message_id = 0;
+		session.message_menu_id = 0;
+	});
+	render_active_message_list(ctx);
+	Redirect::to("")
+}
+
+#[route("/chat/messages/delete", method = "POST")]
+pub async fn delete_message(ctx: &Ctx<SharedContext, PuppyDb>, form: IdForm) -> Redirect {
+	let Some(user_name) = authenticated_user_name(ctx) else {
+		return Redirect::to("/login");
+	};
+	let Some(message) = ctx.db().messages.find(form.id).await else {
+		return Redirect::to("");
+	};
+	if message.author != user_name {
+		return Redirect::to("");
+	}
+	ctx.db().messages.delete(form.id).await;
+	update_session(ctx, |session| {
+		if session.message_menu_id == form.id {
+			session.message_menu_id = 0;
+		}
+		if session.editing_message_id == form.id {
+			session.editing_message_id = 0;
+		}
+	});
+	render_active_message_list(ctx);
+	Redirect::to("")
+}
+
 #[route("/chat/channels/new", method = "POST")]
 pub fn open_create_channel(ctx: &Ctx<SharedContext, PuppyDb>) -> Redirect {
 	update_session(ctx, |session| session.show_create_channel = true);
@@ -456,6 +580,14 @@ pub fn start_video_call(ctx: &Ctx<SharedContext, PuppyDb>) -> Redirect {
 #[route("/chat/call/end", method = "POST")]
 pub fn end_call(ctx: &Ctx<SharedContext, PuppyDb>) -> Redirect {
 	update_session(ctx, |session| session.call_active = false);
+	Redirect::to("")
+}
+
+#[route("/chat/user-menu/toggle", method = "POST")]
+pub fn toggle_user_menu(ctx: &Ctx<SharedContext, PuppyDb>) -> Redirect {
+	update_session(ctx, |session| {
+		session.show_user_menu = !session.show_user_menu
+	});
 	Redirect::to("")
 }
 
@@ -532,11 +664,30 @@ pub async fn open_message_image(ctx: &Ctx<SharedContext, PuppyDb>, form: IdForm)
 	Redirect::to("")
 }
 
+#[route("/chat/images/view/:id", view, template = "puppychat")]
+pub async fn view_message_image(ctx: &Ctx<SharedContext, PuppyDb>, id: u32) -> RouteResult {
+	if let Some(message) = ctx.db().messages.find(id).await
+		&& !message.image_url.is_empty()
+	{
+		update_session(ctx, |session| {
+			session.selected_image_url = message.image_url;
+			session.show_image_modal = true;
+		});
+	}
+	view!(chat_state(ctx, true)).into()
+}
+
 #[route("/chat/images/close", method = "POST")]
 pub fn close_image_modal(ctx: &Ctx<SharedContext, PuppyDb>) -> Redirect {
+	let mut redirect_to = "/".to_string();
 	update_session(ctx, |session| {
+		redirect_to = match session.active_kind.as_str() {
+			"channel" if session.active_id != 0 => format!("/channel/{}", session.active_id),
+			"dm" if session.active_id != 0 => format!("/direct/{}", session.active_id),
+			_ => "/".to_string(),
+		};
 		session.show_image_modal = false;
 		session.selected_image_url.clear();
 	});
-	Redirect::to("")
+	Redirect::to(redirect_to)
 }

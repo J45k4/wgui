@@ -663,6 +663,30 @@ const renderPayload = (item: Item, ctx: Context, old?: Element | null) => {
 
 	if (payload.type === "img") {
 		let image: HTMLImageElement
+		if (payload.href) {
+			let anchor: HTMLAnchorElement
+			if (old instanceof HTMLAnchorElement) {
+				anchor = old
+			} else {
+				anchor = document.createElement("a")
+				if (old) old.replaceWith(anchor)
+			}
+			anchor.href = payload.href
+			anchor.onclick = (event) => navigateLink(event, anchor, ctx)
+			if (anchor.firstElementChild instanceof HTMLImageElement) {
+				image = anchor.firstElementChild
+			} else {
+				image = document.createElement("img")
+				anchor.replaceChildren(image)
+			}
+			image.src = payload.src
+			image.alt = payload.alt ?? ""
+			image.style.maxWidth = "100%"
+			image.style.maxHeight = "100%"
+			image.style.objectFit = payload.objectFit ?? "contain"
+			image.loading = "lazy"
+			return anchor
+		}
 		if (old instanceof HTMLImageElement) {
 			image = old
 		} else {
@@ -1167,6 +1191,7 @@ export const renderItem = (item: Item, ctx: Context, old?: Element | null) => {
 		element.style.wordBreak = ""
 	}
 	element.style.textAlign = item.textAlign || ""
+	element.style.fontWeight = item.fontWeight || ""
 	element.style.whiteSpace = item.whiteSpace || ""
 	element.style.cursor = item.cursor || ""
 	element.style.margin = ""

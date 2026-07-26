@@ -3,13 +3,36 @@
     <For each={state.channels} itemAs="channel">
       <If test={channel.id == state.active_id}>
         <For each={channel.messages} itemAs="msg">
-          <VStack spacing=2 padding=6 border="1px solid #e6e6e6">
-            <HStack spacing=8><Text value={msg.author} /><Text value={msg.time} /></HStack>
-            <If test={msg.body != ""}><Text value={msg.body} /></If>
-            <If test={msg.image_url != ""}>
-              <Image src={msg.image_url} alt="picture" objectFit="contain" maxWidth=320 maxHeight=220 />
-              <Form action="/chat/images/open" method="post"><TextInput name="id" type="hidden" value={msg.id} /><Button text="Open image" /></Form>
+          <VStack class="puppychat-message" spacing=2 padding=6 border="1px solid #e6e6e6">
+            <HStack spacing=8>
+              <Text value={msg.author} fontWeight="bold" />
+              <Text value={msg.time} />
+              <If test={msg.author == state.user_name}>
+                <VStack class="puppychat-message-actions">
+                  <Form action="/chat/messages/menu" method="post">
+                    <TextInput name="id" type="hidden" value={msg.id} />
+                    <Button class="puppychat-more-actions" text="…" />
+                  </Form>
+                  <If test={state.message_menu_id == msg.id}>
+                    <VStack class="puppychat-message-menu" padding=6 spacing=4 backgroundColor="#ffffff" border="1px solid #d9d9d9">
+                      <Form action="/chat/messages/edit/open" method="post"><TextInput name="id" type="hidden" value={msg.id} /><Button text="Edit" /></Form>
+                      <Form action="/chat/messages/delete" method="post"><TextInput name="id" type="hidden" value={msg.id} /><Button text="Delete" color="#b42318" /></Form>
+                    </VStack>
+                  </If>
+                </VStack>
+              </If>
+            </HStack>
+            <If test={state.editing_message_id == msg.id}>
+              <Form action="/chat/messages/edit" method="post">
+                <TextInput name="id" type="hidden" value={msg.id} />
+                <HStack spacing=6><TextInput name="body" value={msg.body} grow=1 /><Button text="Save" /></HStack>
+              </Form>
+              <Form action="/chat/messages/edit/cancel" method="post"><Button text="Cancel" /></Form>
             </If>
+            <Else>
+              <If test={msg.body != ""}><Text value={msg.body} /></If>
+              <If test={msg.image_url != ""}><Image src={msg.image_url} href={msg.image_href} alt="picture" objectFit="contain" maxWidth=320 maxHeight=220 cursor="pointer" /></If>
+            </Else>
           </VStack>
         </For>
       </If>
@@ -19,13 +42,36 @@
     <For each={state.directs} itemAs="dm">
       <If test={dm.id == state.active_id}>
         <For each={dm.messages} itemAs="msg">
-          <VStack spacing=2 padding=6 border="1px solid #e6e6e6">
-            <HStack spacing=8><Text value={msg.author} /><Text value={msg.time} /></HStack>
-            <If test={msg.body != ""}><Text value={msg.body} /></If>
-            <If test={msg.image_url != ""}>
-              <Image src={msg.image_url} alt="picture" objectFit="contain" maxWidth=320 maxHeight=220 />
-              <Form action="/chat/images/open" method="post"><TextInput name="id" type="hidden" value={msg.id} /><Button text="Open image" /></Form>
+          <VStack class="puppychat-message" spacing=2 padding=6 border="1px solid #e6e6e6">
+            <HStack spacing=8>
+              <Text value={msg.author} fontWeight="bold" />
+              <Text value={msg.time} />
+              <If test={msg.author == state.user_name}>
+                <VStack class="puppychat-message-actions">
+                  <Form action="/chat/messages/menu" method="post">
+                    <TextInput name="id" type="hidden" value={msg.id} />
+                    <Button class="puppychat-more-actions" text="…" />
+                  </Form>
+                  <If test={state.message_menu_id == msg.id}>
+                    <VStack class="puppychat-message-menu" padding=6 spacing=4 backgroundColor="#ffffff" border="1px solid #d9d9d9">
+                      <Form action="/chat/messages/edit/open" method="post"><TextInput name="id" type="hidden" value={msg.id} /><Button text="Edit" /></Form>
+                      <Form action="/chat/messages/delete" method="post"><TextInput name="id" type="hidden" value={msg.id} /><Button text="Delete" color="#b42318" /></Form>
+                    </VStack>
+                  </If>
+                </VStack>
+              </If>
+            </HStack>
+            <If test={state.editing_message_id == msg.id}>
+              <Form action="/chat/messages/edit" method="post">
+                <TextInput name="id" type="hidden" value={msg.id} />
+                <HStack spacing=6><TextInput name="body" value={msg.body} grow=1 /><Button text="Save" /></HStack>
+              </Form>
+              <Form action="/chat/messages/edit/cancel" method="post"><Button text="Cancel" /></Form>
             </If>
+            <Else>
+              <If test={msg.body != ""}><Text value={msg.body} /></If>
+              <If test={msg.image_url != ""}><Image src={msg.image_url} href={msg.image_href} alt="picture" objectFit="contain" maxWidth=320 maxHeight=220 cursor="pointer" /></If>
+            </Else>
           </VStack>
         </For>
       </If>

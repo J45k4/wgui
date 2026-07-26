@@ -119,6 +119,8 @@ pub enum ItemPayload {
 		src: String,
 		alt: String,
 		object_fit: Option<String>,
+		#[serde(skip_serializing_if = "Option::is_none")]
+		href: Option<String>,
 	},
 	Video {
 		room: String,
@@ -210,6 +212,8 @@ pub struct Item {
 	pub grow: u32,
 	#[serde(skip_serializing_if = "is_default")]
 	pub text_align: String,
+	#[serde(skip_serializing_if = "is_default")]
+	pub font_weight: String,
 	#[serde(skip_serializing_if = "is_default")]
 	pub white_space: String,
 	#[serde(skip_serializing_if = "is_default")]
@@ -551,6 +555,7 @@ pub fn img(src: &str, alt: &str) -> Item {
 			src: src.to_string(),
 			alt: alt.to_string(),
 			object_fit: None,
+			href: None,
 		},
 		..Default::default()
 	}
@@ -905,6 +910,11 @@ impl Item {
 		self
 	}
 
+	pub fn font_weight(mut self, value: &str) -> Self {
+		self.font_weight = value.to_string();
+		self
+	}
+
 	pub fn white_space(mut self, value: &str) -> Self {
 		self.white_space = value.to_string();
 		self
@@ -952,6 +962,18 @@ impl Item {
 		} = self.payload
 		{
 			*object_fit = Some(fit.to_string());
+		}
+		self
+	}
+
+	/// Makes an image open `href` when selected.
+	pub fn image_href(mut self, href: &str) -> Self {
+		if let ItemPayload::Img {
+			href: ref mut image_href,
+			..
+		} = self.payload
+		{
+			*image_href = Some(href.to_string());
 		}
 		self
 	}

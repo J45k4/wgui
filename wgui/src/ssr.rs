@@ -95,7 +95,8 @@ pub fn render_item(item: &Item) -> String {
 			src,
 			alt,
 			object_fit,
-		} => render_image(item, src, alt, object_fit.as_deref()),
+			href,
+		} => render_image(item, src, alt, object_fit.as_deref(), href.as_deref()),
 		ItemPayload::Video {
 			room,
 			local,
@@ -344,7 +345,13 @@ fn render_cell(item: &Item, tag: &str, child: &Item) -> String {
 	render_element(tag, &[], style, &attrs, &child_html)
 }
 
-fn render_image(item: &Item, src: &str, alt: &str, object_fit: Option<&str>) -> String {
+fn render_image(
+	item: &Item,
+	src: &str,
+	alt: &str,
+	object_fit: Option<&str>,
+	href: Option<&str>,
+) -> String {
 	let mut style = StyleBuilder::new();
 	style.push("max-width", "100%");
 	style.push("max-height", "100%");
@@ -359,7 +366,18 @@ fn render_image(item: &Item, src: &str, alt: &str, object_fit: Option<&str>) -> 
 	attrs.push(("src".to_string(), escape_attr(src)));
 	attrs.push(("alt".to_string(), escape_attr(alt)));
 	attrs.push(("loading".to_string(), "lazy".to_string()));
-	render_void_element("img", &classes, style, &attrs)
+	let image = render_void_element("img", &classes, style, &attrs);
+	if let Some(href) = href {
+		render_element(
+			"a",
+			&[],
+			StyleBuilder::new(),
+			&[("href".to_string(), escape_attr(href))],
+			&image,
+		)
+	} else {
+		image
+	}
 }
 
 fn render_media(
@@ -605,6 +623,9 @@ fn apply_item_styles(item: &Item, style: &mut StyleBuilder) {
 	if !item.text_align.is_empty() {
 		style.push("text-align", &item.text_align);
 	}
+	if !item.font_weight.is_empty() {
+		style.push("font-weight", &item.font_weight);
+	}
 	if !item.cursor.is_empty() {
 		style.push("cursor", &item.cursor);
 	}
@@ -713,7 +734,7 @@ impl StyleBuilder {
 #[cfg(test)]
 mod tests {
 	use super::render_item;
-	use crate::gui::{modal, text, vstack};
+	use crate::gui::{img, modal, text, vstack};
 
 	#[test]
 	fn modal_defaults_to_centered_overlay() {
@@ -741,5 +762,20 @@ mod tests {
 		let html = render_item(&vstack([text("Dialog")]).class("dialog compact"));
 
 		assert!(html.contains("class=\"dialog compact\""));
+	}
+
+	#[test]
+	fn linked_image_wraps_the_image_in_an_anchor() {
+		let html = render_item(&img("/cat.png", "Cat").image_href("/images/1"));
+
+		assert!(html.starts_with("<a href=\"/images/1\"><img"));
+		assert!(html.contains("src=\"/cat.png\""));
+	}
+
+	#[test]
+	fn text_font_weight_is_rendered() {
+		let html = render_item(&text("Important").font_weight("bold"));
+
+		assert!(html.contains("font-weight:bold"));
 	}
 }

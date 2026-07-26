@@ -197,10 +197,11 @@ export type None = {
 }
 
 export type Image = {
-    type: "img"
-    src: string
-    alt?: string
-    objectFit?: string
+	type: "img"
+	src: string
+	alt?: string
+	objectFit?: string
+	href?: string
 }
 
 export type Video = {
@@ -272,6 +273,7 @@ export type Item = {
 	breakWords?: boolean
 	fill?: boolean
 	textAlign?: string
+	fontWeight?: string
 	whiteSpace?: string
 	cursor?: string
 	margin?: number

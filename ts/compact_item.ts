@@ -21,6 +21,7 @@ export const normalizeItem = (compact: Item): Item => {
 		breakWords: raw.breakWords ?? false,
 		fill: raw.fill ?? false,
 		textAlign: raw.textAlign ?? "",
+		fontWeight: raw.fontWeight ?? "",
 		whiteSpace: raw.whiteSpace ?? "",
 		cursor: raw.cursor ?? "",
 		margin: raw.margin ?? 0,

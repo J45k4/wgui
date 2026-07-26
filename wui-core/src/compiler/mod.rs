@@ -158,6 +158,14 @@ mod tests {
 	}
 
 	#[test]
+	fn compiles_font_weight_prop() {
+		let src = r#"<Text value="Important" fontWeight="bold" />"#;
+		let generated = compile(src, "font_weight").expect("compile should succeed");
+
+		assert!(generated.code.contains(".font_weight(\"bold\")"));
+	}
+
+	#[test]
 	fn compiles_class_prop_on_layouts() {
 		let src = r#"<VStack class="sidebar compact"><Text value="row" /></VStack>"#;
 		let generated = compile(src, "class_prop").expect("compile should succeed");
@@ -167,6 +175,15 @@ mod tests {
 			"{}",
 			generated.code
 		);
+	}
+
+	#[test]
+	fn compiles_linked_image_props() {
+		let src = r#"<Image src="/cat.png" alt="Cat" href="/images/1" cursor="pointer" />"#;
+		let generated = compile(src, "linked_image").expect("compile should succeed");
+
+		assert!(generated.code.contains(".image_href(\"/images/1\")"));
+		assert!(generated.code.contains(".cursor(\"pointer\")"));
 	}
 
 	#[test]

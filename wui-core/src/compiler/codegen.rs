@@ -665,6 +665,7 @@ fn prop_method(name: &str) -> String {
 		"maxHeight" => "max_height".to_string(),
 		"grow" => "grow".to_string(),
 		"textAlign" => "text_align".to_string(),
+		"fontWeight" => "font_weight".to_string(),
 		"whiteSpace" => "white_space".to_string(),
 		"cursor" => "cursor".to_string(),
 		"breakWords" => "break_words".to_string(),
@@ -674,6 +675,7 @@ fn prop_method(name: &str) -> String {
 		"placeholder" => "placeholder".to_string(),
 		"type" => "input_type".to_string(),
 		"objectFit" => "object_fit".to_string(),
+		"href" => "image_href".to_string(),
 		"room" => "room".to_string(),
 		"arg" => "form_arg".to_string(),
 		"partial" => "partial_addr".to_string(),
@@ -778,6 +780,7 @@ fn is_string_prop(name: &str) -> bool {
 	matches!(
 		name,
 		"textAlign"
+			| "fontWeight"
 			| "whiteSpace"
 			| "cursor"
 			| "overflow"
@@ -789,7 +792,7 @@ fn is_string_prop(name: &str) -> bool {
 			| "type" | "backgroundColor"
 			| "color" | "border"
 			| "objectFit"
-			| "room"
+			| "href" | "room"
 	)
 }
 

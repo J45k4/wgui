@@ -1282,6 +1282,7 @@ fn apply_string_prop(item: Item, name: &str, value: &str) -> Item {
 		"placeholder" => item.placeholder(value),
 		"type" => item.input_type(value),
 		"textAlign" => item.text_align(value),
+		"fontWeight" => item.font_weight(value),
 		"whiteSpace" => item.white_space(value),
 		"cursor" => item.cursor(value),
 		"overflow" => item.overflow(value),
@@ -1289,6 +1290,7 @@ fn apply_string_prop(item: Item, name: &str, value: &str) -> Item {
 		"color" => item.color(value),
 		"border" => item.border(value),
 		"objectFit" => item.object_fit(value),
+		"href" => item.image_href(value),
 		"room" => item.room(value),
 		_ => item,
 	}
@@ -1359,12 +1361,13 @@ fn is_string_prop(name: &str) -> bool {
 			| "bind:svalue"
 			| "placeholder"
 			| "type" | "textAlign"
+			| "fontWeight"
 			| "cursor"
 			| "overflow"
 			| "backgroundColor"
 			| "color" | "border"
 			| "objectFit"
-			| "room"
+			| "href" | "room"
 	)
 }
 
