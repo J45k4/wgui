@@ -61,6 +61,7 @@ accepts an existing value implementing `WuiValueConvert`.
 ## Examples
 
 - Todo list app (interactive text input + checkbox): `cargo run -p todo`
+- SwiftUI todo sketch for native-owned UI + wgui store bridge: `examples/todo_swift`
 - Component showcase (text input, date picker, select, slider, modal, table): `cargo run -p allcomponents`
 - WUI template examples: `cargo run -p todo_wui` and `cargo run -p puppychat`
 
